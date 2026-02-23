@@ -1,0 +1,31 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "hero.bane.herobot.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "BlockItemMixin",
+    "ConnectionAccessor",
+    "CooldownInstanceInterface",
+    "EntityDataAccessorMixin",
+    "EntityMixin",
+    "ExperienceOrbMixin",
+    "ItemCooldownsInterface",
+    "LivingEntityAccessor",
+    "LivingEntityMixin",
+    "PlayerListMixin",
+    "PlayerMixin",
+    "RideCommandMixin",
+    "ServerExplosionMixin",
+    "ServerPlayerAccessor",
+    "ServerPlayerMixin",
+    "ShulkerBoxBlockEntityMixin",
+    "StandingAndWallBlockItemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

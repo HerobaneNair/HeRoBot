@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "herobot",
+  "version": "${version}",
+  "name": "HeRoBot",
+  "description": "Carpet PVP style bots without extra fluff",
+  "authors": [
+    "gnembon, HerobaneNair"
+  ],
+  "contact": {},
+  "license": "All Rights Reserved",
+  "icon": "assets/herobot/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "hero.bane.herobot.client.HeRoBotClient"
+    ],
+    "main": [
+      "hero.bane.herobot.HeRoBot"
+    ]
+  },
+  "mixins": [
+    "herobot.mixins.json",
+    {
+      "config": "herobot.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "fabric-api": "*",
+    "minecraft": "1.21.11"
+  },
+  "breaks": {
+    "carpet": "*",
+    "carpetpvp": "*"
+  }
+}
