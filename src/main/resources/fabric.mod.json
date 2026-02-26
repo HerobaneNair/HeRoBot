@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "herobot",
   "version": "${version}",
-  "name": "HeRoBot",
+  "name": "HeroBot",
   "description": "Carpet PVP style bots without extra fluff",
   "authors": [
     "gnembon, HerobaneNair"
@@ -13,10 +13,10 @@
   "environment": "*",
   "entrypoints": {
     "client": [
-      "hero.bane.herobot.client.HeRoBotClient"
+      "hero.bane.herobot.client.HeroBotClient"
     ],
     "main": [
-      "hero.bane.herobot.HeRoBot"
+      "hero.bane.herobot.HeroBot"
     ]
   },
   "mixins": [

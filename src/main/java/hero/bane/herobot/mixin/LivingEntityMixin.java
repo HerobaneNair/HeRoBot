@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -32,9 +32,9 @@ public abstract class LivingEntityMixin extends Entity {
     @SuppressWarnings("ConstantConditions")
     @ModifyConstant(method = "travelInAir", constant = @Constant(floatValue = 0.91F))
     private float dragAir(float original) {
-        if (HeRoBotSettings.creativeFlyDrag != 0.09 && (Object) this instanceof Player self) {
+        if (HeroBotSettings.creativeFlyDrag != 0.09 && (Object) this instanceof Player self) {
             if (self.getAbilities().flying && !onGround())
-                return (float) (1.0 - HeRoBotSettings.creativeFlyDrag);
+                return (float) (1.0 - HeroBotSettings.creativeFlyDrag);
         }
         return original;
     }
@@ -43,15 +43,15 @@ public abstract class LivingEntityMixin extends Entity {
     @SuppressWarnings("ConstantConditions")
     @Inject(method = "getFrictionInfluencedSpeed(F)F", at = @At("HEAD"), cancellable = true)
     private void flyingAltSpeed(float slipperiness, CallbackInfoReturnable<Float> cir) {
-        if (HeRoBotSettings.creativeFlySpeed != 1.0D && (Object) this instanceof Player self) {
+        if (HeroBotSettings.creativeFlySpeed != 1.0D && (Object) this instanceof Player self) {
             if (self.getAbilities().flying && !onGround())
-                cir.setReturnValue(getFlyingSpeed() * (float) HeRoBotSettings.creativeFlySpeed);
+                cir.setReturnValue(getFlyingSpeed() * (float) HeroBotSettings.creativeFlySpeed);
         }
     }
 
     @Inject(method = "canUsePortal", at = @At("HEAD"), cancellable = true)
     private void canChangeDimensions(CallbackInfoReturnable<Boolean> cir) {
-        if (HeRoBotSettings.isCreativeFlying(this)) {
+        if (HeroBotSettings.isCreativeFlying(this)) {
             cir.setReturnValue(false);
         }
     }

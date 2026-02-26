@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
@@ -16,7 +16,7 @@ public class ShulkerBoxBlockEntityMixin {
             target = "Lnet/minecraft/world/entity/Entity;getPistonPushReaction()Lnet/minecraft/world/level/material/PushReaction;"
     ))
     private PushReaction getPistonBehaviourOfNoClipPlayers(Entity entity) {
-        if (HeRoBotSettings.creativeNoClip && entity instanceof Player && (((Player) entity).isCreative()) && ((Player) entity).getAbilities().flying)
+        if (HeroBotSettings.creativeNoClip && entity instanceof Player && (((Player) entity).isCreative()) && ((Player) entity).getAbilities().flying)
             return PushReaction.IGNORE;
         return entity.getPistonPushReaction();
     }

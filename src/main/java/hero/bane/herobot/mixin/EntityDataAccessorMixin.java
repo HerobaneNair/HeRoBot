@@ -1,7 +1,7 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBot;
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBot;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.commands.data.EntityDataAccessor;
 import net.minecraft.util.ProblemReporter;
@@ -26,10 +26,10 @@ public class EntityDataAccessorMixin {
 
     @Inject(method = "setData", at = @At("HEAD"), cancellable = true)
     void allowPlayerNbtSet(CompoundTag compoundTag, CallbackInfo ci) {
-        if (!HeRoBotSettings.editablePlayerNbt) return;
+        if (!HeroBotSettings.editablePlayerNbt) return;
         if (this.entity instanceof Player) {
             UUID UUID = this.entity.getUUID();
-            try (ProblemReporter.ScopedCollector scopedCollector = new ProblemReporter.ScopedCollector(this.entity.problemPath(), HeRoBot.LOGGER)) {
+            try (ProblemReporter.ScopedCollector scopedCollector = new ProblemReporter.ScopedCollector(this.entity.problemPath(), HeroBot.LOGGER)) {
                 this.entity.load(TagValueInput.create(scopedCollector, this.entity.registryAccess(), compoundTag));
                 this.entity.setUUID(UUID);
             }

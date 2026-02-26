@@ -5,6 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BlockItemMixin",
+    "BlockMixin",
+    "CachedUserNameToIdResolverMixin",
     "ConnectionAccessor",
     "CooldownInstanceInterface",
     "EntityDataAccessorMixin",
@@ -20,7 +22,8 @@
     "ServerPlayerAccessor",
     "ServerPlayerMixin",
     "ShulkerBoxBlockEntityMixin",
-    "StandingAndWallBlockItemMixin"
+    "StandingAndWallBlockItemMixin",
+    "WindChargeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,6 +1,6 @@
 package hero.bane.herobot.client.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.client.player.LocalPlayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.Constant;
@@ -14,6 +14,6 @@ public abstract class LocalPlayerMixin {
             constant = @Constant(floatValue = 3.0F)
     )
     private float changeCreativeVerticalSpeed(float original) {
-        return (float) (original * HeRoBotSettings.creativeFlySpeed);
+        return (float) (original * HeroBotSettings.creativeFlySpeed);
     }
 }

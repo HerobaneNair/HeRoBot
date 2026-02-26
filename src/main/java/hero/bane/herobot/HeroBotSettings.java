@@ -11,15 +11,15 @@ import net.minecraft.world.entity.player.Player;
 
 import java.io.File;
 
-public final class HeRoBotSettings {
+public final class HeroBotSettings {
 
-    private HeRoBotSettings() {
+    private HeroBotSettings() {
     }
 
     public static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "herobot.json");
 
     public static void init() {
-        RuleRegistry.register(HeRoBotSettings.class);
+        RuleRegistry.register(HeroBotSettings.class);
         RuleConfigIO.initClient(CONFIG_FILE);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> RuleConfigIO.clearWorld());
         ServerWorldEvents.LOAD.register((server, world) -> RuleConfigIO.initWorld(server));
@@ -66,7 +66,13 @@ public final class HeRoBotSettings {
     @Rule(desc = "Explosions won't destroy blocks")
     public static ExplosionNoDmgMode explosionNoBlockDamage = ExplosionNoDmgMode.FALSE;
 
+    @Rule(desc = "Wind Charges won't activate redstone blocks")
+    public static boolean windChargeNoTrigger = false;
+
     public static boolean isCreativeFlying(Entity entity) {
         return creativeNoClip && entity instanceof Player player && player.isCreative() && player.getAbilities().flying;
     }
+
+    @Rule(desc = "Shulker Boxes will always drop, regardless if the gamerule noTileDrops is on")
+    public static boolean shulkerBoxAlwaysDrops = false;
 }

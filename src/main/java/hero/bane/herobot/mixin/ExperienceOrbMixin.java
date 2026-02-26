@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -30,7 +30,7 @@ public abstract class ExperienceOrbMixin extends Entity {
 
     @Inject(method = "playerTouch", at = @At("HEAD"))
     private void addXP(Player player, CallbackInfo ci) {
-        if (HeRoBotSettings.xpNoCooldown && !level().isClientSide()) {
+        if (HeroBotSettings.xpNoCooldown && !level().isClientSide()) {
             player.takeXpDelay = 0;
             // reducing the count to 1 and leaving vanilla to deal with it
             while (this.count > 1) {

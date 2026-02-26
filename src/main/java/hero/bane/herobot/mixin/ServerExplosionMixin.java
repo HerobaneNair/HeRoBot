@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ServerExplosion;
 import net.minecraft.world.level.block.Blocks;
@@ -18,12 +18,12 @@ import java.util.List;
 public class ServerExplosionMixin {
     @Inject(method = "createFire", at = @At("HEAD"), cancellable = true)
     private void explodeWithoutFire(List<BlockPos> list, CallbackInfo ci) {
-        if (HeRoBotSettings.explosionNoFire) ci.cancel();
+        if (HeroBotSettings.explosionNoFire) ci.cancel();
     }
 
     @ModifyVariable(method = "explode", at = @At("STORE"), ordinal = 0)
     private List<BlockPos> filterExplodedStuff(List<BlockPos> list) {
-        var mode = HeRoBotSettings.explosionNoBlockDamage;
+        var mode = HeroBotSettings.explosionNoBlockDamage;
 
         if (!mode.enabled()) {
             return list;

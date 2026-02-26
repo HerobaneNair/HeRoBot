@@ -2,7 +2,7 @@ package hero.bane.herobot.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.fakeplayer.FakePlayer;
 import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -31,7 +31,7 @@ public abstract class EntityMixin {
 
     @Unique
     @Final
-    private Entity self = (Entity) (Object) this;
+    private final Entity self = (Entity) (Object) this;
 
     @Inject(method = "isLocalInstanceAuthoritative", at = @At("HEAD"), cancellable = true)
     private void isFakePlayer(CallbackInfoReturnable<Boolean> cir) {
@@ -41,7 +41,7 @@ public abstract class EntityMixin {
 
     @Inject(method = "removePassenger", at = @At("TAIL"))
     private void removePassengerForce(Entity passenger, CallbackInfo ci) {
-        if (!HeRoBotSettings.editablePlayerNbt) return;
+        if (!HeroBotSettings.editablePlayerNbt) return;
 
         if (!passenger.level().isClientSide() && passenger instanceof ServerPlayer sp)
             sp.connection.send(new ClientboundSetPassengersPacket(passenger));
@@ -52,7 +52,7 @@ public abstract class EntityMixin {
 
     @Inject(method = "addPassenger", at = @At("TAIL"))
     private void addPassengerForce(Entity passenger, CallbackInfo ci) {
-        if (!HeRoBotSettings.editablePlayerNbt) return;
+        if (!HeroBotSettings.editablePlayerNbt) return;
 
         if (!passenger.level().isClientSide() && passenger instanceof ServerPlayer sp)
             sp.connection.send(new ClientboundSetPassengersPacket(passenger));
@@ -72,7 +72,7 @@ public abstract class EntityMixin {
             EntityType<?> type,
             Operation<Boolean> original
     ) {
-        if (!HeRoBotSettings.editablePlayerNbt)
+        if (!HeroBotSettings.editablePlayerNbt)
             return original.call(type);
 
         if (type == EntityType.PLAYER)

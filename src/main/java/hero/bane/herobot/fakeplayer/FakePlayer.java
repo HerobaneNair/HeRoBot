@@ -1,7 +1,7 @@
 package hero.bane.herobot.fakeplayer;
 
 import com.mojang.authlib.GameProfile;
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.fakeplayer.connection.FakeClientConnection;
 import hero.bane.herobot.fakeplayer.connection.ServerPlayerInterface;
 import hero.bane.herobot.mixin.LivingEntityAccessor;
@@ -84,7 +84,7 @@ public class FakePlayer extends ServerPlayer {
 
         UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
         //NameAndId res = server.services().nameToIdCache().get(username).orElseThrow(); //findByName  .orElse(null)
-        if (uuid == null && HeRoBotSettings.allowSpawningOfflinePlayers) {
+        if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
             server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
             uuid = UUIDUtil.createOfflinePlayerUUID(username);
         }
@@ -380,7 +380,7 @@ public class FakePlayer extends ServerPlayer {
                     throw new RuntimeException(e);
                 }
 
-            } else if (cleanHit && (!HeRoBotSettings.shieldStunning || !blocked)) {
+            } else if (cleanHit && (!HeroBotSettings.shieldStunning || !blocked)) {
                 this.playHurtSound(damageSource);
                 ((LivingEntityAccessor) this).invokePlaySecondaryHurtSound(damageSource);
             }
@@ -450,7 +450,7 @@ public class FakePlayer extends ServerPlayer {
 
     @Override
     public boolean allowsListing() {
-        return HeRoBotSettings.allowListingFakePlayers;
+        return HeroBotSettings.allowListingFakePlayers;
     }
 
     @Override
@@ -486,7 +486,7 @@ public class FakePlayer extends ServerPlayer {
         if (f > 0.0F && blocksAttacks != null) {
             blocksAttacks.disable(serverLevel, this, f, itemStack);
             this.invulnerableTime = 20;
-            if (HeRoBotSettings.shieldStunning) {
+            if (HeroBotSettings.shieldStunning) {
                 executor.schedule(() -> this.invulnerableTime = 0, 1, TimeUnit.MILLISECONDS);
             }
         }

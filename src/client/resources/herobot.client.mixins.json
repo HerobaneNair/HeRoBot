@@ -6,7 +6,7 @@
   "client": [
     "LevelRendererMixin",
     "LocalPlayerMixin",
-    "Minecraft_tickMixin"
+    "MinecraftMixin"
   ],
   "injectors": {
     "defaultRequire": 1

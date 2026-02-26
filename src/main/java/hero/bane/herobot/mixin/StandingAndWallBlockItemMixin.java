@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.StandingAndWallBlockItem;
@@ -24,7 +24,7 @@ public class StandingAndWallBlockItemMixin {
             BlockPlaceContext itemContext
     ) {
         Player player = itemContext.getPlayer();
-        if (HeRoBotSettings.creativeNoClip && player != null && player.isCreative() && player.getAbilities().flying) {
+        if (HeroBotSettings.creativeNoClip && player != null && player.isCreative() && player.getAbilities().flying) {
             VoxelShape voxelShape = state.getCollisionShape(worldView, pos, context);
             return voxelShape.isEmpty() || worldView.isUnobstructed(player, voxelShape.move(pos.getX(), pos.getY(), pos.getZ()));
 

@@ -1,6 +1,6 @@
 package hero.bane.herobot.client.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.LevelRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,6 +13,6 @@ public class LevelRendererMixin
     @Redirect(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;isSpectator()Z"))
     private boolean canSeeWorld(LocalPlayer clientPlayerEntity)
     {
-        return clientPlayerEntity.isSpectator() || (HeRoBotSettings.creativeNoClip && clientPlayerEntity.isCreative());
+        return clientPlayerEntity.isSpectator() || (HeroBotSettings.creativeNoClip && clientPlayerEntity.isCreative());
     }
 }

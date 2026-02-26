@@ -1,6 +1,6 @@
 package hero.bane.herobot.mixin;
 
-import hero.bane.herobot.HeRoBotSettings;
+import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.fakeplayer.FakePlayer;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerLevel;
@@ -11,6 +11,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.BlocksAttacks;
 import net.minecraft.world.level.Level;
+import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -42,7 +43,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean canClipThroughWorld(Player player) {
-        return player.isSpectator() || (HeRoBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
     }
 
     @Redirect(method = "aiStep", at = @At(
@@ -50,7 +51,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean collidesWithEntities(Player player) {
-        return player.isSpectator() || (HeRoBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
     }
 
     @Redirect(method = "updatePlayerPose", at = @At(
@@ -58,7 +59,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean spectatorsDontPose(Player player) {
-        return player.isSpectator() || (HeRoBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
     }
 
     @Redirect(
@@ -66,8 +67,8 @@ public abstract class PlayerMixin extends LivingEntity {
             at = @At(
                     value = "FIELD",
                     target = "Lnet/minecraft/world/entity/Entity;hurtMarked:Z",
-                    ordinal = 0
-            )
+                    ordinal = 0,
+                    opcode = Opcodes.GETFIELD) //It says it needs it, not sure if it breaks things
     )
     private boolean velocityModifiedAndNotCarpetFakePlayer(Entity target)
     {
@@ -84,7 +85,7 @@ public abstract class PlayerMixin extends LivingEntity {
             canDisableShield = true;
         }
 
-        if (canDisableShield && HeRoBotSettings.shieldStunning) {
+        if (canDisableShield && HeroBotSettings.shieldStunning) {
             this.invulnerableTime = 20;
             executor.schedule(() -> this.invulnerableTime = 0, 1, TimeUnit.MILLISECONDS);
         }
@@ -93,7 +94,7 @@ public abstract class PlayerMixin extends LivingEntity {
     @Redirect(method = "aiStep", at = @At(value = "INVOKE", target = "java/util/List.add(Ljava/lang/Object;)Z"))
     public boolean processXpOrbCollisions(List<Entity> instance, Object e) {
         Entity entity = (Entity) e;
-        if (HeRoBotSettings.xpNoCooldown) {
+        if (HeroBotSettings.xpNoCooldown) {
             this.touch(entity);
             return true;
         }

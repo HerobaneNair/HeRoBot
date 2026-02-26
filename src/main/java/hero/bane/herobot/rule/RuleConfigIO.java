@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import hero.bane.herobot.HeRoBot;
+import hero.bane.herobot.HeroBot;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -108,7 +108,7 @@ public final class RuleConfigIO {
             }
             return out;
         } catch (Exception e) {
-            HeRoBot.LOGGER.error("Failed reading rules config: {}", file.getAbsolutePath(), e);
+            HeroBot.LOGGER.error("Failed reading rules config: {}", file.getAbsolutePath(), e);
             return Map.of();
         }
     }
@@ -127,7 +127,7 @@ public final class RuleConfigIO {
         try (FileWriter writer = new FileWriter(file)) {
             GSON.toJson(json, writer);
         } catch (Exception e) {
-            HeRoBot.LOGGER.error("Failed saving rules config: {}", file.getAbsolutePath(), e);
+            HeroBot.LOGGER.error("Failed saving rules config: {}", file.getAbsolutePath(), e);
         }
     }
 }
