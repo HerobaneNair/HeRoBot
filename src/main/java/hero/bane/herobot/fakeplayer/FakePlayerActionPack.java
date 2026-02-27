@@ -3,7 +3,6 @@ package hero.bane.herobot.fakeplayer;
 import hero.bane.herobot.fakeplayer.connection.ServerPlayerInterface;
 import hero.bane.herobot.mixin.LivingEntityAccessor;
 import hero.bane.herobot.util.RayTrace;
-import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -16,16 +15,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.boss.enderdragon.EnderDragonPart;
 import net.minecraft.world.entity.decoration.ItemFrame;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.KineticWeapon;
-import net.minecraft.world.item.component.PiercingWeapon;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.*;
 
@@ -248,6 +239,8 @@ public class FakePlayerActionPack {
         }
     }
 
+    //TODO: use player.entityAttackRange and player.entityInteractionRange
+
     static HitResult getTarget(ServerPlayer player) {
         double blockReach = player.gameMode.isCreative() ? 5 : 4.5;
         double entityReach = player.gameMode.isCreative() ? 5 : 3;
@@ -293,98 +286,6 @@ public class FakePlayerActionPack {
     public void setSlot(int slot) {
         player.getInventory().setSelectedSlot(slot - 1);
         player.connection.send(new ClientboundSetHeldSlotPacket(slot - 1));
-    }
-
-    private static void applyKineticDamage(ServerPlayer player,
-                                           ItemStack stack,
-                                           KineticWeapon kinetic) {
-
-        int remaining = player.getUseItemRemainingTicks();
-        int j = stack.getUseDuration(player) - remaining;
-
-        if (j < kinetic.delayTicks()) {
-            return;
-        }
-
-        j -= kinetic.delayTicks();
-
-        Vec3 look = player.getLookAngle();
-        double attackerSpeed = look.dot(KineticWeapon.getMotion(player));
-        float speedScale = 1.0F;
-
-        double baseAttack = player.getAttributeBaseValue(Attributes.ATTACK_DAMAGE);
-
-        EquipmentSlot slot =
-                player.getUsedItemHand() == InteractionHand.OFF_HAND
-                        ? EquipmentSlot.OFFHAND
-                        : EquipmentSlot.MAINHAND;
-
-        boolean hitAny = false;
-
-        var result = ProjectileUtil.getHitEntitiesAlong(
-                player,
-                player.entityAttackRange(),
-                e -> PiercingWeapon.canHitEntity(player, e),
-                ClipContext.Block.COLLIDER
-        );
-
-        if (result.right().isEmpty()) {
-            return;
-        }
-
-        for (EntityHitResult ehr : result.right().get()) {
-            Entity target = ehr.getEntity();
-
-            if (target instanceof EnderDragonPart part) {
-                target = part.parentMob;
-            }
-
-            if (player.wasRecentlyStabbed(target, kinetic.contactCooldownTicks())) {
-                continue;
-            }
-
-            player.rememberStabbedEntity(target);
-
-            double targetSpeed = look.dot(KineticWeapon.getMotion(target));
-            double relative = Math.max(0.0, attackerSpeed - targetSpeed);
-
-            boolean doDismount =
-                    kinetic.dismountConditions().isPresent() &&
-                            kinetic.dismountConditions().get()
-                                    .test(j, attackerSpeed, relative, speedScale);
-
-            boolean doKnockback =
-                    kinetic.knockbackConditions().isPresent() &&
-                            kinetic.knockbackConditions().get()
-                                    .test(j, attackerSpeed, relative, speedScale);
-
-            boolean doDamage =
-                    kinetic.damageConditions().isPresent() &&
-                            kinetic.damageConditions().get()
-                                    .test(j, attackerSpeed, relative, speedScale);
-
-            if (!doDismount && !doKnockback && !doDamage) {
-                continue;
-            }
-
-            float finalDamage =
-                    (float) baseAttack +
-                            (float) Mth.floor(relative * kinetic.damageMultiplier());
-
-            boolean applied =
-                    player.stabAttack(slot, target, finalDamage, doDamage, doKnockback, doDismount);
-
-            hitAny |= applied;
-        }
-
-        if (hitAny) {
-            player.level().broadcastEntityEvent(player, (byte) 2);
-
-            CriteriaTriggers.SPEAR_MOBS_TRIGGER.trigger(
-                    player,
-                    player.stabbedEntities(e -> e instanceof LivingEntity)
-            );
-        }
     }
 
     public enum ActionType {
@@ -446,6 +347,7 @@ public class FakePlayerActionPack {
                 }
                 return false;
             }
+
             @Override
             void inactiveTick(ServerPlayer player, Action action) {
                 FakePlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();

@@ -29,6 +29,7 @@ import net.minecraft.server.players.OldUsersConverter;
 import net.minecraft.stats.Stats;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.EntityTypeTags;
+import net.minecraft.util.Mth;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
@@ -38,26 +39,29 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragonPart;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.entity.projectile.throwableitemprojectile.ThrowableItemProjectile;
 import net.minecraft.world.food.FoodData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.BlocksAttacks;
+import net.minecraft.world.item.component.KineticWeapon;
+import net.minecraft.world.item.component.PiercingWeapon;
 import net.minecraft.world.item.component.ResolvableProfile;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.NonNull;
 
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -266,9 +270,83 @@ public class FakePlayer extends ServerPlayer {
 
 //            ((ServerPlayerInterface) this).getActionPack().onUpdate();
             this.doTick();
+
+            handleSpear(); //not sure where else to put it so here it goes [maybe onUpdate would be better]
         } catch (NullPointerException ignored) {
             // happens with that paper port thingy - not sure what that would fix, but hey
             // the game not gonna crash violently.
+        }
+    }
+
+    private void handleSpear() {
+        if (!this.isUsingItem()) return;
+
+        ItemStack stack = this.getUseItem();
+        if (stack.isEmpty()) return;
+        KineticWeapon kineticWeapon = stack.get(DataComponents.KINETIC_WEAPON);
+        if (kineticWeapon == null) return;
+
+        int used = stack.getUseDuration(this) - this.getUseItemRemainingTicks();
+
+        if (used < kineticWeapon.delayTicks()) return;
+
+        int effChargeTicks = used - kineticWeapon.delayTicks();
+
+        Vec3 look = this.getLookAngle();
+        Vec3 attackerMotion = this.getDeltaMovement().scale(20.0);
+        double attackerDot = look.dot(attackerMotion);
+        double baseDamage = this.getAttributeBaseValue(Attributes.ATTACK_DAMAGE);
+
+        Collection<EntityHitResult> hits =
+                ProjectileUtil.getHitEntitiesAlong(
+                                this,
+                                this.entityAttackRange(),
+                                e -> PiercingWeapon.canHitEntity(this, e),
+                                ClipContext.Block.COLLIDER
+                        )
+                        .right()
+                        .orElse(List.of());
+
+        boolean anyHit = false;
+
+        for (EntityHitResult hit : hits) {
+            Entity entity = hit.getEntity();
+
+            if (entity instanceof EnderDragonPart part)
+                entity = part.parentMob;
+
+            //This is commented out cause it runs better without it? Not sure why tho
+//            if (this.wasRecentlyStabbed(entity, kinetic.contactCooldownTicks())) continue;
+//            this.rememberStabbedEntity(entity);
+
+            Vec3 targetMotion = entity instanceof FakePlayer ? this.getDeltaMovement().scale(20.0) : entity.getKnownSpeed().scale(20.0);
+            double targetDot = look.dot(targetMotion);
+            double relative = Math.max(0.0, attackerDot - targetDot);
+
+            boolean damageOk = kineticWeapon.damageConditions()
+                    .map(c -> c.test(effChargeTicks, attackerDot, relative, 1.0))
+                    .orElse(false);
+
+            if (!damageOk) continue;
+
+            float finalDamage =
+                    (float) baseDamage +
+                            (float) Mth.floor(relative * kineticWeapon.damageMultiplier());
+
+            boolean result = this.stabAttack(
+                    EquipmentSlot.MAINHAND,
+                    entity,
+                    finalDamage,
+                    true,
+                    false,
+                    false
+            );
+
+            anyHit |= result; //For anyone reading this, it's the same as anyHit = anyHit || result for our case
+        }
+
+        if (anyHit) {
+            this.level().broadcastEntityEvent(this, (byte) 2);
         }
     }
 
