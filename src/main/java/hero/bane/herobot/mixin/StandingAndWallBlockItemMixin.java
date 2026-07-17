@@ -24,7 +24,7 @@ public class StandingAndWallBlockItemMixin {
             BlockPlaceContext itemContext
     ) {
         Player player = itemContext.getPlayer();
-        if (HeroBotSettings.creativeNoClip && player != null && player.isCreative() && player.getAbilities().flying) {
+        if (player != null && HeroBotSettings.isCreativeNoClipFlying(player)) {
             VoxelShape voxelShape = state.getCollisionShape(worldView, pos, context);
             return voxelShape.isEmpty() || worldView.isUnobstructed(player, voxelShape.move(pos.getX(), pos.getY(), pos.getZ()));
 

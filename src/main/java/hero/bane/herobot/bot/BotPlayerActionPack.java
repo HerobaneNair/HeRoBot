@@ -2,6 +2,7 @@ package hero.bane.herobot.bot;
 
 import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.bot.connection.ServerPlayerInterface;
+import hero.bane.herobot.control.PlayerController;
 import hero.bane.herobot.util.RayTrace;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
@@ -29,7 +30,7 @@ import java.util.*;
 import java.util.stream.StreamSupport;
 
 @SuppressWarnings("UnusedReturnValue")
-public class BotPlayerActionPack {
+public class BotPlayerActionPack implements PlayerController {
     public final ServerPlayer player;
 
     private final Map<ActionType, Action> actions = new EnumMap<>(ActionType.class);
@@ -144,12 +145,29 @@ public class BotPlayerActionPack {
         return this;
     }
 
+    public BotPlayerActionPack setAutoJump(boolean value) {
+        autoJump = value;
+        return this;
+    }
+
     public float getForward() {
         return forward;
     }
 
     public float getStrafing() {
         return strafing;
+    }
+
+    public boolean isActive(ActionType type) {
+        return actions.containsKey(type);
+    }
+
+    public boolean isSneaking() {
+        return sneaking;
+    }
+
+    public boolean isSprinting() {
+        return sprinting;
     }
 
     public BotPlayerActionPack look(Direction direction) {
@@ -358,7 +376,7 @@ public class BotPlayerActionPack {
         }
 
         if (player.getAbilities().flying && player instanceof BotPlayer) {
-            double verticalSpeed = 0.05 * 3.0; // Not putting HeroBotSettings.creativeFlySpeed here cause frick you
+            double verticalSpeed = 0.05 * 3.0;
             Vec3 dm = player.getDeltaMovement();
             if (jumping && !sneaking) {
                 player.setDeltaMovement(dm.add(0, verticalSpeed, 0));
@@ -371,7 +389,6 @@ public class BotPlayerActionPack {
         }
     }
 
-    // Most of the autojump is just straight from net.minecraft.client.player.LocalPlayer
     public void updateAutoJump(float f, float g) {
         if (!canAutoJump()) return;
 
@@ -558,7 +575,6 @@ public class BotPlayerActionPack {
                 boolean isSpear = stack.has(DataComponents.KINETIC_WEAPON);
 
                 if (isSpear) {
-                    //After testing, spears always stab even if looking at block, so I'm returning early
                     if (player.getAttackStrengthScale(0.5F) < 1.0F) return false;
 
                     if (player instanceof BotPlayer bot && HeroBotSettings.botLagAttacks) {
@@ -599,10 +615,14 @@ public class BotPlayerActionPack {
                                     player.setOnGround(wasOnGround);
 
                                     if (!continuous) {
-                                        player.attack(target);
-                                        player.swing(InteractionHand.MAIN_HAND);
+                                        for (int i = 0; i < action.hits; i++) {
+                                            player.attack(target);
+                                            player.swing(InteractionHand.MAIN_HAND);
+                                            player.resetAttackStrengthTicker();
+                                        }
+                                    } else {
+                                        player.resetAttackStrengthTicker();
                                     }
-                                    player.resetAttackStrengthTicker();
                                     player.resetLastActionTime();
 
                                     player.setSprinting(currentSprinting);
@@ -614,10 +634,14 @@ public class BotPlayerActionPack {
                         }
 
                         if (!continuous) {
-                            player.attack(target);
-                            player.swing(InteractionHand.MAIN_HAND);
+                            for (int i = 0; i < action.hits; i++) {
+                                player.attack(target);
+                                player.swing(InteractionHand.MAIN_HAND);
+                                player.resetAttackStrengthTicker();
+                            }
+                        } else {
+                            player.resetAttackStrengthTicker();
                         }
-                        player.resetAttackStrengthTicker();
                         player.resetLastActionTime();
                         return true;
                     }
@@ -702,17 +726,20 @@ public class BotPlayerActionPack {
                             player.setJumping(true);
                         }
                     } else {
-                        // Double space bar for flying
-                        if (player.getAbilities().mayfly && (currentTick - ap.lastJumpOnceTick) <= 7) {
-                            player.getAbilities().flying = !player.getAbilities().flying;
-                            player.onUpdateAbilities();
-                            ap.lastJumpOnceTick = -100; // reset so triple tap doesn't re-toggle
-                            return false;
+                        boolean pathing = player instanceof BotPlayer bot
+                                && bot.getPathFollower() != null
+                                && !bot.getPathFollower().isDone();
+                        if (!pathing) {
+                            if (player.getAbilities().mayfly && (currentTick - ap.lastJumpOnceTick) <= 7) {
+                                player.getAbilities().flying = !player.getAbilities().flying;
+                                player.onUpdateAbilities();
+                                ap.lastJumpOnceTick = -100;
+                                return false;
+                            }
+                            ap.lastJumpOnceTick = currentTick;
                         }
-                        ap.lastJumpOnceTick = currentTick;
 
                         if (player.getAbilities().flying) {
-                            // Move up for a tick while flying (idk what else to put here)
                             ap.jumping = true;
                         } else if (player.onGround()) {
                             player.jumpFromGround();
@@ -721,7 +748,6 @@ public class BotPlayerActionPack {
                         }
                     }
                 } else {
-                    // Continuous jump
                     if (player.isPassenger()) {
                         if (player.getVehicle() instanceof PlayerRideableJumping jumpVehicle) {
                             ap.jumpChargeAmount = Math.min(ap.jumpChargeAmount + 1, 100);
@@ -734,6 +760,9 @@ public class BotPlayerActionPack {
                     } else if (player.getAbilities().flying) {
                         ap.jumping = true;
                     } else {
+                        if (!player.onGround() && !player.onClimbable()) {
+                            player.tryToStartFallFlying();
+                        }
                         player.setJumping(true);
                     }
                 }
@@ -823,7 +852,6 @@ public class BotPlayerActionPack {
                             ap.itemUseCooldown = 3;
                             return true;
                         }
-                        // fix for SS itemframe always returns CONSUME even if no action is performed
                         if (player.interactOn(entity, hand).consumesAction() && !(handWasEmpty && itemFrameEmpty)) {
                             ap.itemUseCooldown = 3;
                             return true;
@@ -862,43 +890,57 @@ public class BotPlayerActionPack {
         public final int interval;
         public final int offset;
         public final InteractionHand hand;
+        public final int hits;
         private int count;
         private int next;
         private final boolean isContinuous;
-        private int ticksRemaining; // -1 = unlimited
+        private int ticksRemaining;
 
-        private Action(int limit, int interval, int offset, boolean continuous, InteractionHand hand, int ticksRemaining) {
+        private Action(int limit, int interval, int offset, boolean continuous, InteractionHand hand, int ticksRemaining, int hits) {
             this.limit = limit;
             this.interval = interval;
             this.offset = offset;
             this.hand = hand;
+            this.hits = hits;
             next = interval + offset;
             isContinuous = continuous;
             this.ticksRemaining = ticksRemaining;
         }
 
         public static Action once() {
-            return new Action(1, 1, 0, false, null, -1);
+            return new Action(1, 1, 0, false, null, -1, 1);
+        }
+
+        public static Action once(int hits) {
+            return new Action(1, 1, 0, false, null, -1, Math.max(1, hits));
         }
 
         public static Action continuous() {
-            return new Action(-1, 1, 0, true, null, -1);
+            return new Action(-1, 1, 0, true, null, -1, 1);
         }
 
         public static Action continuous(int ticks) {
-            return new Action(-1, 1, 0, true, null, ticks);
+            return new Action(-1, 1, 0, true, null, ticks, 1);
         }
 
         public static Action interval(int interval) {
-            return new Action(-1, interval, 0, false, null, -1);
+            return new Action(-1, interval, 0, false, null, -1, 1);
         }
 
         public static Action interval(int interval, int ticks) {
-            return new Action(-1, interval, 0, false, null, ticks);
+            return new Action(-1, interval, 0, false, null, ticks, 1);
         }
 
         public boolean resetMineCheck() {
             return !isContinuous || ticksRemaining > 0;
+        }
+
+        public boolean isContinuous() {
+            return isContinuous;
+        }
+
+        public int ticksRemaining() {
+            return ticksRemaining;
         }
 
         Boolean tick(BotPlayerActionPack actionPack, ActionType type) {
@@ -938,7 +980,6 @@ public class BotPlayerActionPack {
             return cancel;
         }
 
-        // Might want to expand to other types, for now we can have it set only to USE
         @SuppressWarnings("SameParameterValue")
         void retry(BotPlayerActionPack actionPack, ActionType type) {
             if (!type.preventSpectator || !actionPack.player.isSpectator()) {

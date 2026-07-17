@@ -1,5 +1,6 @@
 package hero.bane.herobot.bot;
 
+import hero.bane.herobot.bot.pathing.traversal.BotPathing;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -75,7 +76,6 @@ import java.util.concurrent.ThreadLocalRandom;
 
 @SuppressWarnings("EntityConstructor")
 public class BotPlayer extends ServerPlayer {
-
     private static final Set<String> spawning = ConcurrentHashMap.newKeySet();
 
     public int ping = 0;
@@ -103,6 +103,26 @@ public class BotPlayer extends ServerPlayer {
 
     private BotPathing pathFollower;
     private final PathSettings pathSettings = new PathSettings();
+
+    private String assignedScriptName;
+
+    private int selectedTradeIndex = -1;
+
+    public int getSelectedTradeIndex() {
+        return selectedTradeIndex;
+    }
+
+    public void setSelectedTradeIndex(int index) {
+        this.selectedTradeIndex = index;
+    }
+
+    public String getAssignedScriptName() {
+        return assignedScriptName;
+    }
+
+    public void setAssignedScriptName(String name) {
+        this.assignedScriptName = name;
+    }
 
     public PathSettings getPathSettings() {
         return pathSettings;
@@ -143,6 +163,7 @@ public class BotPlayer extends ServerPlayer {
             this.closeContainer();
         }
         this.inventoryScreenOpen = false;
+        this.selectedTradeIndex = -1;
     }
 
     public net.minecraft.world.inventory.AbstractContainerMenu getActiveMenu() {
@@ -151,35 +172,25 @@ public class BotPlayer extends ServerPlayer {
         return null;
     }
 
-    // Returns 1 if it was successful, 0 if it couldn't spawn
     public static int createFake(String username, MinecraftServer server, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying) {
-        //prolly half of that crap is not necessary, but it works
         ServerLevel worldIn = server.getLevel(dimensionId);
         server.services().nameToIdCache().resolveOfflineUsers(false);
         GameProfile gameprofile;
 
         UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
-        //NameAndId res = server.services().nameToIdCache().get(username).orElseThrow(); //findByName  .orElse(null)
         if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
             server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
             uuid = UUIDUtil.createOfflinePlayerUUID(username);
         }
         if (uuid == null) {
-            return 0; // no uuid, no player
+            return 0;
         }
         gameprofile = new GameProfile(uuid, username);
 
-
-        //GameProfile finalGP = gameprofile;
-
-        // We need to mark this player as spawning so that we do not
-        // try to spawn another player with the name while the profile
-        // is being fetched - preventing multiple players spawning
         String name = gameprofile.name();
         spawning.add(name);
 
         fetchGameProfile(server, gameprofile.id()).whenCompleteAsync((p, t) -> {
-            // Always remove the name, even if exception occurs
             spawning.remove(name);
             if (t != null) {
                 return;
@@ -196,7 +207,7 @@ public class BotPlayer extends ServerPlayer {
             instance.fixStartingPosition = () -> instance.snapTo(pos.x, pos.y, pos.z, (float) yaw, (float) pitch);
             server.getPlayerList().placeNewPlayer(new BotClientConnection(PacketFlow.SERVERBOUND), instance, new CommonListenerCookie(current, 0, instance.clientInformation(), false));
             loadPlayerData(instance);
-            instance.stopRiding(); // otherwise the created bot player will be on the vehicle
+            instance.stopRiding();
             assert worldIn != null;
             instance.teleportTo(worldIn, pos.x, pos.y, pos.z, Set.of(), (float) yaw, (float) pitch, true);
             instance.setHealth(20.0F);
@@ -218,9 +229,13 @@ public class BotPlayer extends ServerPlayer {
             );
             instance.ping = 0;
             instance.spawnYaw = yaw;
-            server.getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(instance, (byte) (instance.yHeadRot * 256 / 360)), dimensionId);//instance.dimension);
-            server.getPlayerList().broadcastAll(ClientboundEntityPositionSyncPacket.of(instance), dimensionId);//instance.dimension);
-            instance.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) 0x7f); // show all model layers (incl. capes)
+            instance.setYRot((float) yaw);
+            instance.setXRot((float) pitch);
+            instance.setYHeadRot((float) yaw);
+            instance.yRotO = (float) yaw;
+            server.getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(instance, (byte) (instance.yHeadRot * 256 / 360)), dimensionId);
+            server.getPlayerList().broadcastAll(ClientboundEntityPositionSyncPacket.of(instance), dimensionId);
+            instance.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) 0x7f);
             instance.getAbilities().flying = flying;
         }, server);
         return 1;
@@ -245,33 +260,6 @@ public class BotPlayer extends ServerPlayer {
                     player.loadAndSpawnParentVehicle(valueInput);
                 });
     }
-
-    /*
-    public static BotPlayer createShadow(MinecraftServer server, ServerPlayer player) {
-        player.connection.disconnect(Component.translatable("multiplayer.disconnect.duplicate_login"));
-        ServerLevel worldIn = player.level();//.getWorld(player.dimension);
-        GameProfile gameprofile = player.getGameProfile();
-        BotPlayer playerShadow = new BotPlayer(server, worldIn, gameprofile, player.clientInformation(), true);
-        playerShadow.setChatSession(player.getChatSession());
-        server.getPlayerList().placeNewPlayer(new BotClientConnection(PacketFlow.SERVERBOUND), playerShadow, new CommonListenerCookie(gameprofile, 0, player.clientInformation(), true));
-        loadPlayerData(playerShadow);
-
-        playerShadow.setHealth(player.getHealth());
-        playerShadow.connection.teleport(player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot());
-        playerShadow.gameMode.changeGameModeForPlayer(player.gameMode.getGameModeForPlayer());
-        ((ServerPlayerInterface) playerShadow).getActionPack().copyFrom(((ServerPlayerInterface) player).getActionPack());
-        // this might create problems if a player logs back in...
-        playerShadow.getAttribute(Attributes.STEP_HEIGHT).setBaseValue(0.6F);
-        playerShadow.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, player.getEntityData().get(DATA_PLAYER_MODE_CUSTOMISATION));
-
-
-        server.getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(playerShadow, (byte) (player.yHeadRot * 256 / 360)), playerShadow.level().dimension());
-        server.getPlayerList().broadcastAll(new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER, playerShadow));
-        //player.world.getChunkManager().updatePosition(playerShadow);
-        playerShadow.getAbilities().flying = player.getAbilities().flying;
-        return playerShadow;
-    }
-    */
 
     public void copycat(ServerPlayer otherPlayer) {
         if (!(otherPlayer instanceof ServerPlayerInterface src)) {
@@ -323,69 +311,15 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public CompletableFuture<Boolean> forceLoadSkin() {
-        return forceLoadSkin(this.getUUID());
+        return SkinForcer.forceLoadSkin(this, this.getUUID());
     }
 
     public CompletableFuture<Boolean> forceLoadSkin(String name) {
-        MinecraftServer server = this.level().getServer();
-        return CompletableFuture.supplyAsync(() -> {
-            server.services().nameToIdCache().resolveOfflineUsers(false);
-            UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, name);
-            if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
-                server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
-                uuid = UUIDUtil.createOfflinePlayerUUID(name);
-            }
-            return uuid;
-        }).thenCompose(uuid -> {
-            if (uuid == null) return CompletableFuture.completedFuture(false);
-            return forceLoadSkin(uuid);
-        });
+        return SkinForcer.forceLoadSkin(this, name);
     }
 
     public CompletableFuture<Boolean> forceLoadSkin(UUID skinUUID) {
-        MinecraftServer server = this.level().getServer();
-        String uuidStr = skinUUID.toString().replace("-", "");
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                HttpURLConnection connection = (HttpURLConnection) URI.create(
-                        "https://sessionserver.mojang.com/session/minecraft/profile/" + uuidStr + "?unsigned=false"
-                ).toURL().openConnection();
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
-                if (connection.getResponseCode() != 200) return null;
-                try (InputStreamReader reader = new InputStreamReader(connection.getInputStream())) {
-                    return JsonParser.parseReader(reader).getAsJsonObject();
-                }
-            } catch (Exception e) {
-                return null;
-            }
-        }).thenApplyAsync(json -> {
-            if (json == null) return false;
-
-            ImmutableMultimap.Builder<String, Property> builder = ImmutableMultimap.builder();
-            JsonArray properties = json.getAsJsonArray("properties");
-            if (properties != null) {
-                for (var element : properties) {
-                    JsonObject prop = element.getAsJsonObject();
-                    String propName = prop.get("name").getAsString();
-                    String value = prop.get("value").getAsString();
-                    String signature = prop.has("signature") ? prop.get("signature").getAsString() : null;
-                    builder.put(propName, new Property(propName, value, signature));
-                }
-            }
-            String botName = this.getGameProfile().name();
-            GameProfile newProfile = new GameProfile(this.getUUID(), botName, new PropertyMap(builder.build()));
-            ((PlayerAccessor) this).setGameProfile(newProfile);
-
-            var playerList = server.getPlayerList();
-            playerList.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(this.getUUID())));
-            playerList.broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(this)));
-
-            ServerLevel level = this.level();
-            level.getChunkSource().removeEntity(this);
-            level.getChunkSource().addEntity(this);
-            return true;
-        }, server);
+        return SkinForcer.forceLoadSkin(this, skinUUID);
     }
 
     public void setMainHand(HumanoidArm arm) {
@@ -401,7 +335,7 @@ public class BotPlayer extends ServerPlayer {
         float yawRad = getYRot() * (float) (Math.PI / 180.0);
         double sin = Math.sin(yawRad);
         double cos = Math.cos(yawRad);
-        return new Vec3(strafing * cos - forward * sin, 0, forward * cos + strafing * sin); // I think??? No one's gonna test this anyway who cares
+        return new Vec3(strafing * cos - forward * sin, 0, forward * cos + strafing * sin);
     }
 
     @Override
@@ -441,7 +375,6 @@ public class BotPlayer extends ServerPlayer {
         this.hurtServer(this.level(), this.level().damageSources().fellOutOfWorld(), Float.MAX_VALUE);
     }
 
-
     @Override
     public void tick() {
         if (this.level().getServer().getTickCount() % 10 == 0) {
@@ -449,7 +382,6 @@ public class BotPlayer extends ServerPlayer {
             this.level().getChunkSource().move(this);
         }
         try {
-            // Movement pretick stuff
             double startX = this.getX();
             double startY = this.getY();
             double startZ = this.getZ();
@@ -463,7 +395,6 @@ public class BotPlayer extends ServerPlayer {
                 this.moveTowardsClosestSpace(this.getX() + this.getBbWidth() * 0.35, this.getZ() + this.getBbWidth() * 0.35);
             }
 
-            // The action-pack tick is called in the mixin [for some reason]
             this.doTick();
 
             processPendingKBs();
@@ -475,19 +406,15 @@ public class BotPlayer extends ServerPlayer {
                 }
             }
 
-            // Fixes getKnownMovement and in turn spear right clicks
             Vec3 movement = new Vec3(this.getX() - startX, this.getY() - startY, this.getZ() - startZ);
             this.setKnownMovement(movement);
             if (movement.lengthSqr() > 0.00001F) {
                 this.resetLastActionTime();
             }
         } catch (NullPointerException ignored) {
-            // happens with that paper port thingy - not sure what that would fix, but hey
-            // the game not gonna crash violently.
         }
     }
 
-    // Should fix movement when in a block - might be ways to optimize this but shouldn't matter too much
     private void moveTowardsClosestSpace(double x, double z) {
         BlockPos pos = BlockPos.containing(x, this.getY(), z);
         if (this.suffocatesAt(pos)) {
@@ -566,7 +493,6 @@ public class BotPlayer extends ServerPlayer {
             long executeAt = this.level().getServer().getTickCount() + delayTicks;
             pendingKnockbacks.add(new DelayedKnockback(executeAt, strength, x, z, horizontalScale));
         }
-        // Recalculate path after knockback
         if (pathFollower != null && !pathFollower.isDone()) {
             pathFollower.recalcPath();
         }
@@ -596,7 +522,6 @@ public class BotPlayer extends ServerPlayer {
             return ping / pingToTicks;
         }
         int random = ThreadLocalRandom.current().nextInt(pingToTicks);
-        // I think this should be similar to how regular mc works with ping
         return random < remainder ? (ping / pingToTicks) + 1 : ping / pingToTicks;
     }
 
@@ -608,7 +533,9 @@ public class BotPlayer extends ServerPlayer {
         ) {
             return false;
         }
-        if (damageSource.getDirectEntity() instanceof ThrowableItemProjectile) {
+        if (damageSource.getDirectEntity() instanceof ThrowableItemProjectile
+                && !damageSource.is(DamageTypes.MAGIC)
+                && !damageSource.is(DamageTypes.INDIRECT_MAGIC)) {
             return false;
         }
         if (this.isInvulnerableTo(serverLevel, damageSource)) {
@@ -634,7 +561,6 @@ public class BotPlayer extends ServerPlayer {
             finalDamage -= blockedDamage;
             boolean blocked = blockedDamage > 0.0F;
 
-            // Shield stunning final implementation :suffering:
             if (blocked && HeroBotSettings.shieldStunning) {
                 CriteriaTriggers.ENTITY_HURT_PLAYER.trigger(this, damageSource, originalDamage, finalDamage, true);
                 if (blockedDamage < Float.MAX_VALUE) {
@@ -662,7 +588,6 @@ public class BotPlayer extends ServerPlayer {
             }
 
             if (Float.isNaN(finalDamage) || Float.isInfinite(finalDamage)) {
-                // Hopefully doesn't cause instakill bugs
                 finalDamage = Float.MAX_VALUE;
             }
 
@@ -761,15 +686,17 @@ public class BotPlayer extends ServerPlayer {
                 CriteriaTriggers.PLAYER_HURT_ENTITY.trigger(serverPlayer, this, damageSource, originalDamage, finalDamage, blocked);
             }
 
-            // Recalculate path after taking damage (waits until on ground)
             if (pathFollower != null) {
                 pathFollower.requestRecalc();
+            }
+
+            if (!blocked) {
+                hero.bane.herobot.ai.AiScriptRegistry.markDamaged(this);
             }
 
             return !blocked;
         }
     }
-
 
     private void shakeOff() {
         if (getVehicle() instanceof Player) stopRiding();
@@ -806,7 +733,6 @@ public class BotPlayer extends ServerPlayer {
             }
         });
     }
-
 
     @Override
     public @NonNull String getIpAddress() {

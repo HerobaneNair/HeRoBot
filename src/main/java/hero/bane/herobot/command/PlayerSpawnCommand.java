@@ -2,10 +2,17 @@ package hero.bane.herobot.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.ArgumentBuilder;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.context.ParsedCommandNode;
+import com.mojang.brigadier.context.StringRange;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import hero.bane.herobot.bot.BotPlayer;
+import hero.bane.herobot.config.BotNameSuggestions;
 import net.minecraft.SharedConstants;
+import net.minecraft.network.chat.Component;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.DimensionArgument;
@@ -35,60 +42,75 @@ import static net.minecraft.commands.SharedSuggestionProvider.suggest;
 
 public class PlayerSpawnCommand {
 
+    private static final DynamicCommandExceptionType ERROR_INVALID_CARDINAL =
+            new DynamicCommandExceptionType(dir -> Component.literal("Unknown direction '" + dir + "'"));
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext ctx) {
         dispatcher.register(
                 literal("playerspawn")
                         .requires(s -> !s.isPlayer() || s.getServer().getPlayerList().isOp(Objects.requireNonNull(s.getPlayer()).nameAndId()))
-                        .then(argument("player", StringArgumentType.word())
-                                .suggests((c, b) -> suggest(getNameSuggestions(c.getSource()), b))
-                                .executes(PlayerSpawnCommand::spawn)
-                                .then(literal("at")
-                                        .then(argument("position", Vec3Argument.vec3())
-                                                .executes(PlayerSpawnCommand::spawn)
-                                                .then(literal("facing")
-                                                        .then(argument("direction", RotationArgument.rotation())
-                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                .then(literal("in")
-                                                                        .then(argument("gamemode", GameModeArgument.gameMode())
-                                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                                .then(literal("on")
-                                                                                        .then(argument("dimension",
-                                                                                                DimensionArgument.dimension())
-                                                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                                        )))))
-                                                        .then(argument("cardinal", StringArgumentType.word())
-                                                                .suggests((c, b) -> suggest(
-                                                                        new String[]{"north", "south", "east", "west", "up", "down", "~ ~"}, b))
-                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                .then(literal("in")
-                                                                        .then(argument("gamemode", GameModeArgument.gameMode())
-                                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                                .then(literal("on")
-                                                                                        .then(argument("dimension",
-                                                                                                DimensionArgument.dimension())
-                                                                                                .executes(PlayerSpawnCommand::spawn)
-                                                                                        )))))
-                                                )
-                                        )
-                                )
-                        )
+                        .then(appendSpawnOptions(
+                                argument("player", StringArgumentType.word())
+                                        .suggests((c, b) -> suggest(getNameSuggestions(c.getSource()), b))))
         );
     }
 
-    private static Set<String> getNameSuggestions(CommandSourceStack source) {
+    public static LiteralArgumentBuilder<CommandSourceStack> spawnSubtree() {
+        return appendSpawnOptions(literal("spawn"));
+    }
+
+    private static <T extends ArgumentBuilder<CommandSourceStack, T>> T appendSpawnOptions(T builder) {
+        return builder
+                .executes(PlayerSpawnCommand::spawn)
+                .then(literal("at")
+                        .then(argument("position", Vec3Argument.vec3())
+                                .executes(PlayerSpawnCommand::spawn)
+                                .then(literal("facing")
+                                        .then(argument("direction", RotationArgument.rotation())
+                                                .executes(PlayerSpawnCommand::spawn)
+                                                .then(inSubtree()))
+                                        .then(argument("cardinal", StringArgumentType.word())
+                                                .suggests((c, b) -> suggest(
+                                                        new String[]{"north", "south", "east", "west", "up", "down", "~ ~"}, b))
+                                                .executes(PlayerSpawnCommand::spawn)
+                                                .then(inSubtree())))));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> inSubtree() {
+        return literal("in")
+                .then(argument("gamemode", GameModeArgument.gameMode())
+                        .executes(PlayerSpawnCommand::spawn)
+                        .then(literal("on")
+                                .then(argument("dimension", DimensionArgument.dimension())
+                                        .executes(PlayerSpawnCommand::spawn))));
+    }
+
+    private static String resolveName(CommandContext<CommandSourceStack> context) {
+        for (ParsedCommandNode<CommandSourceStack> node : context.getNodes()) {
+            if (node.getNode().getName().equals("player")) {
+                return StringArgumentType.getString(context, "player");
+            }
+            if (node.getNode().getName().equals("targets")) {
+                StringRange range = node.getRange();
+                return context.getInput().substring(range.getStart(), range.getEnd());
+            }
+        }
+        return StringArgumentType.getString(context, "player");
+    }
+
+    public static Set<String> getNameSuggestions(CommandSourceStack source) {
         Set<String> names = new LinkedHashSet<>();
-        names.add("HerobaneNair");
-        names.add("Broeo");
+        names.add("HerobaneNair"); // I'm an egomaniac and it's my mod. Frick you
+        names.add("herosbot");
         names.add("Steve");
         names.add("Alex");
-        names.add("TheobaldTheBot");
-        names.add("quantumbot");
+        names.addAll(BotNameSuggestions.all()); // Making it now configurable on who you want to add as a tab complete
         names.removeAll(source.getOnlinePlayerNames()); // It should have been this from the beginning, so you don't respawn a player that's already on :)
         return names;
     }
 
     private static int spawn(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        String name = StringArgumentType.getString(context, "player");
+        String name = resolveName(context);
         CommandSourceStack source = context.getSource();
         MinecraftServer server = source.getServer();
         PlayerList playerList = server.getPlayerList();
@@ -161,15 +183,15 @@ public class PlayerSpawnCommand {
         return server.getPort() >= 0 ? SharedConstants.MAX_PLAYER_NAME_LENGTH : 40;
     }
 
-    private static Vec2 cardinalRotation(String dir) {
+    private static Vec2 cardinalRotation(String dir) throws CommandSyntaxException {
         return switch (dir) {
             case "south" -> new Vec2(0.0F, 0.0F);
-            case "west" -> new Vec2(90.0F, 0.0F);
-            case "north" -> new Vec2(180.0F, 0.0F);
-            case "east" -> new Vec2(-90.0F, 0.0F);
-            case "up" -> new Vec2(0.0F, -90.0F);
-            case "down" -> new Vec2(0.0F, 90.0F);
-            default -> throw new IllegalStateException();
+            case "west" -> new Vec2(0.0F, 90.0F);
+            case "north" -> new Vec2(0.0F, 180.0F);
+            case "east" -> new Vec2(0.0F, -90.0F);
+            case "up" -> new Vec2(-90.0F, 0.0F);
+            case "down" -> new Vec2(90.0F, 0.0F);
+            default -> throw ERROR_INVALID_CARDINAL.create(dir);
         };
     }
 }

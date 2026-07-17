@@ -1,0 +1,38 @@
+package hero.bane.herobot.bot.pathing.placement.astar.api.wrapper;
+
+public final class Depth {
+  private final int value;
+
+  private Depth(int value) {
+    this.value = value;
+  }
+
+  public static Depth of(int value) {
+    return new Depth(value);
+  }
+
+  @Deprecated
+  public int getValue() {
+    return this.value;
+  }
+
+  public int value() {
+    return this.value;
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    if (o == this) return true;
+    if (!(o instanceof Depth)) return false;
+    final Depth other = (Depth) o;
+    return this.value == other.value;
+  }
+
+  @Override
+  public int hashCode() {
+    final int PRIME = 59;
+    int result = 1;
+    result = result * PRIME + this.value;
+    return result;
+  }
+}

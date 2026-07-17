@@ -5,10 +5,12 @@
   "name": "HeroBot",
   "description": "Carpet PVP style bots without extra fluff",
   "authors": [
-    "gnembon, HerobaneNair"
+    "HerobaneNair",
+    "gnembon-[carpet]",
+    "bsommerfeld-[pathetic]"
   ],
   "contact": {},
-  "license": "All Rights Reserved",
+  "license": "CC-BY-NC-SA-4.0",
   "icon": "assets/herobot/icon.png",
   "environment": "*",
   "entrypoints": {

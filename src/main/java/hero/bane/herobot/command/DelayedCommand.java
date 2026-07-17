@@ -25,6 +25,7 @@ public class DelayedCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext ctx) {
         dispatcher.register(
                 Commands.literal("delayed")
+                        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .then(Commands.literal("tickDelay")
                                 .then(Commands.argument("ticks", IntegerArgumentType.integer(1))
                                         .then(Commands.literal("command")

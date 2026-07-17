@@ -10,7 +10,7 @@ The bots have a much higher parity with a vanilla client compared to carpet, wit
 <details>
 <summary>Settings</summary>
 
-Views and modifies HeRoBot settings via the `/herobot` command. Running `/herobot` with no arguments displays the mod version.
+Views and modifies HeroBot settings via the `/herobot` command. Running `/herobot` with no arguments displays the mod version.
 
 **Usage**
 - `/herobot <setting>` - Displays the current value and description

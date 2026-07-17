@@ -17,7 +17,6 @@ import java.util.List;
 
 @Mixin(Player.class)
 public abstract class PlayerMixin extends LivingEntity {
-
     @Shadow
     protected abstract void touch(Entity entity);
 
@@ -30,7 +29,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean canClipThroughWorld(Player player) {
-        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
     }
 
     @Redirect(method = "aiStep", at = @At(
@@ -38,7 +37,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean collidesWithEntities(Player player) {
-        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
     }
 
     @Redirect(method = "updatePlayerPose", at = @At(
@@ -46,7 +45,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean spectatorsDontPose(Player player) {
-        return player.isSpectator() || (HeroBotSettings.creativeNoClip && player.isCreative() && player.getAbilities().flying);
+        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
     }
 
     @Redirect(
@@ -55,7 +54,7 @@ public abstract class PlayerMixin extends LivingEntity {
                     value = "FIELD",
                     target = "Lnet/minecraft/world/entity/Entity;hurtMarked:Z",
                     ordinal = 0,
-                    opcode = Opcodes.GETFIELD) // It says it needs it, not sure if it breaks things
+                    opcode = Opcodes.GETFIELD)
     )
     private boolean velocityModifiedAndNotBotPlayer(Entity target) {
         return target.hurtMarked && !(target instanceof BotPlayer);

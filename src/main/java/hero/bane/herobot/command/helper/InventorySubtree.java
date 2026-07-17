@@ -404,38 +404,7 @@ public final class InventorySubtree {
                 return 0;
             }
 
-            boolean limitedCrafting = bot.level().getGameRules().get(GameRules.LIMITED_CRAFTING);
-
-            var recipeManager = bot.level().getServer().getRecipeManager();
-            RecipeHolder<?> found = null;
-            for (var holder : recipeManager.getRecipes()) {
-                if (!(holder.value() instanceof CraftingRecipe)) continue;
-
-                var displays = holder.value().display();
-                boolean matches = false;
-                for (var display : displays) {
-                    if (display.result() instanceof SlotDisplay.ItemSlotDisplay(
-                            Holder<Item> item1
-                    )) {
-                        if (item1.value() == targetItem) {
-                            matches = true;
-                            break;
-                        }
-                    } else if (display.result() instanceof SlotDisplay.ItemStackSlotDisplay(ItemStack stack)) {
-                        if (stack.getItem() == targetItem) {
-                            matches = true;
-                            break;
-                        }
-                    }
-                }
-                if (!matches) continue;
-
-                if (limitedCrafting && !bot.getRecipeBook().contains(holder.id())) {
-                    continue;
-                }
-                found = holder;
-                break;
-            }
+            RecipeHolder<?> found = findCraftingRecipe(bot, targetItem);
 
             if (found == null) {
                 c.getSource().sendFailure(Component.literal("No matching crafting recipe found for " + itemName));
@@ -453,14 +422,52 @@ public final class InventorySubtree {
         return 1;
     }
 
-    private static void executeDrag(AbstractContainerMenu menu, BotPlayer bot, int[] slots) {
-        menu.clicked(-999, AbstractContainerMenu.getQuickcraftMask(0, 0), ClickType.QUICK_CRAFT, bot);
+    public static RecipeHolder<?> findCraftingRecipe(ServerPlayer player, Item targetItem) {
+        boolean limitedCrafting = player.level().getGameRules().get(GameRules.LIMITED_CRAFTING);
+
+        var recipeManager = player.level().getServer().getRecipeManager();
+        for (var holder : recipeManager.getRecipes()) {
+            if (!(holder.value() instanceof CraftingRecipe)) continue;
+
+            var displays = holder.value().display();
+            boolean matches = false;
+            for (var display : displays) {
+                if (display.result() instanceof SlotDisplay.ItemSlotDisplay(
+                        Holder<Item> item1
+                )) {
+                    if (item1.value() == targetItem) {
+                        matches = true;
+                        break;
+                    }
+                } else if (display.result() instanceof SlotDisplay.ItemStackSlotDisplay(ItemStack stack)) {
+                    if (stack.getItem() == targetItem) {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
+            if (!matches) continue;
+
+            if (limitedCrafting && !player.getRecipeBook().contains(holder.id())) {
+                continue;
+            }
+            return holder;
+        }
+        return null;
+    }
+
+    public static void executeDrag(AbstractContainerMenu menu, ServerPlayer player, int[] slots) {
+        executeDrag(menu, player, slots, 0);
+    }
+
+    public static void executeDrag(AbstractContainerMenu menu, ServerPlayer player, int[] slots, int type) {
+        menu.clicked(-999, AbstractContainerMenu.getQuickcraftMask(0, type), ClickType.QUICK_CRAFT, player);
         for (int slot : slots) {
             if (isValidSlot(menu, slot)) {
-                menu.clicked(slot, AbstractContainerMenu.getQuickcraftMask(1, 0), ClickType.QUICK_CRAFT, bot);
+                menu.clicked(slot, AbstractContainerMenu.getQuickcraftMask(1, type), ClickType.QUICK_CRAFT, player);
             }
         }
-        menu.clicked(-999, AbstractContainerMenu.getQuickcraftMask(2, 0), ClickType.QUICK_CRAFT, bot);
+        menu.clicked(-999, AbstractContainerMenu.getQuickcraftMask(2, type), ClickType.QUICK_CRAFT, player);
     }
 
     private static int queryInventory(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
@@ -492,12 +499,23 @@ public final class InventorySubtree {
         return 0;
     }
 
-    private static int[] parseSlotList(String input) {
+    public static int[] parseSlotList(String input) {
         String[] parts = input.trim().split(",");
         List<Integer> slots = new ArrayList<>();
-        for (String part : parts) {
+        for (String raw : parts) {
+            String part = raw.trim();
+            if (part.isEmpty()) continue;
             try {
-                slots.add(Integer.parseInt(part.trim()));
+                int dash = part.indexOf('-', 1);
+                if (dash > 0) {
+                    int from = Integer.parseInt(part.substring(0, dash).trim());
+                    int to = Integer.parseInt(part.substring(dash + 1).trim());
+                    if (Math.abs(to - from) > 1000) return null;
+                    if (from <= to) for (int i = from; i <= to; i++) slots.add(i);
+                    else for (int i = from; i >= to; i--) slots.add(i);
+                } else {
+                    slots.add(Integer.parseInt(part));
+                }
             } catch (NumberFormatException e) {
                 return null;
             }

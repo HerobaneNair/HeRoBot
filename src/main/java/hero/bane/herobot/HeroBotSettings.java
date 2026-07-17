@@ -13,11 +13,12 @@ import net.minecraft.world.entity.player.Player;
 import java.io.File;
 
 public final class HeroBotSettings {
-
     private HeroBotSettings() {
     }
 
     public static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "herobot.json");
+
+    public static boolean serverHasHeroBot = true;
 
     public static void init() {
         RuleRegistry.register(HeroBotSettings.class);
@@ -25,8 +26,6 @@ public final class HeroBotSettings {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> RuleConfigIO.clearWorld());
         ServerWorldEvents.LOAD.register((server, world) -> RuleConfigIO.initWorld(server));
     }
-
-    // Creative Stuff
 
     @Rule(desc = "Creative No Clip, allows to client player to phase through blocks")
     public static boolean creativeNoClip = false;
@@ -40,10 +39,8 @@ public final class HeroBotSettings {
     public static double creativeFlyDrag = 0.09;
 
     public static boolean isCreativeNoClipFlying(Entity entity) {
-        return creativeNoClip && entity instanceof Player player && player.isCreative() && player.getAbilities().flying;
+        return serverHasHeroBot && creativeNoClip && entity instanceof Player player && player.isCreative() && player.getAbilities().flying;
     }
-
-    // Bot Stuff
 
     @Rule(desc = "Spawn offline players in online mode if online-mode player with specified name does not exist")
     public static boolean allowSpawningOfflinePlayers = true;
@@ -64,8 +61,6 @@ public final class HeroBotSettings {
     @Rule(desc = "Bots disconnect on death rather than respawning")
     public static boolean botLeaveOnDeath = false;
 
-    // Shield Stuff
-
     @Rule(desc = "Enables shield stunning, where the shielding player can be damaged immediately after the shield is disabled")
     public static boolean shieldStunning = false;
 
@@ -76,8 +71,6 @@ public final class HeroBotSettings {
     @Rule(desc = "Change the delay of bringing up the shield")
     @Bounds(min = 0)
     public static int shieldDelayTicks = 5;
-
-    // Explosion Stuff
 
     public enum ExplosionNoDmgMode {
         TRUE, FALSE, MOST;
@@ -95,8 +88,6 @@ public final class HeroBotSettings {
 
     @Rule(desc = "Wind Charges won't activate redstone blocks")
     public static boolean windChargeNoTrigger = false;
-
-    // Gameplay Stuff [or ig misc]
 
     @Rule(desc = "Enables editing player nbt, so you can directly edit values within a player's data")
     public static boolean editablePlayerNbt = false;

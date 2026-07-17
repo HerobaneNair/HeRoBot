@@ -2,9 +2,12 @@ package hero.bane.herobot.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.bot.BotPlayerActionPack;
@@ -12,38 +15,54 @@ import hero.bane.herobot.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.command.helper.*;
+import hero.bane.herobot.control.PlayerController;
+import hero.bane.herobot.control.PlayerControllers;
 import hero.bane.herobot.mixin.ServerCommonPacketListenerImplAccessor;
+import hero.bane.herobot.util.BlockPlacer;
 import hero.bane.herobot.util.ItemCooldown;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.commands.arguments.item.ItemArgument;
+import net.minecraft.network.chat.ChatType;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.PlayerChatMessage;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.permissions.PermissionSet;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.HumanoidArm;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 public class PlayerCommand {
-
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext ctx) {
+        EntityArgument targetsArg = EntityArgument.players();
         dispatcher.register(
                 Commands.literal("player")
                         .requires(s -> !s.isPlayer() || s.getServer().getPlayerList().isOp(Objects.requireNonNull(s.getPlayer()).nameAndId()))
-                        .then(Commands.argument("targets", EntityArgument.players())
+                        .then(Commands.argument("targets", targetsArg)
+                                .suggests((c, b) -> mergedTargetSuggestions(targetsArg, c, b))
 
                                 .then(Commands.literal("stop")
-                                        .executes(CommandHelper.manipulation(BotPlayerActionPack::stopAll)))
+                                        .executes(CommandHelper.control(PlayerController::stopAll)))
 
                                 .then(makeActionCommand("use", ActionType.USE))
                                 .then(makeActionCommand("swing", ActionType.SWING))
                                 .then(makeActionCommand("jump", ActionType.JUMP))
-                                .then(makeActionCommand("attack", ActionType.ATTACK))
+                                .then(makeActionCommand("attack", ActionType.ATTACK)
+                                        .then(Commands.literal("twice")
+                                                .executes(CommandHelper.control(ap -> ap.start(ActionType.ATTACK, Action.once(2))))))
                                 .then(makeActionCommand("drop", ActionType.DROP_ITEM))
                                 .then(makeActionCommand("dropStack", ActionType.DROP_STACK))
                                 .then(makeActionCommand("swapHands", ActionType.SWAP_HANDS))
+                                .then(makePlaceCommand())
 
                                 .then(Commands.literal("itemCd")
                                         .executes(ItemCooldown::itemCdClearAll)
@@ -58,8 +77,12 @@ public class PlayerCommand {
 
                                 .then(Commands.literal("hotbar")
                                         .then(Commands.argument("slot", IntegerArgumentType.integer(1, 9))
-                                                .executes(c -> CommandHelper.manipulate(c,
+                                                .executes(c -> CommandHelper.control(c,
                                                         ap -> ap.setSlot(IntegerArgumentType.getInteger(c, "slot"))))))
+
+                                .then(Commands.literal("msg")
+                                        .then(Commands.argument("msg", StringArgumentType.greedyString())
+                                                .executes(PlayerCommand::message)))
 
                                 .then(Commands.literal("kill")
                                         .executes(PlayerCommand::kill))
@@ -67,24 +90,24 @@ public class PlayerCommand {
                                         .executes(PlayerCommand::disconnect))
 
                                 .then(Commands.literal("sneak")
-                                        .executes(CommandHelper.manipulation(ap -> ap.setSneaking(true))))
+                                        .executes(CommandHelper.control(ap -> ap.setSneaking(true))))
                                 .then(Commands.literal("unsneak")
-                                        .executes(CommandHelper.manipulation(ap -> ap.setSneaking(false))))
+                                        .executes(CommandHelper.control(ap -> ap.setSneaking(false))))
                                 .then(Commands.literal("sprint")
-                                        .executes(CommandHelper.manipulation(ap -> ap.setSprinting(true))))
+                                        .executes(CommandHelper.control(ap -> ap.setSprinting(true))))
                                 .then(Commands.literal("unsprint")
-                                        .executes(CommandHelper.manipulation(ap -> ap.setSprinting(false))))
+                                        .executes(CommandHelper.control(ap -> ap.setSprinting(false))))
 
                                 .then(Commands.literal("move")
-                                        .executes(CommandHelper.manipulationAndStopPath(BotPlayerActionPack::stopMovement))
+                                        .executes(CommandHelper.controlAndStopPath(PlayerController::stopMovement))
                                         .then(Commands.literal("forward")
-                                                .executes(CommandHelper.manipulationAndStopPath(ap -> ap.setForward(1))))
+                                                .executes(CommandHelper.controlAndStopPath(ap -> ap.setForward(1))))
                                         .then(Commands.literal("backward")
-                                                .executes(CommandHelper.manipulationAndStopPath(ap -> ap.setForward(-1))))
+                                                .executes(CommandHelper.controlAndStopPath(ap -> ap.setForward(-1))))
                                         .then(Commands.literal("left")
-                                                .executes(CommandHelper.manipulationAndStopPath(ap -> ap.setStrafing(1))))
+                                                .executes(CommandHelper.controlAndStopPath(ap -> ap.setStrafing(1))))
                                         .then(Commands.literal("right")
-                                                .executes(CommandHelper.manipulationAndStopPath(ap -> ap.setStrafing(-1)))))
+                                                .executes(CommandHelper.controlAndStopPath(ap -> ap.setStrafing(-1)))))
 
                                 .then(LookSubtree.build())
 
@@ -120,7 +143,6 @@ public class PlayerCommand {
                                         .then(Commands.literal("false")
                                                 .executes(c -> autoJump(c, false))))
 
-                                // There's probably a better name for this but idk, like dexterity maybe? Dexterousness?? whatever
                                 .then(Commands.literal("handedness")
                                         .then(Commands.literal("left")
                                                 .executes(c -> setHandedness(c, true)))
@@ -130,36 +152,89 @@ public class PlayerCommand {
                                 .then(InventorySubtree.buildInventory(ctx))
                                 .then(InventorySubtree.buildContainer(ctx))
 
+                                .then(TradeSubtree.build())
+
                                 .then(PathSubtree.build(ctx))
+
+                                .then(AiSubtree.build())
+
+                                .then(PlayerSpawnCommand.spawnSubtree())
                         )
         );
     }
 
+    private static CompletableFuture<Suggestions> mergedTargetSuggestions(
+            EntityArgument targetsArg,
+            CommandContext<CommandSourceStack> context,
+            SuggestionsBuilder builder) {
+        CompletableFuture<Suggestions> entitySuggestions = targetsArg.listSuggestions(context, builder);
+        SuggestionsBuilder nameBuilder = builder.createOffset(builder.getStart());
+        SharedSuggestionProvider.suggest(PlayerSpawnCommand.getNameSuggestions(context.getSource()), nameBuilder);
+        return entitySuggestions.thenCombine(nameBuilder.buildFuture(),
+                (entity, names) -> Suggestions.merge(context.getInput(), List.of(entity, names)));
+    }
+
+    private static final String[] PLACE_FACES = {"north", "south", "east", "west", "up", "down", "any"};
+
+    private static LiteralArgumentBuilder<CommandSourceStack> makePlaceCommand() {
+        var pos = Commands.argument("position", Vec3Argument.vec3())
+                .executes(c -> doPlace(c, "any"));
+        for (String face : PLACE_FACES) {
+            pos.then(Commands.literal(face).executes(c -> doPlace(c, face)));
+        }
+        return Commands.literal("place").then(pos);
+    }
+
+    private static int doPlace(CommandContext<CommandSourceStack> c, String face) throws CommandSyntaxException {
+        Vec3 pos = Vec3Argument.getVec3(c, "position");
+        int placed = 0;
+        for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
+            if (BlockPlacer.place(p, pos, face)) placed++;
+        }
+        return placed;
+    }
+
     private static LiteralArgumentBuilder<CommandSourceStack> makeActionCommand(String name, ActionType type) {
         return Commands.literal(name)
-                .executes(CommandHelper.manipulation(ap -> ap.stop(type)))
+                .executes(CommandHelper.control(ap -> ap.stop(type)))
                 .then(Commands.literal("once")
-                        .executes(CommandHelper.manipulation(ap -> ap.start(type, Action.once()))))
+                        .executes(CommandHelper.control(ap -> ap.start(type, Action.once()))))
                 .then(Commands.literal("continuous")
-                        .executes(CommandHelper.manipulation(ap -> ap.start(type, Action.continuous())))
+                        .executes(CommandHelper.control(ap -> ap.start(type, Action.continuous())))
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(1))
                                 .executes(c -> {
                                             int ticks = IntegerArgumentType.getInteger(c, "ticks");
-                                            return CommandHelper.manipulate(c,
+                                            return CommandHelper.control(c,
                                                     ap -> ap.startOrExtender(type, ticks));
                                         }
                                 )))
                 .then(Commands.literal("interval")
                         .then(Commands.argument("interval", IntegerArgumentType.integer(1))
-                                .executes(c -> CommandHelper.manipulate(c,
+                                .executes(c -> CommandHelper.control(c,
                                         ap -> ap.start(type,
                                                 Action.interval(IntegerArgumentType.getInteger(c, "interval")))))
                                 .then(Commands.argument("ticks", IntegerArgumentType.integer(1))
-                                        .executes(c -> CommandHelper.manipulate(c,
+                                        .executes(c -> CommandHelper.control(c,
                                                 ap -> ap.start(type,
                                                         Action.interval(
                                                                 IntegerArgumentType.getInteger(c, "interval"),
                                                                 IntegerArgumentType.getInteger(c, "ticks"))))))));
+    }
+
+    private static int message(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        String message = StringArgumentType.getString(context, "msg");
+        MinecraftServer server = context.getSource().getServer();
+        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
+            if (message.startsWith("/")) {
+                server.getCommands().performPrefixedCommand(
+                        bot.createCommandSourceStack().withPermission(PermissionSet.ALL_PERMISSIONS), message);
+            } else {
+                PlayerChatMessage chatMessage = PlayerChatMessage.unsigned(bot.getUUID(), message);
+                server.getPlayerList().broadcastChatMessage(
+                        chatMessage, bot, ChatType.bind(ChatType.CHAT, bot));
+            }
+        }
+        return 1;
     }
 
     private static int kill(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -205,10 +280,9 @@ public class PlayerCommand {
 
     private static int autoJump(CommandContext<CommandSourceStack> context, boolean value)
             throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            BotPlayerActionPack ap = ((ServerPlayerInterface) bot).getActionPack();
-            ap.autoJump = value;
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s auto jump " + (value ? "on" : "off")), false);
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            PlayerControllers.of(player).setAutoJump(value);
+            context.getSource().sendSuccess(() -> Component.literal("Set " + player.getGameProfile().name() + "'s auto jump " + (value ? "on" : "off")), false);
         }
         return 1;
     }

@@ -6,6 +6,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AbstractBoatMixin",
+    "AbstractMinecartMixin",
     "BlockItemMixin",
     "BlockMixin",
     "BlocksAttacksMixin",

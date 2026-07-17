@@ -4,8 +4,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class PathSettings {
 
@@ -25,13 +27,13 @@ public class PathSettings {
     private MoveType moveType = MoveType.SPRINT;
     private double maxHorizontalDistance = 1.0;
     private double maxVerticalDistance = 2.0;
-    private double nodeHorizontalDistance = 0.25; // just really needs to be less than 0.3 but this seems like a good number
+    private double nodeHorizontalDistance = 0.1; // just really needs to be less than 0.3 but this seems like a good number
     private double nodeVerticalDistance = 0.5;
     private boolean stopFollowing = true;
     private double horizontalMoveCost = 1.0;
     private double verticalMoveCost = 1.5;
     private double swimCostMultiplier = 3.0;
-    private boolean debug = false;
+    private final EnumSet<DebugChannel> debugChannels = EnumSet.noneOf(DebugChannel.class);
 
     public PathSettings() {
         avoidedBlocks.add(Blocks.LAVA);
@@ -64,7 +66,8 @@ public class PathSettings {
         this.horizontalMoveCost = other.horizontalMoveCost;
         this.verticalMoveCost = other.verticalMoveCost;
         this.swimCostMultiplier = other.swimCostMultiplier;
-        this.debug = other.debug;
+        this.debugChannels.clear();
+        this.debugChannels.addAll(other.debugChannels);
     }
 
     public boolean isNotAvoided(Block block) {
@@ -172,11 +175,42 @@ public class PathSettings {
     }
 
     public boolean isDebug() {
-        return debug;
+        return !debugChannels.isEmpty();
     }
 
     public void setDebug(boolean value) {
-        this.debug = value;
+        debugChannels.clear();
+        if (value) {
+            debugChannels.addAll(EnumSet.allOf(DebugChannel.class));
+        }
+    }
+
+    public boolean isDebugEnabled(DebugChannel channel) {
+        return debugChannels.contains(channel);
+    }
+
+    public void setDebugChannel(DebugChannel channel, boolean enabled) {
+        if (enabled) {
+            debugChannels.add(channel);
+        } else {
+            debugChannels.remove(channel);
+        }
+    }
+
+    public boolean toggleDebugChannel(DebugChannel channel) {
+        boolean enabled = !debugChannels.contains(channel);
+        setDebugChannel(channel, enabled);
+        return enabled;
+    }
+
+    public Set<DebugChannel> getDebugChannels() {
+        return Collections.unmodifiableSet(debugChannels);
+    }
+
+    public String describeDebug() {
+        if (debugChannels.isEmpty()) return "none";
+        if (debugChannels.size() == DebugChannel.values().length) return "all";
+        return debugChannels.stream().map(DebugChannel::id).collect(Collectors.joining(", "));
     }
 
     public boolean isWithinTarget(double hDist, double vDist) {

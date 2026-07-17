@@ -4,15 +4,15 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
+
+import java.util.Objects;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 
 public final class RuleCommandBuilder {
-
     private enum Permanence { TEMP, PERM }
     private enum Scope { WORLD, CLIENT }
 
@@ -25,7 +25,7 @@ public final class RuleCommandBuilder {
                     }
                     return b.buildFuture();
                 })
-                .requires(Commands.hasPermission(Commands.LEVEL_ADMINS))
+                .requires(s -> !s.isPlayer() || s.getServer().getPlayerList().isOp(Objects.requireNonNull(s.getPlayer()).nameAndId()))
                 .executes(c -> {
                     RuleEntry rule = RuleRegistry.get(StringArgumentType.getString(c, "rule"));
                     if (rule == null) return 0;

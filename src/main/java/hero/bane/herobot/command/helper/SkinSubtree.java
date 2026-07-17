@@ -5,20 +5,20 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import hero.bane.herobot.bot.BotPlayer;
+import hero.bane.herobot.bot.SkinForcer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 public final class SkinSubtree {
-
     private SkinSubtree() {}
 
-    //TODO: Allow img files that are the correct dimensions to be a skin file -- maybe through mineskin
     public static LiteralArgumentBuilder<CommandSourceStack> build() {
         return Commands.literal("skin")
                 .then(makeSkinPartCommand("cape", BotPlayer.SKIN_CAPE))
@@ -42,7 +42,7 @@ public final class SkinSubtree {
         return Commands.literal(name)
                 .executes(c -> {
                     for (BotPlayer bot : CommandHelper.requireBotTargets(c)) {
-                        bot.toggleSkinPart(mask); // Use this [BotPlayer.toggleSkinPart] to toggle skin parts in other mods y'alls
+                        bot.toggleSkinPart(mask);
                         boolean enabled = bot.isSkinPartEnabled(mask);
                         c.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s " + name + " layer " + (enabled ? "on" : "off")), false);
                     }
@@ -50,11 +50,11 @@ public final class SkinSubtree {
                 });
     }
 
-    private static void forceLoad(CommandContext<CommandSourceStack> context, Function<BotPlayer, CompletableFuture<Boolean>> loader) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            String name = bot.getGameProfile().name();
+    private static void forceLoad(CommandContext<CommandSourceStack> context, Function<ServerPlayer, CompletableFuture<Boolean>> loader) throws CommandSyntaxException {
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
             context.getSource().sendSuccess(() -> Component.literal("Fetching skin for " + name + "..."), false);
-            loader.apply(bot).thenAccept(success -> {
+            loader.apply(player).thenAccept(success -> {
                 if (success) {
                     context.getSource().sendSuccess(() -> Component.literal("Force-loaded skin for " + name), false);
                 } else {
@@ -65,21 +65,20 @@ public final class SkinSubtree {
     }
 
     public static int forceLoadSkin(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        forceLoad(context, BotPlayer::forceLoadSkin);
+        forceLoad(context, player -> SkinForcer.forceLoadSkin(player, player.getUUID()));
         return 1;
     }
 
     public static int forceLoadSkinUUID(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         UUID uuid = UuidArgument.getUuid(context, "uuid");
-        forceLoad(context, bot -> bot.forceLoadSkin(uuid));
+        forceLoad(context, player -> SkinForcer.forceLoadSkin(player, uuid));
         return 1;
     }
 
     public static int forceLoadSkinName(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String skinName = StringArgumentType.getString(context, "name");
-        forceLoad(context, bot -> bot.forceLoadSkin(skinName));
+        forceLoad(context, player -> SkinForcer.forceLoadSkin(player, skinName));
         return 1;
     }
-
 
 }

@@ -22,7 +22,7 @@ public class BlockItemMixin {
     private boolean canSpectatingPlace(Level world, BlockState state, BlockPos pos, CollisionContext context,
                                        BlockPlaceContext contextOuter, BlockState stateOuter) {
         Player player = contextOuter.getPlayer();
-        if (HeroBotSettings.creativeNoClip && player != null && player.isCreative() && player.getAbilities().flying) {
+        if (player != null && HeroBotSettings.isCreativeNoClipFlying(player)) {
             VoxelShape voxelShape = state.getCollisionShape(world, pos, context);
             return voxelShape.isEmpty() || world.isUnobstructed(player, voxelShape.move(pos.getX(), pos.getY(), pos.getZ()));
 

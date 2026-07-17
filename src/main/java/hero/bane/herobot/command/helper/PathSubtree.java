@@ -4,9 +4,9 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import hero.bane.herobot.bot.BotPathing;
+import hero.bane.herobot.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.bot.BotPlayer;
-import hero.bane.herobot.bot.pathing.PathFinder;
+import hero.bane.herobot.bot.pathing.DebugChannel;
 import hero.bane.herobot.bot.pathing.PathSettings;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
@@ -14,14 +14,12 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.blocks.BlockStateArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.List;
 import java.util.stream.Collectors;
 
 public final class PathSubtree {
@@ -82,12 +80,7 @@ public final class PathSubtree {
                                         .executes(c -> setStopFollowing(c, true)))
                                 .then(Commands.literal("false")
                                         .executes(c -> setStopFollowing(c, false))))
-                        .then(Commands.literal("debug")
-                                .executes(PathSubtree::getDebug)
-                                .then(Commands.literal("true")
-                                        .executes(c -> setDebug(c, true)))
-                                .then(Commands.literal("false")
-                                        .executes(c -> setDebug(c, false))))
+                        .then(buildDebugNode())
                         .then(Commands.literal("cost")
                                 .then(Commands.literal("horizontal")
                                         .executes(PathSubtree::getHorizontalMoveCost)
@@ -122,13 +115,7 @@ public final class PathSubtree {
                 continue;
             }
 
-            List<BlockPos> path = PathFinder.findPath(bot.level(), bot.blockPosition(), target, settings, bot);
-            if (path == null || path.isEmpty()) {
-                context.getSource().sendFailure(Component.literal("Failed to find a path for " + bot.getGameProfile().name()));
-                return 0;
-            }
-
-            BotPathing follower = new BotPathing(bot, path, target, context.getSource(), settings);
+            BotPathing follower = new BotPathing(bot, target, context.getSource(), settings);
             bot.setPathFollower(follower);
             context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " is pathing to " +
                     String.format("%.1f, %.1f, %.1f", target.x, target.y, target.z)), false);
@@ -173,7 +160,7 @@ public final class PathSubtree {
                     "\n  node horizontal: " + s.getNodeHorizontalDistance() +
                     "\n  node vertical: " + (s.getNodeVerticalDistance() < 0 ? "disabled" : s.getNodeVerticalDistance()) +
                     "\n  stopFollowing: " + s.isStopFollowing() +
-                    "\n  debug: " + s.isDebug() +
+                    "\n  debug: " + s.describeDebug() +
                     "\n  cost horizontal: " + s.getHorizontalMoveCost() +
                     "\n  cost vertical: " + s.getVerticalMoveCost() +
                     "\n  cost swim: " + String.format("%.2f", s.getSwimCostMultiplier()) + " (auto-calculated)";
@@ -331,18 +318,60 @@ public final class PathSubtree {
         return 1;
     }
 
+    private static LiteralArgumentBuilder<CommandSourceStack> buildDebugNode() {
+        LiteralArgumentBuilder<CommandSourceStack> debug = Commands.literal("debug")
+                .executes(PathSubtree::getDebug)
+                .then(Commands.literal("all")
+                        .executes(c -> setDebugAll(c, true)))
+                .then(Commands.literal("none")
+                        .executes(c -> setDebugAll(c, false)))
+                .then(Commands.literal("true")
+                        .executes(c -> setDebugAll(c, true)))
+                .then(Commands.literal("false")
+                        .executes(c -> setDebugAll(c, false)));
+        for (DebugChannel channel : DebugChannel.values()) {
+            debug = debug.then(Commands.literal(channel.id())
+                    .executes(c -> toggleDebugChannel(c, channel))
+                    .then(Commands.literal("on")
+                            .executes(c -> setDebugChannel(c, channel, true)))
+                    .then(Commands.literal("off")
+                            .executes(c -> setDebugChannel(c, channel, false))));
+        }
+        return debug;
+    }
+
     private static int getDebug(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            boolean val = bot.getPathSettings().isDebug();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s debug: " + val + " (default: false)"), false);
+            String enabled = bot.getPathSettings().describeDebug();
+            String available = java.util.Arrays.stream(DebugChannel.values())
+                    .map(ch -> ch.id() + " (" + ch.description() + ")")
+                    .collect(Collectors.joining("\n  "));
+            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s debug channels: " + enabled +
+                    "\nAvailable channels:\n  " + available), false);
         }
         return 1;
     }
 
-    private static int setDebug(CommandContext<CommandSourceStack> context, boolean value) throws CommandSyntaxException {
+    private static int setDebugAll(CommandContext<CommandSourceStack> context, boolean value) throws CommandSyntaxException {
         for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
             bot.getPathSettings().setDebug(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s debug to " + value), false);
+            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled all" : "Disabled all") + " debug particles for " + bot.getGameProfile().name()), false);
+        }
+        return 1;
+    }
+
+    private static int toggleDebugChannel(CommandContext<CommandSourceStack> context, DebugChannel channel) throws CommandSyntaxException {
+        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
+            boolean enabled = bot.getPathSettings().toggleDebugChannel(channel);
+            context.getSource().sendSuccess(() -> Component.literal((enabled ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + bot.getGameProfile().name()), false);
+        }
+        return 1;
+    }
+
+    private static int setDebugChannel(CommandContext<CommandSourceStack> context, DebugChannel channel, boolean value) throws CommandSyntaxException {
+        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
+            bot.getPathSettings().setDebugChannel(channel, value);
+            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + bot.getGameProfile().name()), false);
         }
         return 1;
     }

@@ -16,7 +16,7 @@ public class ShulkerBoxBlockEntityMixin {
             target = "Lnet/minecraft/world/entity/Entity;getPistonPushReaction()Lnet/minecraft/world/level/material/PushReaction;"
     ))
     private PushReaction getPistonBehaviourOfNoClipPlayers(Entity entity) {
-        if (HeroBotSettings.creativeNoClip && entity instanceof Player && (((Player) entity).isCreative()) && ((Player) entity).getAbilities().flying)
+        if (HeroBotSettings.isCreativeNoClipFlying(entity))
             return PushReaction.IGNORE;
         return entity.getPistonPushReaction();
     }
