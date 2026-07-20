@@ -1,10 +1,11 @@
 package hero.bane.herobot.client.screen.ai;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import hero.bane.herobot.ai.block.BlockCategory;
+import hero.bane.herobot.client.EditorPrefs;
 import hero.bane.herobot.ai.block.BlockDef;
 import hero.bane.herobot.ai.block.BlockDefRegistry;
 import hero.bane.herobot.ai.block.BlockType;
-import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -15,11 +16,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 
 public final class BlockPalette {
     private static final int ROW_H = 13;
@@ -30,9 +27,12 @@ public final class BlockPalette {
     }
 
     private static final Set<BlockType> HIDDEN =
-            EnumSet.of(BlockType.AND, BlockType.OR, BlockType.LOOP_ITER);
+            EnumSet.of(BlockType.AND, BlockType.OR, BlockType.LOOP_ITER, BlockType.FUNC_PARAM);
+
+    private static final double DRAG_SLOP = 6;
 
     private final List<Row> rows = new ArrayList<>();
+    private final List<BlockCategory> order = new ArrayList<>();
 
     private final Set<BlockCategory> collapsed = EnumSet.noneOf(BlockCategory.class);
     private final Font font;
@@ -43,9 +43,36 @@ public final class BlockPalette {
     private boolean searchFocused;
     private String query = "";
 
+    private BlockCategory pressCat;
+    private double pressX, pressY, dragY;
+    private boolean dragging;
+
     public BlockPalette(Font font) {
         this.font = font;
+        loadOrder();
+        rebuildRows();
+    }
+
+    private void loadOrder() {
+        for (String name : EditorPrefs.categoryOrder()) {
+            for (BlockCategory cat : BlockCategory.values()) {
+                if (cat.name().equals(name) && !order.contains(cat)) order.add(cat);
+            }
+        }
         for (BlockCategory cat : BlockCategory.values()) {
+            if (!order.contains(cat)) order.add(cat);
+        }
+    }
+
+    private void saveOrder() {
+        List<String> names = new ArrayList<>(order.size());
+        for (BlockCategory cat : order) names.add(cat.name());
+        EditorPrefs.setCategoryOrder(names);
+    }
+
+    private void rebuildRows() {
+        rows.clear();
+        for (BlockCategory cat : order) {
             rows.add(new Row(null, cat.display(), cat.color(), cat));
             for (BlockDef def : BlockDefRegistry.all()) {
                 if (def.category() == cat && def.type() != BlockType.BLOCK_END && !HIDDEN.contains(def.type())) {
@@ -119,7 +146,9 @@ public final class BlockPalette {
             if (ry + ROW_H >= y + SEARCH_H && ry <= y + h) {
                 boolean hover = mouseX >= x && mouseX < x + w - 1 && mouseY >= ry && mouseY < ry + ROW_H;
                 if (row.isHeader()) {
-                    g.fill(x, ry, x + w, ry + ROW_H, (hover || bulkHover) ? 0xFF151515 : 0xFF000000);
+                    boolean held = dragging && row.cat() == pressCat;
+                    g.fill(x, ry, x + w, ry + ROW_H,
+                            held ? 0xFF242424 : (hover || bulkHover) ? 0xFF151515 : 0xFF000000);
                     String arrow = collapsed.contains(row.cat()) ? "▸ " : "▾ ";
                     g.drawString(font, arrow + row.label(), x + 4, ry + 3, row.color(), false);
                 } else {
@@ -131,7 +160,16 @@ public final class BlockPalette {
             }
             ry += ROW_H;
         }
+        if (dragging && pressCat != null) renderDropLine(g);
         g.disableScissor();
+    }
+
+    private void renderDropLine(GuiGraphics g) {
+        int idx = dropIndex(dragY);
+        int ry = rowsTop() - scroll;
+        for (int i = 0; i < idx; i++) ry += categorySpan(order.get(i));
+        int lineY = Math.clamp(ry, y + SEARCH_H + 1, y + h - 1);
+        g.fill(x, lineY - 1, x + w - 1, lineY + 1, 0xFF6AA9FF);
     }
 
     private String trim(String s, int maxW) {
@@ -226,11 +264,69 @@ public final class BlockPalette {
         if (idx < 0 || idx >= visible.size()) return null;
         Row row = visible.get(idx);
         if (row.isHeader()) {
-            if (shiftHeld()) toggleAll(collapsed.contains(row.cat()));
-            else toggle(row.cat());
+            pressCat = row.cat();
+            pressX = mx;
+            pressY = my;
+            dragY = my;
+            dragging = false;
             return null;
         }
         return row.type();
+    }
+
+    public boolean mouseDragged(double mx, double my) {
+        if (pressCat == null) return false;
+        if (!dragging && Math.hypot(mx - pressX, my - pressY) >= DRAG_SLOP) dragging = true;
+        if (dragging) dragY = my;
+        return true;
+    }
+
+    public boolean mouseReleased(double my) {
+        if (pressCat == null) return false;
+        BlockCategory cat = pressCat;
+        pressCat = null;
+        if (!dragging) {
+            if (shiftHeld()) toggleAll(allCollapsed());
+            else toggle(cat);
+            return true;
+        }
+        dragging = false;
+        reorder(cat, dropIndex(my));
+        return true;
+    }
+
+    private int categorySpan(BlockCategory cat) {
+        if (collapsed.contains(cat)) return ROW_H;
+        int n = 1;
+        for (Row r : rows) if (r.cat() == cat && !r.isHeader()) n++;
+        return n * ROW_H;
+    }
+
+    private int dropIndex(double my) {
+        int ry = rowsTop() - scroll;
+        for (int i = 0; i < order.size(); i++) {
+            int span = categorySpan(order.get(i));
+            if (my < ry + span / 2.0) return i;
+            ry += span;
+        }
+        return order.size();
+    }
+
+    private void reorder(BlockCategory cat, int target) {
+        int from = order.indexOf(cat);
+        if (from < 0) return;
+        if (target > from) target--;
+        target = Math.clamp(target, 0, order.size() - 1);
+        if (target == from) return;
+        order.remove(from);
+        order.add(target, cat);
+        rebuildRows();
+        scroll = clamp(scroll);
+        saveOrder();
+    }
+
+    private boolean allCollapsed() {
+        return collapsed.size() == BlockCategory.values().length;
     }
 
     private boolean hoveredHeader(double mx, double my) {

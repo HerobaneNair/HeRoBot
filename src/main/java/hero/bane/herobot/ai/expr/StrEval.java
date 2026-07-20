@@ -93,25 +93,25 @@ public final class StrEval {
     }
 
     private static final class Parser {
-        private final String s;
+        private final String input;
         private final boolean strict;
         private int pos;
 
-        Parser(String s, boolean strict) {
-            this.s = s;
+        Parser(String input, boolean strict) {
+            this.input = input;
             this.strict = strict;
         }
 
         boolean atEnd() {
-            return pos >= s.length();
+            return pos >= input.length();
         }
 
         void skipWs() {
-            while (pos < s.length() && Character.isWhitespace(s.charAt(pos))) pos++;
+            while (pos < input.length() && Character.isWhitespace(input.charAt(pos))) pos++;
         }
 
         private char peek() {
-            return pos < s.length() ? s.charAt(pos) : '\0';
+            return pos < input.length() ? input.charAt(pos) : '\0';
         }
 
         Expr expr() {
@@ -154,11 +154,11 @@ public final class StrEval {
         Expr quoted() {
             pos++;
             StringBuilder sb = new StringBuilder();
-            while (pos < s.length() && s.charAt(pos) != '"') {
-                char c = s.charAt(pos);
-                if (c == '\\' && pos + 1 < s.length()) {
+            while (pos < input.length() && input.charAt(pos) != '"') {
+                char c = input.charAt(pos);
+                if (c == '\\' && pos + 1 < input.length()) {
                     pos++;
-                    sb.append(s.charAt(pos));
+                    sb.append(input.charAt(pos));
                 } else {
                     sb.append(c);
                 }
@@ -173,8 +173,8 @@ public final class StrEval {
         Expr varRef() {
             pos++;
             int start = pos;
-            while (pos < s.length() && s.charAt(pos) != '}') pos++;
-            String name = s.substring(start, pos).trim();
+            while (pos < input.length() && input.charAt(pos) != '}') pos++;
+            String name = input.substring(start, pos).trim();
             if (peek() == '}') pos++;
             else if (strict) throw new RuntimeException("expected }");
             if (strict && name.isEmpty()) throw new RuntimeException("empty variable name");
@@ -186,12 +186,12 @@ public final class StrEval {
 
         Expr inputRef() {
             int start = pos;
-            while (pos < s.length()) {
-                char c = s.charAt(pos);
+            while (pos < input.length()) {
+                char c = input.charAt(pos);
                 if (Character.isLetterOrDigit(c) || c == '_') pos++;
                 else break;
             }
-            String name = s.substring(start, pos);
+            String name = input.substring(start, pos);
             if (!ExprEval.isInputRef(name)) {
                 throw new RuntimeException("unknown name: " + name);
             }
@@ -204,15 +204,15 @@ public final class StrEval {
 
         Expr sliceOf(Expr base) {
             pos++;
-            Integer a = optInt();
+            Integer start = optInt();
             skipWs();
             if (peek() == ']') {
                 pos++;
-                if (a == null) {
+                if (start == null) {
                     if (strict) throw new RuntimeException("empty index");
                     return base;
                 }
-                int idx = a;
+                int idx = start;
                 return vars -> index(base.eval(vars), idx);
             }
             if (peek() != ':') {
@@ -220,7 +220,7 @@ public final class StrEval {
                 return base;
             }
             pos++;
-            Integer b = optInt();
+            Integer stop = optInt();
             Integer c = null;
             skipWs();
             if (peek() == ':') {
@@ -230,7 +230,7 @@ public final class StrEval {
             }
             if (peek() == ']') pos++;
             else if (strict) throw new RuntimeException("expected ] in slice");
-            Integer start = a, stop = b, step = c;
+            Integer step = c;
             return vars -> slice(base.eval(vars), start, stop, step);
         }
 
@@ -238,12 +238,12 @@ public final class StrEval {
             skipWs();
             int start = pos;
             if (peek() == '-') pos++;
-            while (pos < s.length() && Character.isDigit(s.charAt(pos))) pos++;
-            if (pos == start || (pos == start + 1 && s.charAt(start) == '-')) {
+            while (pos < input.length() && Character.isDigit(input.charAt(pos))) pos++;
+            if (pos == start || (pos == start + 1 && input.charAt(start) == '-')) {
                 pos = start;
                 return null;
             }
-            return Integer.parseInt(s.substring(start, pos));
+            return Integer.parseInt(input.substring(start, pos));
         }
     }
 }

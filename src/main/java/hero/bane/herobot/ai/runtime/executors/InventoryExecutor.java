@@ -44,8 +44,15 @@ public final class InventoryExecutor {
         });
         flow.put(BlockType.CLOSE_SCREEN, (b, r, br) -> {
             BotPlayer bot = r.bot();
-            if (bot != null) bot.closeScreen();
-            else r.player().closeContainer();
+            if (bot != null) {
+                bot.closeScreen();
+            } else {
+                ServerPlayer player = r.player();
+                if (!RemoteOps.send(player, ControlOp.closeScreen())
+                        && player.containerMenu != player.inventoryMenu) {
+                    player.closeContainer();
+                }
+            }
             return StepResult.continueVia(0);
         });
         flow.put(BlockType.HANDEDNESS, (b, r, br) -> {
@@ -134,7 +141,7 @@ public final class InventoryExecutor {
             Object modeVal = ParamEval.raw(b, "mode", r, br);
             boolean max = modeVal instanceof Boolean bb ? bb : "max".equalsIgnoreCase(ParamEval.asString(modeVal));
             p.getRecipeBook().add(found.id());
-            craftingMenu.handlePlacement(max, true, found, (ServerLevel) p.level(), p.getInventory());
+            craftingMenu.handlePlacement(max, true, found, p.level(), p.getInventory());
             craftingMenu.broadcastChanges();
             return StepResult.continueVia(0);
         });
@@ -205,6 +212,7 @@ public final class InventoryExecutor {
         return hasContainer ? null : p.inventoryMenu;
     }
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private static boolean validSlot(AbstractContainerMenu menu, int slot) {
         return slot >= 0 && slot < menu.slots.size();
     }

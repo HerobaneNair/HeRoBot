@@ -1,11 +1,6 @@
 package hero.bane.herobot.client.screen.ai.starfield;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 final class ClusterPhysics {
     private static final double LINK_R = 95.0;
@@ -33,7 +28,7 @@ final class ClusterPhysics {
         if (n < 2) return;
 
         Grid grid = new Grid(comets, LINK_R);
-        UnionFind clusters = connect(comets, grid, LINK_R);
+        UnionFind clusters = connect(comets, grid);
         double blend = Math.min(1.0, ORBIT_RATE * dt);
         boolean[] orbiting = new boolean[n];
         boolean[] clustered = new boolean[n];
@@ -139,7 +134,7 @@ final class ClusterPhysics {
         if (n < 2) return blasts;
 
         Grid grid = new Grid(comets, LINK_R);
-        UnionFind clusters = connect(comets, grid, LINK_R);
+        UnionFind clusters = connect(comets, grid);
         int[] clusterSize = clusters.sizes();
 
         UnionFind merged = new UnionFind(n);
@@ -193,9 +188,9 @@ final class ClusterPhysics {
         });
     }
 
-    private static UnionFind connect(List<Comet> comets, Grid grid, double radius) {
+    private static UnionFind connect(List<Comet> comets, Grid grid) {
         UnionFind uf = new UnionFind(comets.size());
-        double r2 = radius * radius;
+        double r2 = ClusterPhysics.LINK_R * ClusterPhysics.LINK_R;
         grid.eachNeighborPair((i, j) -> {
             if (dist2(comets, i, j) < r2) uf.union(i, j);
         });

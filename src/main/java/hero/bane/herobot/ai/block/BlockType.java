@@ -14,9 +14,11 @@ public enum BlockType {
     USE,
     SWING,
     JUMP,
+    ATTEMPT_AUTOJUMP,
     ATTACK,
     DROP_ITEM,
     SWAP_HANDS,
+    PICK_BLOCK,
     SEND_MESSAGE,
     STOP_ACTION,
     STOP_ALL,
@@ -106,5 +108,9 @@ public enum BlockType {
 
     TERNARY,
     PLACE_BLOCK,
-    DOING_ACTION
+    DOING_ACTION,
+
+    FUNC_DEFINE,
+    FUNC_CALL,
+    FUNC_PARAM
 }

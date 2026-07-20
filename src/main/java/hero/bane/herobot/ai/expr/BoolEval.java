@@ -12,7 +12,7 @@ public final class BoolEval {
     private BoolEval() {}
 
     public static final String OPS_LEGEND =
-            "==  !=  >  <  >=  <=  and  or  xor";
+            "==  !=  >  <  >=  <=  and/&&  or/||  xor";
     public static final String OPS_LEGEND_2 =
             "!  not()  {var}  Input1  \"text\"  randomint(1,3)";
 
@@ -138,48 +138,55 @@ public final class BoolEval {
     private record Operand(Function<Function<String, Object>, Object> fn, ParamType type) {}
 
     private static final class Parser {
-        private final String s;
+        private final String input;
         private final boolean strict;
         private final Function<String, ParamType> types;
         private int pos;
 
-        Parser(String s, boolean strict, Function<String, ParamType> types) {
-            this.s = s;
+        Parser(String input, boolean strict, Function<String, ParamType> types) {
+            this.input = input;
             this.strict = strict;
             this.types = types;
         }
 
         boolean atEnd() {
-            return pos >= s.length();
+            return pos >= input.length();
         }
 
         void skipWs() {
-            while (pos < s.length() && Character.isWhitespace(s.charAt(pos))) pos++;
+            while (pos < input.length() && Character.isWhitespace(input.charAt(pos))) pos++;
         }
 
         private char peek() {
-            return pos < s.length() ? s.charAt(pos) : '\0';
+            return pos < input.length() ? input.charAt(pos) : '\0';
         }
 
         private boolean lookahead(String tok) {
-            return s.regionMatches(pos, tok, 0, tok.length());
+            return input.regionMatches(pos, tok, 0, tok.length());
         }
 
         private boolean matchWord(String w) {
             skipWs();
-            if (!s.regionMatches(true, pos, w, 0, w.length())) return false;
+            if (!input.regionMatches(true, pos, w, 0, w.length())) return false;
             int end = pos + w.length();
-            if (end < s.length()) {
-                char c = s.charAt(end);
+            if (end < input.length()) {
+                char c = input.charAt(end);
                 if (Character.isLetterOrDigit(c) || c == '_') return false;
             }
             pos = end;
             return true;
         }
 
+        private boolean matchSymbol(String sym) {
+            skipWs();
+            if (!lookahead(sym)) return false;
+            pos += sym.length();
+            return true;
+        }
+
         Expr orExpr() {
             Expr v = xorExpr();
-            while (matchWord("or")) {
+            while (matchWord("or") || matchSymbol("||")) {
                 Expr l = v, r = xorExpr();
                 v = vars -> l.eval(vars) || r.eval(vars);
             }
@@ -197,7 +204,7 @@ public final class BoolEval {
 
         Expr andExpr() {
             Expr v = unary();
-            while (matchWord("and")) {
+            while (matchWord("and") || matchSymbol("&&")) {
                 Expr l = v, r = unary();
                 v = vars -> l.eval(vars) && r.eval(vars);
             }
@@ -244,8 +251,20 @@ public final class BoolEval {
             }
             Operand b = operand();
             if (strict && types != null) checkComparable(a.type(), b.type(), op);
-            String fop = op;
-            return vars -> compare(a.fn().apply(vars), b.fn().apply(vars), fop);
+            Expr chain = vars -> compare(a.fn().apply(vars), b.fn().apply(vars), op);
+            Operand prev = b;
+            String nextOp;
+            while ((nextOp = cmpOp()) != null) {
+                Operand next = operand();
+                if (strict && types != null) checkComparable(prev.type(), next.type(), nextOp);
+                Operand cl = prev;
+                String cop = nextOp;
+                Expr link = vars -> compare(cl.fn().apply(vars), next.fn().apply(vars), cop);
+                Expr acc = chain;
+                chain = vars -> acc.eval(vars) && link.eval(vars);
+                prev = next;
+            }
+            return chain;
         }
 
         private void checkComparable(ParamType a, ParamType b, String op) {
@@ -295,10 +314,10 @@ public final class BoolEval {
         /** An identifier followed by '(' is a call, which only the numeric language knows how to parse. */
         private boolean functionCallAhead() {
             int p = pos;
-            if (p >= s.length() || !(Character.isLetter(s.charAt(p)) || s.charAt(p) == '_')) return false;
-            while (p < s.length() && (Character.isLetterOrDigit(s.charAt(p)) || s.charAt(p) == '_')) p++;
-            while (p < s.length() && Character.isWhitespace(s.charAt(p))) p++;
-            return p < s.length() && s.charAt(p) == '(';
+            if (p >= input.length() || !(Character.isLetter(input.charAt(p)) || input.charAt(p) == '_')) return false;
+            while (p < input.length() && (Character.isLetterOrDigit(input.charAt(p)) || input.charAt(p) == '_')) p++;
+            while (p < input.length() && Character.isWhitespace(input.charAt(p))) p++;
+            return p < input.length() && input.charAt(p) == '(';
         }
 
         private boolean arithOpAhead() {
@@ -309,7 +328,7 @@ public final class BoolEval {
         }
 
         private Operand numeric(int start) {
-            ExprEval.Sub sub = ExprEval.parseNumeric(s, start, strict, types);
+            ExprEval.Sub sub = ExprEval.parseNumeric(input, start, strict, types);
             pos = sub.end();
             ExprEval.Expr e = sub.expr();
             return new Operand(vars -> e.eval((name, idx) -> refToDouble(vars.apply(name), idx)),
@@ -319,8 +338,8 @@ public final class BoolEval {
         private Operand varRef() {
             pos++;
             int start = pos;
-            while (pos < s.length() && s.charAt(pos) != '}') pos++;
-            String name = s.substring(start, pos).trim();
+            while (pos < input.length() && input.charAt(pos) != '}') pos++;
+            String name = input.substring(start, pos).trim();
             if (peek() == '}') pos++;
             else if (strict) throw new RuntimeException("expected }");
             if (strict && name.isEmpty()) throw new RuntimeException("empty variable name");
@@ -331,11 +350,11 @@ public final class BoolEval {
         private Operand quoted() {
             pos++;
             StringBuilder sb = new StringBuilder();
-            while (pos < s.length() && s.charAt(pos) != '"') {
-                char ch = s.charAt(pos);
-                if (ch == '\\' && pos + 1 < s.length()) {
+            while (pos < input.length() && input.charAt(pos) != '"') {
+                char ch = input.charAt(pos);
+                if (ch == '\\' && pos + 1 < input.length()) {
                     pos++;
-                    sb.append(s.charAt(pos));
+                    sb.append(input.charAt(pos));
                 } else {
                     sb.append(ch);
                 }
@@ -350,14 +369,14 @@ public final class BoolEval {
         private Operand number() {
             int start = pos;
             if (peek() == '-') pos++;
-            while (pos < s.length()) {
-                char ch = s.charAt(pos);
+            while (pos < input.length()) {
+                char ch = input.charAt(pos);
                 if (Character.isDigit(ch) || ch == '.') pos++;
                 else break;
             }
             double val;
             try {
-                val = Double.parseDouble(s.substring(start, pos));
+                val = Double.parseDouble(input.substring(start, pos));
             } catch (NumberFormatException ex) {
                 throw new RuntimeException("bad number");
             }
@@ -366,12 +385,12 @@ public final class BoolEval {
 
         private Operand identifier() {
             int start = pos;
-            while (pos < s.length()) {
-                char ch = s.charAt(pos);
+            while (pos < input.length()) {
+                char ch = input.charAt(pos);
                 if (Character.isLetterOrDigit(ch) || ch == '_') pos++;
                 else break;
             }
-            String name = s.substring(start, pos);
+            String name = input.substring(start, pos);
             if (name.equalsIgnoreCase("true")) return new Operand(vars -> Boolean.TRUE, ParamType.BOOLEAN);
             if (name.equalsIgnoreCase("false")) return new Operand(vars -> Boolean.FALSE, ParamType.BOOLEAN);
             if (ExprEval.isInputRef(name)) {

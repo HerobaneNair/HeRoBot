@@ -16,6 +16,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.ChatType;
 import net.minecraft.network.chat.PlayerChatMessage;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -35,6 +37,17 @@ public final class ActionExecutor {
             return action(type).execute(b, r, br);
         });
         flow.put(BlockType.SWAP_HANDS, action(ActionType.SWAP_HANDS));
+
+        flow.put(BlockType.ATTEMPT_AUTOJUMP, (b, r, br) -> {
+            ap(r).attemptAutoJump();
+            return StepResult.continueVia(0);
+        });
+
+        flow.put(BlockType.PICK_BLOCK, (b, r, br) -> {
+            String data = ParamEval.evalString(b, "data", r, br);
+            ap(r).pickBlock("with data".equalsIgnoreCase(data));
+            return StepResult.continueVia(0);
+        });
 
         flow.put(BlockType.STOP_ACTION, (b, r, br) -> {
             String name = ParamEval.evalString(b, "action", r, br);
@@ -58,8 +71,11 @@ public final class ActionExecutor {
                 ServerPlayer player = r.player();
                 MinecraftServer server = player.level().getServer();
                 if (message.startsWith("/")) {
-                    server.getCommands().performPrefixedCommand(
-                            player.createCommandSourceStack().withPermission(PermissionSet.ALL_PERMISSIONS), message);
+                    boolean op = ParamEval.evalBool(b, "op", r, br);
+                    var source = player.createCommandSourceStack()
+                            .withPermission(op ? PermissionSet.ALL_PERMISSIONS
+                                    : LevelBasedPermissionSet.forLevel(PermissionLevel.ALL));
+                    server.getCommands().performPrefixedCommand(source, message);
                 } else {
                     PlayerChatMessage chat = PlayerChatMessage.unsigned(player.getUUID(), message);
                     server.getPlayerList().broadcastChatMessage(chat, player, ChatType.bind(ChatType.CHAT, player));

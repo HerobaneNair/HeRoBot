@@ -10,10 +10,8 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.bot.BotPlayer;
-import hero.bane.herobot.bot.BotPlayerActionPack;
 import hero.bane.herobot.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
-import hero.bane.herobot.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.command.helper.*;
 import hero.bane.herobot.control.PlayerController;
 import hero.bane.herobot.control.PlayerControllers;
@@ -28,14 +26,14 @@ import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.chat.ChatType;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.PlayerChatMessage;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.Objects;
@@ -79,6 +77,11 @@ public class PlayerCommand {
                                         .then(Commands.argument("slot", IntegerArgumentType.integer(1, 9))
                                                 .executes(c -> CommandHelper.control(c,
                                                         ap -> ap.setSlot(IntegerArgumentType.getInteger(c, "slot"))))))
+
+                                .then(Commands.literal("pickBlock")
+                                        .executes(CommandHelper.control(ap -> ap.pickBlock(false)))
+                                        .then(Commands.literal("withData")
+                                                .executes(CommandHelper.control(ap -> ap.pickBlock(true)))))
 
                                 .then(Commands.literal("msg")
                                         .then(Commands.argument("msg", StringArgumentType.greedyString())
@@ -137,7 +140,7 @@ public class PlayerCommand {
                                 .then(SkinSubtree.build())
 
                                 .then(Commands.literal("autojump")
-                                        .executes(CommandHelper.manipulation(BotPlayerActionPack::attemptAutoJump))
+                                        .executes(CommandHelper.control(PlayerController::attemptAutoJump))
                                         .then(Commands.literal("true")
                                                 .executes(c -> autoJump(c, true)))
                                         .then(Commands.literal("false")

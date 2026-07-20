@@ -2,6 +2,7 @@ package hero.bane.herobot.client.screen.ai;
 
 import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.Comment;
+import hero.bane.herobot.ai.VarType;
 import hero.bane.herobot.ai.block.BlockDef;
 import hero.bane.herobot.ai.block.BlockDefRegistry;
 import hero.bane.herobot.ai.block.BlockInstance;
@@ -45,6 +46,9 @@ public final class ScriptCanvas {
     private int wireFromId = -1, wireFromPort;
     private int wireToId = -1;
     private double wireMx, wireMy;
+
+    private boolean holeDrag;
+    private double holeGrabDx, holeGrabDy;
 
     private boolean selecting;
     private boolean marqueeAdditive;
@@ -130,7 +134,11 @@ public final class ScriptCanvas {
             double elapsed = starTick - spawnStartTick;
             while (elapsed >= spawnThreshold) {
                 spawnCount++;
-                stars.sparkle(spawnMx, spawnMy);
+                if (spawnCount == StarField.BLACK_HOLE_THRESHOLD && stars.canSpawnBlackHole()) {
+                    stars.bigSparkle(spawnMx, spawnMy);
+                } else {
+                    stars.sparkle(spawnMx, spawnMy);
+                }
                 spawnDelay *= SPAWN_DELAY_MULT;
                 spawnThreshold += spawnDelay;
             }
@@ -169,7 +177,17 @@ public final class ScriptCanvas {
         return new ArrayList<>(dragGroupComments.keySet());
     }
 
+    public boolean isDraggingBlackHole() {
+        return holeDrag;
+    }
+
+    public void deleteBlackHole() {
+        holeDrag = false;
+        stars.removeBlackHole();
+    }
+
     public void cancelDrag() {
+        holeDrag = false;
         dragBlock = null;
         dragActive = false;
         dragGroup.clear();
@@ -267,32 +285,24 @@ public final class ScriptCanvas {
         dropReason = null;
         int dropTargetId = -1;
         boolean dropConflicts = false;
+        int targetOutBlockId = -1;
+        int targetOutIdx = -1;
+        boolean targetOutValid = false;
         if (wireFromId >= 0) {
-            BlockInstance t = inputBlockAt(wmx, wmy);
-            if (t != null && t.id() != wireFromId) {
-                dropTargetId = t.id();
-                BlockInstance src = script().block(wireFromId);
-                boolean sidePort = src != null && wireFromPort == 1
-                        && (src.type() == BlockType.IF || src.type() == BlockType.ELSE_IF);
-                if (wireWouldConflict(wireFromId, wireFromPort, t.id())) {
-                    dropConflicts = true;
-                    dropReason = "this output already drives a conflicting " + shortLabel(t.type()) + " block";
-                } else if (sidePort != (t.type() == BlockType.ELSE_IF)) {
-                    dropConflicts = true;
-                    dropReason = sidePort
-                            ? "the side port only connects to an else (if)"
-                            : "an else (if) only accepts the side port of an if / else (if)";
-                } else if (t.type() == BlockType.BLOCK_END && wireFromPort == 0 && src != null
-                        && AiEditorScreen.isContainer(src.type()) && t.id() != src.pairedId()) {
-                    dropConflicts = true;
-                    dropReason = "a container can only connect to its own end block";
-                } else if (t.type() == BlockType.BLOCK_END && !sourceConnectsToStart(t, wireFromId)) {
-                    dropConflicts = true;
-                    dropReason = "this block isn't inside that end block's container";
-                } else if (t.type() == BlockType.BLOCK_END && endConflict(t, wireFromId)) {
-                    dropConflicts = true;
-                    dropReason = "the end would join conflicting movement blocks";
-                }
+            int tId = resolveInputTargetId(wmx, wmy);
+            if (tId >= 0 && tId != wireFromId) {
+                dropTargetId = tId;
+                dropReason = wireReason(wireFromId, wireFromPort, tId);
+                dropConflicts = dropReason != null;
+            }
+        } else if (wireToId >= 0) {
+            int[] hit = resolveOutTarget(wmx, wmy, wireToId);
+            if (hit != null && hit[0] != wireToId) {
+                dropReason = wireReason(hit[0], hit[1], wireToId);
+                targetOutBlockId = hit[0];
+                targetOutIdx = hit[1];
+                targetOutValid = dropReason == null;
+                if (dropReason != null) dropConflicts = true;
             }
         }
 
@@ -305,15 +315,27 @@ public final class ScriptCanvas {
             slotTarget = findSlotAt(wmx, wmy, -1);
         }
 
-        int hoveredId = (dragBlock == null && wireFromId < 0 && !panning)
-                ? deepHitId(wmx, wmy) : -1;
+        int hoveredId = -1;
+        if (dragBlock == null && wireFromId < 0 && !panning) {
+            hoveredId = deepHitId(wmx, wmy);
+            if (hoveredId < 0) {
+                int[] hp = outPortHit(wmx, wmy);
+                if (hp != null) hoveredId = hp[0];
+            }
+        }
+        int wireTargetId = wireFromId >= 0 ? dropTargetId
+                : (wireToId >= 0 ? targetOutBlockId : -1);
+        boolean idlePorts = wireFromId < 0 && wireToId < 0 && dragBlock == null && !panning;
+        int inHover = idlePorts ? inputPortHit(wmx, wmy) : -1;
 
         for (BlockInstance b : script().blocks().values()) {
             BlockDef def = BlockDefRegistry.get(b.type());
             BlockRenderer.Layout L = layout(b);
             int hoverPort = -1;
-            for (int i = 0; i < L.outPorts.size(); i++) {
-                if (inPortRect(wmx, wmy, L.outPorts.get(i), i == L.sideOutPort)) hoverPort = i;
+            if (idlePorts) {
+                for (int i = 0; i < L.outPorts.size(); i++) {
+                    if (inPortRect(wmx, wmy, L.outPorts.get(i), i == L.sideOutPort)) hoverPort = i;
+                }
             }
             int litPort = (wireFromId == b.id()) ? wireFromPort : -1;
             int inputHL = BlockRenderer.INPUT_NONE;
@@ -322,6 +344,9 @@ public final class ScriptCanvas {
                 inputHL = dropConflicts ? BlockRenderer.INPUT_BAD : BlockRenderer.INPUT_OK;
             } else if (dropConflicts && conflictsWithSibling(b.id(), dropTargetId)) {
                 conflictMark = true;
+            }
+            if (inputHL == BlockRenderer.INPUT_NONE && b.id() == inHover) {
+                inputHL = BlockRenderer.INPUT_OK;
             }
             if (b.type() == BlockType.BLOCK_END) {
                 int extraFrom = (b.id() == dropTargetId && wireFromId >= 0) ? wireFromId : -1;
@@ -332,11 +357,19 @@ public final class ScriptCanvas {
                     }
                 }
             }
+            int targetPort = (b.id() == targetOutBlockId) ? targetOutIdx : -1;
             BlockRenderer.draw(g, font, def, b, L, host.selectedId(), hoveredId, hoverPort, litPort,
-                    inputHL, conflictMark, script());
+                    targetPort, targetOutValid, inputHL, conflictMark, script());
 
             if (host.isSelected(b.id()) && b.id() != host.selectedId()) {
                 int c = 0xFF55AAFF;
+                g.fill(L.x - 1, L.y - 1, L.x + L.w + 1, L.y, c);
+                g.fill(L.x - 1, L.y + L.h, L.x + L.w + 1, L.y + L.h + 1, c);
+                g.fill(L.x - 1, L.y, L.x, L.y + L.h, c);
+                g.fill(L.x + L.w, L.y, L.x + L.w + 1, L.y + L.h, c);
+            }
+            if (b.id() == wireTargetId) {
+                int c = 0xFFFFFFFF;
                 g.fill(L.x - 1, L.y - 1, L.x + L.w + 1, L.y, c);
                 g.fill(L.x - 1, L.y + L.h, L.x + L.w + 1, L.y + L.h + 1, c);
                 g.fill(L.x - 1, L.y, L.x, L.y + L.h, c);
@@ -459,13 +492,31 @@ public final class ScriptCanvas {
         g.disableScissor();
     }
 
+    private static final double GRID_WARP_REACH = 6.0;
+    private static final double GRID_WARP_STRENGTH = 5.0;
+
     private void drawGrid(GuiGraphics g) {
         int step = (int) Math.max(8, 40 * zoom);
-        int ox = (int) (panX % step);
-        int oy = (int) (panY % step);
-        for (int x = left + ox; x < right; x += step) {
-            for (int y = top + oy; y < bottom; y += step) {
-                g.fill(x, y, x + 1, y + 1, 0x20FFFFFF);
+        int startX = (int) (panX + Math.ceil((left - panX) / step) * step);
+        int startY = (int) (panY + Math.ceil((top - panY) / step) * step);
+        double[] bh = stars.blackHoleWarp();
+        for (int x = startX; x < right; x += step) {
+            for (int y = startY; y < bottom; y += step) {
+                int px = x, py = y;
+                if (bh != null && bh[2] > 0.5) {
+                    double cx = bh[0], cy = bh[1], hr = bh[2];
+                    double ddx = cx - x, ddy = cy - y;
+                    double dist = Math.hypot(ddx, ddy);
+                    double reach = hr * GRID_WARP_REACH;
+                    if (dist <= hr) continue;
+                    if (dist < reach) {
+                        double t = 1.0 - dist / reach;
+                        double disp = Math.min(dist - hr, hr * GRID_WARP_STRENGTH * t * t);
+                        px = (int) Math.round(x + ddx / dist * disp);
+                        py = (int) Math.round(y + ddy / dist * disp);
+                    }
+                }
+                g.fill(px, py, px + 1, py + 1, 0x20FFFFFF);
             }
         }
     }
@@ -503,11 +554,6 @@ public final class ScriptCanvas {
     private static final int LANE_STEP = 4;
     private final Map<Wire, Integer> wireLanes = new HashMap<>();
 
-    /**
-     * Wires converging on one input -- the branches of an if rejoining at its end block -- would
-     * otherwise share a midpoint and stack their horizontal runs on top of each other. Give each
-     * one its own lane above the target, nearest source lowest, so the runs stay parallel.
-     */
     private void computeWireLanes() {
         wireLanes.clear();
         Map<Integer, List<Wire>> byTarget = new HashMap<>();
@@ -606,16 +652,10 @@ public final class ScriptCanvas {
         return null;
     }
 
-    /**
-     * A port only ever links to something it already faces: bottom ports look down, the else-if
-     * side port looks right. Connecting against the facing is what used to let an end cap be wired
-     * above its own source, which clampEndBlocks would then shove down every frame.
-     */
     private static boolean facing(boolean side, double px, double py, double qx, double qy) {
         return side ? qx >= px : qy >= py;
     }
 
-    /** Double-click an output node: wire it to the nearest input node it faces. */
     private boolean connectNearestFromOutput(int fromId, int port) {
         BlockInstance from = script().block(fromId);
         if (from == null) return false;
@@ -640,7 +680,6 @@ public final class ScriptCanvas {
         return true;
     }
 
-    /** Double-click an input node: wire it to the nearest output node facing it. */
     private boolean connectNearestFromInput(int toId) {
         BlockInstance to = script().block(toId);
         if (to == null) return false;
@@ -664,6 +703,52 @@ public final class ScriptCanvas {
         if (bestId < 0) return false;
         addWire(bestId, bestPort, toId);
         return true;
+    }
+
+    private void connectNearestAllPorts(BlockInstance b) {
+        BlockRenderer.Layout L = layout(b);
+        if (L.hasInput && !inputHasWire(b.id())) connectNearestFromInput(b.id());
+        for (int i = 0; i < L.outPorts.size(); i++) {
+            if (!outPortHasWire(b.id(), i)) connectNearestFromOutput(b.id(), i);
+        }
+    }
+
+    private boolean outPortHasWire(int blockId, int port) {
+        for (Wire w : script().wires()) {
+            if (w.fromBlockId() == blockId && w.outPort() == port) return true;
+        }
+        return false;
+    }
+
+    private boolean inputHasWire(int blockId) {
+        for (Wire w : script().wires()) {
+            if (w.toBlockId() == blockId) return true;
+        }
+        return false;
+    }
+
+    private int resolveInputTargetId(double worldX, double worldY) {
+        int id = inputPortHit(worldX, worldY);
+        if (id >= 0) return id;
+        BlockInstance b = topBlockAt(worldX, worldY);
+        return b != null && layout(b).hasInput ? b.id() : -1;
+    }
+
+    private int[] resolveOutTarget(double worldX, double worldY, int toId) {
+        int[] hit = outPortHit(worldX, worldY);
+        if (hit != null) return hit;
+        BlockInstance b = topBlockAt(worldX, worldY);
+        if (b == null || b.id() == toId) return null;
+        BlockRenderer.Layout L = layout(b);
+        int best = -1;
+        double bestD = Double.MAX_VALUE;
+        for (int i = 0; i < L.outPorts.size(); i++) {
+            if (!wireAllowed(b.id(), i, toId)) continue;
+            int[] p = L.outPorts.get(i);
+            double d = Math.hypot(p[0] - worldX, p[1] - worldY);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best < 0 ? null : new int[]{b.id(), best};
     }
 
     private boolean sourceConnectsToStart(BlockInstance end, int fromId) {
@@ -734,18 +819,39 @@ public final class ScriptCanvas {
         return h == null ? -1 : h.block().id();
     }
 
+    public boolean overBlockOrComment(double mx, double my) {
+        if (!inside(mx, my)) return false;
+        double[] w = screenToWorld(mx, my);
+        return deepHitId(w[0], w[1]) >= 0 || commentAt(w[0], w[1]) != null;
+    }
+
     public BlockType hoveredType(double mx, double my) {
         if (!inside(mx, my) || dragBlock != null || wireFromId >= 0 || panning) return null;
         double[] w = screenToWorld(mx, my);
         int id = deepHitId(w[0], w[1]);
+        if (id < 0) {
+            int[] hit = outPortHit(w[0], w[1]);
+            if (hit != null) id = hit[0];
+        }
         if (id < 0) return null;
         BlockInstance b = script().block(id);
         return b == null ? null : b.type();
     }
 
-    private BlockInstance inputBlockAt(double worldX, double worldY) {
-        int id = inputPortHit(worldX, worldY);
-        return id < 0 ? null : script().block(id);
+    public BlockType wireTargetType(double mx, double my) {
+        if (!inside(mx, my)) return null;
+        double[] w = screenToWorld(mx, my);
+        int id = -1;
+        if (wireFromId >= 0) {
+            int t = resolveInputTargetId(w[0], w[1]);
+            if (t != wireFromId) id = t;
+        } else if (wireToId >= 0) {
+            int[] hit = resolveOutTarget(w[0], w[1], wireToId);
+            if (hit != null && hit[0] != wireToId) id = hit[0];
+        }
+        if (id < 0) return null;
+        BlockInstance b = script().block(id);
+        return b == null ? null : b.type();
     }
 
     private int inputPortHit(double worldX, double worldY) {
@@ -812,6 +918,20 @@ public final class ScriptCanvas {
     private String nestReason(BlockInstance host, String slotName, BlockInstance reporter) {
         ParamType slotType = slotType(host, slotName);
         BlockShape shape = BlockDefRegistry.get(reporter.type()).shape();
+
+        if (reporter.type() == BlockType.FUNC_PARAM && reporter.pairedId() >= 0) {
+            BlockInstance owner = topLevelOwner(host);
+            if (owner == null || !inFunctionBody(reporter.pairedId(), owner.id())) {
+                return "inputs only work inside their own function";
+            }
+        }
+
+        if (reporter.type() == BlockType.LOOP_ITER && reporter.pairedId() >= 0) {
+            BlockInstance owner = topLevelOwner(host);
+            if (owner == null || !inLoopBody(reporter.pairedId(), owner.id())) {
+                return "iterators only work inside their own loop";
+            }
+        }
 
         if (host.type() == BlockType.EQUIPMENT && "target".equals(slotName)) {
             return "equipment target can't take a block";
@@ -884,6 +1004,74 @@ public final class ScriptCanvas {
             case ITEM -> "an item";
             default -> t.name().toLowerCase(java.util.Locale.ROOT);
         };
+    }
+
+    /** Nested reporters leave the block map, so walk the canvas blocks to find the one holding this. */
+    private BlockInstance topLevelOwner(BlockInstance b) {
+        if (script().block(b.id()) == b) return b;
+        for (BlockInstance top : script().blocks().values()) {
+            if (holdsDeep(top, b)) return top;
+        }
+        return null;
+    }
+
+    private boolean holdsDeep(BlockInstance host, BlockInstance target) {
+        for (BlockInstance child : host.reporterParams().values()) {
+            if (child == target || holdsDeep(child, target)) return true;
+        }
+        return false;
+    }
+
+    /** Every block downstream of a define block's ports is that function's body. */
+    private boolean inFunctionBody(int defineId, int blockId) {
+        if (script().block(defineId) == null) return false;
+        Set<Integer> seen = new HashSet<>();
+        ArrayDeque<Integer> pending = new ArrayDeque<>();
+        seen.add(defineId);
+        pending.add(defineId);
+        while (!pending.isEmpty()) {
+            int cur = pending.poll();
+            for (Wire w : script().wires()) {
+                if (w.fromBlockId() != cur || !seen.add(w.toBlockId())) continue;
+                if (w.toBlockId() == blockId) return true;
+                pending.add(w.toBlockId());
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A loop's body is what hangs off its body ports (never the trailing "after" port) up to its end
+     * block. The loop block itself counts, so an iterator can be used in the loop's own condition.
+     */
+    private boolean inLoopBody(int loopId, int blockId) {
+        BlockInstance loop = script().block(loopId);
+        if (loop == null) return false;
+        if (blockId == loopId) return true;
+        int ports = BlockDefRegistry.get(loop.type()).outPorts();
+        int bodyPorts = ports >= 2 ? ports - 1 : ports;
+        BlockInstance end = endOfLoop(loop);
+        int stopId = end == null ? -1 : end.id();
+
+        Set<Integer> seen = new HashSet<>();
+        ArrayDeque<Integer> pending = new ArrayDeque<>();
+        seen.add(loopId);
+        for (Wire w : script().wires()) {
+            if (w.fromBlockId() == loopId && w.outPort() < bodyPorts && seen.add(w.toBlockId())) {
+                if (w.toBlockId() == blockId) return true;
+                pending.add(w.toBlockId());
+            }
+        }
+        while (!pending.isEmpty()) {
+            int cur = pending.poll();
+            if (cur == stopId) continue;
+            for (Wire w : script().wires()) {
+                if (w.fromBlockId() != cur || !seen.add(w.toBlockId())) continue;
+                if (w.toBlockId() == blockId) return true;
+                pending.add(w.toBlockId());
+            }
+        }
+        return false;
     }
 
     boolean canNestType(BlockInstance host, String slotName, BlockType type) {
@@ -1005,7 +1193,7 @@ public final class ScriptCanvas {
         int[] portHit = outPortHit(worldX, worldY);
         if (portHit != null) {
             if (doubled) {
-                connectNearestFromOutput(portHit[0], portHit[1]);
+                if (!outPortHasWire(portHit[0], portHit[1])) connectNearestFromOutput(portHit[0], portHit[1]);
                 wireFromId = -1;
                 host.select(portHit[0]);
                 return true;
@@ -1018,7 +1206,7 @@ public final class ScriptCanvas {
         int inHit = inputPortHit(worldX, worldY);
         if (inHit >= 0) {
             if (doubled) {
-                connectNearestFromInput(inHit);
+                if (!inputHasWire(inHit)) connectNearestFromInput(inHit);
                 wireToId = -1;
                 host.select(inHit);
                 return true;
@@ -1035,8 +1223,25 @@ public final class ScriptCanvas {
             if (plus != null && worldX >= plus[0] && worldX <= plus[0] + plus[2]
                     && worldY >= plus[1] && worldY <= plus[1] + plus[3]) {
                 if (EffectiveSlots.isCalcBlock(b.type())) host.addCalcInput(b);
+                else if (b.type() == BlockType.FUNC_DEFINE) host.addFuncParam(b);
                 else host.spawnElseIf(b);
                 return true;
+            }
+            for (BlockRenderer.ParamRow p : hit.layout().paramRows) {
+                if (BlockRenderer.ParamRow.hits(p.typeRect(), worldX, worldY)) {
+                    pickParamType(b, p.index(), mx, my);
+                    host.select(b.id());
+                    return true;
+                }
+                if (BlockRenderer.ParamRow.hits(p.dragRect(), worldX, worldY)) {
+                    BlockInstance ref = host.spawnFuncParam(b, p.index(), worldX, worldY);
+                    if (ref != null) {
+                        host.select(ref.id());
+                        beginBlockDrag(ref, worldX, worldY);
+                        dragDidSnapshot = true;
+                    }
+                    return true;
+                }
             }
             int[] expander = hit.layout().expander;
             if (expander != null && worldX >= expander[0] && worldX <= expander[0] + expander[2]
@@ -1045,6 +1250,8 @@ public final class ScriptCanvas {
                 else if (EffectiveSlots.isCalcBlock(b.type())) host.removeCalcInput(b);
                 else if (EffectiveSlots.sensorTakesTarget(b.type())) host.toggleSensorTarget(b);
                 else if (EffectiveSlots.isLoopBlock(b.type())) host.toggleLoopIter(b);
+                else if (EffectiveSlots.sendTakesOp(b.type())) host.toggleSendOp(b);
+                else if (b.type() == BlockType.FUNC_DEFINE) host.removeLastFuncParam(b);
                 return true;
             }
             int[] iterChip = hit.layout().iterChip;
@@ -1062,6 +1269,8 @@ public final class ScriptCanvas {
                 if (c.contains(worldX, worldY)) {
                     ParamType pt = slotType(b, c.name());
                     if (b.type() == BlockType.SET_SCRIPT && c.name().equals("script")) pickScript(b, mx, my);
+                    else if (b.type() == BlockType.FUNC_DEFINE && c.name().equals("name")) pickDefineName(b, mx, my);
+                    else if (b.type() == BlockType.FUNC_CALL && c.name().equals("name")) pickCallName(b, mx, my);
                     else if (pt == ParamType.VAR_REF) pickVarRef(b, c.name(), mx, my);
                     else if (pt == ParamType.ENUM) pickEnum(b, c.name(), mx, my);
                     else host.editParam(b, c.name());
@@ -1071,6 +1280,11 @@ public final class ScriptCanvas {
             }
 
             boolean detached = hit.parent() != null;
+            if (doubled && !detached) {
+                connectNearestAllPorts(b);
+                host.select(b.id());
+                return true;
+            }
             if (detached) {
                 host.pushUndo();
                 detach(hit.parent(), hit.slot(), b, hit.layout());
@@ -1084,6 +1298,14 @@ public final class ScriptCanvas {
             }
             beginBlockDrag(b, worldX, worldY);
             if (detached) dragDidSnapshot = true;
+            return true;
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && stars.blackHoleGrabbed(mx, my)) {
+            double[] pos = stars.blackHolePos();
+            holeDrag = true;
+            holeGrabDx = mx - pos[0];
+            holeGrabDy = my - pos[1];
             return true;
         }
 
@@ -1109,7 +1331,18 @@ public final class ScriptCanvas {
     private void snapIteratorsIntoBounds() {
         for (Map.Entry<Integer, double[]> e : dragGroup.entrySet()) {
             BlockInstance b = script().block(e.getKey());
-            if (b == null || b.type() != BlockType.LOOP_ITER) continue;
+            if (b == null) continue;
+            if (b.type() == BlockType.FUNC_PARAM) {
+                BlockInstance def = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
+                if (def == null || dragGroup.containsKey(def.id())) continue;
+                double minY = def.y() + layout(def).h;
+                if (b.y() >= minY) continue;
+                if (!dragDidSnapshot) { host.pushUndo(); dragDidSnapshot = true; }
+                b.setPos(b.x(), minY);
+                e.setValue(new double[]{b.x(), minY});
+                continue;
+            }
+            if (b.type() != BlockType.LOOP_ITER) continue;
             BlockInstance loop = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
             if (loop == null || dragGroup.containsKey(loop.id())) continue;
             double minY = loop.y() + layout(loop).h;
@@ -1233,6 +1466,10 @@ public final class ScriptCanvas {
 
     public boolean mouseDragged(double mx, double my) {
         if (shiftRightSpawn) { shiftRightDragged = true; spawnMx = mx; spawnMy = my; return true; }
+        if (holeDrag) {
+            stars.moveBlackHole(mx - holeGrabDx, my - holeGrabDy);
+            return true;
+        }
         if (panning) {
             panX += mx - lastMx;
             panY += my - lastMy;
@@ -1309,6 +1546,12 @@ public final class ScriptCanvas {
             BlockRenderer.Layout L = layout(b);
             double oy = e.getValue()[1];
             double inOff = L.inY - b.y();
+            if (b.type() == BlockType.FUNC_PARAM) {
+                BlockInstance def = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
+                if (def != null && !dragGroup.containsKey(def.id())) {
+                    lower = Math.max(lower, (def.y() + layout(def).h) - oy);
+                }
+            }
             if (b.type() == BlockType.LOOP_ITER) {
                 BlockInstance loop = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
                 if (loop != null && !dragGroup.containsKey(loop.id())) {
@@ -1393,6 +1636,10 @@ public final class ScriptCanvas {
             if (Math.hypot(mx - rightDownX, my - rightDownY) < RIGHT_CLICK_SLOP) openContextMenu(mx, my);
             return true;
         }
+        if (holeDrag) {
+            holeDrag = false;
+            return true;
+        }
         boolean handled = false;
         double worldX = wx(mx), worldY = wy(my);
         if (selecting) {
@@ -1401,14 +1648,14 @@ public final class ScriptCanvas {
             return true;
         }
         if (wireToId >= 0) {
-            int[] hit = outPortHit(worldX, worldY);
+            int[] hit = resolveOutTarget(worldX, worldY, wireToId);
             if (hit != null && hit[0] != wireToId) {
                 addWire(hit[0], hit[1], wireToId);
             }
             wireToId = -1;
             handled = true;
         } else if (wireFromId >= 0) {
-            int toId = inputPortHit(worldX, worldY);
+            int toId = resolveInputTargetId(worldX, worldY);
             if (toId >= 0 && toId != wireFromId) {
                 addWire(wireFromId, wireFromPort, toId);
             }
@@ -1416,6 +1663,7 @@ public final class ScriptCanvas {
             handled = true;
         } else if (dragBlock != null && BlockDefRegistry.get(dragBlock.type()).isReporter()) {
             Object[] tgt = findSlotAt(worldX, worldY, dragBlock.id());
+            boolean nested = false;
             if (tgt != null) {
                 BlockInstance target = (BlockInstance) tgt[0];
                 String slot = (String) tgt[1];
@@ -1423,8 +1671,14 @@ public final class ScriptCanvas {
                     script().blocks().remove(dragBlock.id());
                     target.setReporter(slot, dragBlock);
                     host.ternarySlotChanged(target, slot);
+                    nested = true;
                     handled = true;
                 }
+            }
+            // A parameter reference only means anything plugged into a block; loose ones are discarded.
+            if (!nested && dragBlock.type() == BlockType.FUNC_PARAM) {
+                host.deleteBlock(dragBlock.id());
+                handled = true;
             }
         } else if (dragBlock != null && dragDidSnapshot && spliceDragEligible() && canSplice(dragBlock)) {
             if (trySplice(dragBlock, worldX, worldY)) handled = true;
@@ -1470,18 +1724,35 @@ public final class ScriptCanvas {
     }
 
     private boolean wireAllowed(int fromId, int port, int toId) {
-        if (wireWouldConflict(fromId, port, toId)) return false;
+        return wireReason(fromId, port, toId) == null;
+    }
+
+    private String wireReason(int fromId, int port, int toId) {
         BlockInstance source = script().block(fromId);
         BlockInstance target = script().block(toId);
-        if (source == null || target == null) return false;
+        if (source == null || target == null) return "that isn't a valid connection";
+        if (wireWouldConflict(fromId, port, toId)) {
+            return "this output already drives a conflicting " + shortLabel(target.type()) + " block";
+        }
         boolean sidePort = port == 1
                 && (source.type() == BlockType.IF || source.type() == BlockType.ELSE_IF);
-        if (sidePort != (target.type() == BlockType.ELSE_IF)) return false;
-        boolean isEnd = target.type() == BlockType.BLOCK_END;
-        if (isEnd && port == 0 && AiEditorScreen.isContainer(source.type())
-                && target.id() != source.pairedId()) return false;
-        if (isEnd && (!sourceConnectsToStart(target, fromId) || endConflict(target, fromId))) return false;
-        return true;
+        if (sidePort != (target.type() == BlockType.ELSE_IF)) {
+            return sidePort
+                    ? "the side port only connects to an else (if)"
+                    : "an else (if) only accepts the side port of an if / else (if)";
+        }
+        if (target.type() == BlockType.BLOCK_END) {
+            if (port == 0 && AiEditorScreen.isContainer(source.type()) && target.id() != source.pairedId()) {
+                return "a container can only connect to its own end block";
+            }
+            if (!sourceConnectsToStart(target, fromId)) {
+                return "this block isn't inside that end block's container";
+            }
+            if (endConflict(target, fromId)) {
+                return "the end would join conflicting movement blocks";
+            }
+        }
+        return null;
     }
 
     private void addWire(int fromId, int port, int toId) {
@@ -1512,8 +1783,6 @@ public final class ScriptCanvas {
         for (BlockInstance c : script().blocks().values()) {
             if (!AiEditorScreen.isContainer(c.type()) || c.pairedId() < 0) continue;
             BlockInstance end = script().block(c.pairedId());
-            // Never relocate an end that is itself the wire source: connecting FROM an end's
-            // output node must not teleport that end after the block it feeds.
             if (end == null || end.id() == toId || end.id() == fromId) continue;
             if (sourceConnectsToStart(end, toId)) continue;
             if (fromId != c.id() && !sourceConnectsToStart(end, fromId)) continue;
@@ -2025,7 +2294,7 @@ public final class ScriptCanvas {
         List<String> names = EffectiveSlots.variableNames(script());
         menu.clear();
         if (names.isEmpty()) {
-            menu.add("(no variables)", () -> {});
+            menu.add("(no variables)", false, () -> {});
         } else {
             for (String n : names) menu.add(n, () -> host.setVarRef(b, slot, n));
         }
@@ -2037,9 +2306,35 @@ public final class ScriptCanvas {
         List<String> names = host.serverScriptNames();
         menu.clear();
         if (names.isEmpty()) {
-            menu.add("(no scripts on server)", () -> {});
+            menu.add("(no scripts on server)", false, () -> {});
         } else {
             for (String n : names) menu.add(n, () -> host.setEnumChoice(b, "script", n));
+        }
+        menu.openAt(sx, sy, left, top, right, bottom);
+    }
+
+    /**
+     * Function names always open a picker, even with a single choice: unlike a fixed enum, the list
+     * shrinks as functions get defined, so one remaining option still has to be selectable.
+     */
+    private void pickDefineName(BlockInstance b, double sx, double sy) {
+        List<String> choices = EffectiveSlots.defineNameChoices(b, script());
+        menu.clear();
+        if (choices.isEmpty()) {
+            menu.add("(all functions defined)", false, () -> {});
+        } else {
+            for (String ch : choices) menu.add(ch, () -> host.setEnumChoice(b, "name", ch));
+        }
+        menu.openAt(sx, sy, left, top, right, bottom);
+    }
+
+    private void pickCallName(BlockInstance b, double sx, double sy) {
+        List<String> names = EffectiveSlots.functionNames(script());
+        menu.clear();
+        if (names.isEmpty()) {
+            menu.add("(no functions)", false, () -> {});
+        } else {
+            for (String n : names) menu.add(n, () -> host.setEnumChoice(b, "name", n));
         }
         menu.openAt(sx, sy, left, top, right, bottom);
     }
@@ -2061,6 +2356,14 @@ public final class ScriptCanvas {
         return List.of();
     }
 
+    private void pickParamType(BlockInstance b, int index, double sx, double sy) {
+        menu.clear();
+        for (VarType t : VarType.values()) {
+            menu.add(t.displayName(), () -> host.setFuncParamType(b, index, t));
+        }
+        menu.openAt(sx, sy, left, top, right, bottom);
+    }
+
     private void openContextMenu(double sx, double sy) {
         double worldX = wx(sx), worldY = wy(sy);
         menu.clear();
@@ -2078,9 +2381,10 @@ public final class ScriptCanvas {
                 menu.add("Add comment", () -> host.addComment(worldX, worldY, attachId));
                 menu.add("Delete", host::deleteSelected);
             } else {
-                menu.add("Paste", () -> host.pasteAt(worldX, worldY));
+                menu.add("Paste", host.hasClipboard(), () -> host.pasteAt(worldX, worldY));
                 menu.add("Add comment", () -> host.addComment(worldX, worldY, -1));
                 menu.add("Convert command", () -> host.convertCommandAt(worldX, worldY));
+                menu.add("Doom", () -> stars.spawnBlackHole(left, top, right, bottom));
             }
         }
         menu.openAt(sx, sy, left, top, right, bottom);

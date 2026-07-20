@@ -2,13 +2,17 @@ package hero.bane.herobot.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import hero.bane.herobot.HeroBot;
+import hero.bane.herobot.client.screen.ai.SidebarMode;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class EditorPrefs {
     private EditorPrefs() {}
@@ -21,6 +25,9 @@ public final class EditorPrefs {
     private static boolean cometsEnabled = true;
     private static int autosaveSeconds = 30;
     private static boolean recordSingleTree = false;
+    private static SidebarMode leftSidebarMode = SidebarMode.MAXIMIZED;
+    private static SidebarMode rightSidebarMode = SidebarMode.MAXIMIZED;
+    private static List<String> categoryOrder = List.of();
 
     public static boolean cometsEnabled() {
         ensureLoaded();
@@ -59,6 +66,42 @@ public final class EditorPrefs {
         save();
     }
 
+    public static List<String> categoryOrder() {
+        ensureLoaded();
+        return List.copyOf(categoryOrder);
+    }
+
+    public static void setCategoryOrder(List<String> value) {
+        ensureLoaded();
+        if (categoryOrder.equals(value)) return;
+        categoryOrder = List.copyOf(value);
+        save();
+    }
+
+    public static SidebarMode leftPanelMode() {
+        ensureLoaded();
+        return leftSidebarMode;
+    }
+
+    public static void setLeftPanelMode(SidebarMode value) {
+        ensureLoaded();
+        if (leftSidebarMode == value) return;
+        leftSidebarMode = value;
+        save();
+    }
+
+    public static SidebarMode rightPanelMode() {
+        ensureLoaded();
+        return rightSidebarMode;
+    }
+
+    public static void setRightPanelMode(SidebarMode value) {
+        ensureLoaded();
+        if (rightSidebarMode == value) return;
+        rightSidebarMode = value;
+        save();
+    }
+
     private static void ensureLoaded() {
         if (loaded) return;
         loaded = true;
@@ -76,6 +119,17 @@ public final class EditorPrefs {
             if (json != null && json.has("recordSingleTree")) {
                 recordSingleTree = json.get("recordSingleTree").getAsBoolean();
             }
+            if (json != null && json.has("leftPanelMode")) {
+                leftSidebarMode = SidebarMode.fromName(json.get("leftPanelMode").getAsString());
+            }
+            if (json != null && json.has("rightPanelMode")) {
+                rightSidebarMode = SidebarMode.fromName(json.get("rightPanelMode").getAsString());
+            }
+            if (json != null && json.has("categoryOrder")) {
+                List<String> names = new ArrayList<>();
+                for (var e : json.getAsJsonArray("categoryOrder")) names.add(e.getAsString());
+                categoryOrder = List.copyOf(names);
+            }
         } catch (Exception e) {
             HeroBot.LOGGER.error("Failed reading editor prefs: {}", FILE.getAbsolutePath(), e);
         }
@@ -86,6 +140,11 @@ public final class EditorPrefs {
         json.addProperty("cometsEnabled", cometsEnabled);
         json.addProperty("autosaveSeconds", autosaveSeconds);
         json.addProperty("recordSingleTree", recordSingleTree);
+        json.addProperty("leftPanelMode", leftSidebarMode.name());
+        json.addProperty("rightPanelMode", rightSidebarMode.name());
+        JsonArray order = new JsonArray();
+        for (String name : categoryOrder) order.add(name);
+        json.add("categoryOrder", order);
         try (FileWriter writer = new FileWriter(FILE)) {
             GSON.toJson(json, writer);
         } catch (Exception e) {

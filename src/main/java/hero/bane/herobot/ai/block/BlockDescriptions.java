@@ -21,9 +21,11 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.ATTACK, "Simulate a left click (can be held or put in interval); twice is meant for shield stunning");
         DESCRIPTIONS.put(BlockType.SWING, "Fake swing the arm (can be held or put in interval)");
         DESCRIPTIONS.put(BlockType.JUMP, "Jump... (can be held or put in interval)");
+        DESCRIPTIONS.put(BlockType.ATTEMPT_AUTOJUMP, "Try to auto-jump right now, once, without turning auto-jump on");
         DESCRIPTIONS.put(BlockType.DROP_ITEM, "Drop 1 item or the entire stack from the held stack (can be held or put in interval)");
         DESCRIPTIONS.put(BlockType.SWAP_HANDS, "Swap the items in the main hand and off hand");
-        DESCRIPTIONS.put(BlockType.SEND_MESSAGE, "Send a chat message (or command by starting with /) as it");
+        DESCRIPTIONS.put(BlockType.PICK_BLOCK, "Pick block whatever it is looking at, once (with data copies the block's contents; creative only)");
+        DESCRIPTIONS.put(BlockType.SEND_MESSAGE, "Send a chat message (or command by starting with /) as it. Click the ⁺ to enable sending the command as if the bot had op");
         DESCRIPTIONS.put(BlockType.STOP_ACTION, "Stop a specific ongoing action (i.e. using or attacking)");
         DESCRIPTIONS.put(BlockType.STOP_ALL, "Stop all ongoing actions at once");
         DESCRIPTIONS.put(BlockType.DOING_ACTION, "True while the target bot is driving the chosen input/action");
@@ -111,6 +113,10 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.VEC3, "Build a position from x, y and z values");
         DESCRIPTIONS.put(BlockType.ROT, "Build a rotation from yaw and pitch values");
         DESCRIPTIONS.put(BlockType.TO_STRING, "Convert a value into text");
+
+        DESCRIPTIONS.put(BlockType.FUNC_DEFINE, "Define a function; add typed inputs with ⁺ and drag the chip under an input to use it in the body. Only one define block per function");
+        DESCRIPTIONS.put(BlockType.FUNC_CALL, "Run a function, passing a value for each of its inputs");
+        DESCRIPTIONS.put(BlockType.FUNC_PARAM, "The value passed into a function input for this call");
     }
 
     private BlockDescriptions() {}

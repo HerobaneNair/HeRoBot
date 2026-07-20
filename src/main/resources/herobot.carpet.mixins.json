@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "hero.bane.herobot.mixin.carpet",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "CarpetPlayerCommandMixin",
+    "CarpetSettingsManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -9,6 +9,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket;
+import net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket;
+import net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -507,6 +509,12 @@ public class BotPlayerActionPack implements PlayerController {
                 && (forward != 0 || strafing != 0);
     }
 
+    private static void dropAndSwing(ServerPlayer player, boolean dropStack) {
+        boolean dropped = !player.getInventory().getSelectedItem().isEmpty();
+        player.drop(dropStack);
+        if (dropped) player.swing(InteractionHand.MAIN_HAND);
+    }
+
     static HitResult getTarget(ServerPlayer player) {
         double blockReach = player.getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
         double entityReach = player.getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE);
@@ -520,6 +528,19 @@ public class BotPlayerActionPack implements PlayerController {
     public void setSlot(int slot) {
         player.getInventory().setSelectedSlot(slot - 1);
         player.connection.send(new ClientboundSetHeldSlotPacket(slot - 1));
+    }
+
+    public void pickBlock(boolean includeData) {
+        // Copying block entity data is a creative-only ability; vanilla enforces this too.
+        boolean data = includeData && player.hasInfiniteMaterials();
+        HitResult hit = getTarget(player);
+        switch (hit.getType()) {
+            case BLOCK -> player.connection.handlePickItemFromBlock(
+                    new ServerboundPickItemFromBlockPacket(((BlockHitResult) hit).getBlockPos(), data));
+            case ENTITY -> player.connection.handlePickItemFromEntity(
+                    new ServerboundPickItemFromEntityPacket(((EntityHitResult) hit).getEntity().getId(), data));
+            case MISS -> { }
+        }
     }
 
     private static void handleSpearStab(ServerPlayer player) {
@@ -786,7 +807,7 @@ public class BotPlayerActionPack implements PlayerController {
             @Override
             boolean execute(ServerPlayer player, Action action) {
                 player.resetLastActionTime();
-                player.drop(false);
+                dropAndSwing(player, false);
 
                 return false;
             }
@@ -795,7 +816,7 @@ public class BotPlayerActionPack implements PlayerController {
             @Override
             boolean execute(ServerPlayer player, Action action) {
                 player.resetLastActionTime();
-                player.drop(true);
+                dropAndSwing(player, true);
 
                 return false;
             }

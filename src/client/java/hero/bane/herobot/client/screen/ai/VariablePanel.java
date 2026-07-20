@@ -1,6 +1,7 @@
 package hero.bane.herobot.client.screen.ai;
 
 import hero.bane.herobot.ai.AiScript;
+import hero.bane.herobot.ai.FuncDecl;
 import hero.bane.herobot.ai.VarDecl;
 import hero.bane.herobot.ai.VarType;
 import hero.bane.herobot.ai.block.BlockDef;
@@ -26,6 +27,10 @@ public final class VariablePanel {
     private static final int K_UNGROUPED = 2;
     private static final int K_ADD_VAR = 3;
     private static final int K_ADD_FOLDER = 4;
+    private static final int K_FUNC = 5;
+    private static final int K_ADD_FUNC = 6;
+
+    private static final int FUNC_TEXT = 0xFFC9A2FF;
 
     private record Row(int kind, int varIndex, String folder) {}
 
@@ -38,6 +43,7 @@ public final class VariablePanel {
     private final Set<String> collapsed = new HashSet<>();
 
     private int pressVar = -1;
+    private int pressFunc = -1;
     private boolean dragging;
     private double pressX, pressY, dragX, dragY;
 
@@ -69,6 +75,7 @@ public final class VariablePanel {
     private BlockType infoType() {
         BlockType t = host.paletteHoverType();
         if (t == null) t = host.paletteDragType();
+        if (t == null) t = host.canvasWireTargetType();
         if (t == null) t = host.canvasHoverType();
         return t;
     }
@@ -77,7 +84,9 @@ public final class VariablePanel {
         List<Row> rows = new ArrayList<>();
         rows.add(new Row(K_ADD_VAR, -1, ""));
         rows.add(new Row(K_ADD_FOLDER, -1, ""));
+        rows.add(new Row(K_ADD_FUNC, -1, ""));
         List<VarDecl> vars = script().variables();
+        List<FuncDecl> funcs = script().functions();
         List<String> folders = script().varFolders();
         for (String f : folders) {
             rows.add(new Row(K_FOLDER, -1, f));
@@ -85,12 +94,19 @@ public final class VariablePanel {
                 for (int i = 0; i < vars.size(); i++) {
                     if (f.equals(vars.get(i).folder())) rows.add(new Row(K_VAR, i, f));
                 }
+                for (int i = 0; i < funcs.size(); i++) {
+                    if (f.equals(funcs.get(i).folder())) rows.add(new Row(K_FUNC, i, f));
+                }
             }
         }
         if (!folders.isEmpty()) rows.add(new Row(K_UNGROUPED, -1, ""));
         for (int i = 0; i < vars.size(); i++) {
             String vf = vars.get(i).folder();
             if (vf.isEmpty() || !folders.contains(vf)) rows.add(new Row(K_VAR, i, ""));
+        }
+        for (int i = 0; i < funcs.size(); i++) {
+            String ff = funcs.get(i).folder();
+            if (ff.isEmpty() || !folders.contains(ff)) rows.add(new Row(K_FUNC, i, ""));
         }
         return rows;
     }
@@ -109,7 +125,7 @@ public final class VariablePanel {
         g.fill(x, y, x + w, y + h, 0xF01A1A1A);
         g.fill(x, y, x + 1, y + h, 0xFF000000);
         g.fill(x, y, x + w, y + HEADER_H, 0xFF2A2A2A);
-        g.drawString(font, "Variables", x + 5, y + 4, 0xFFFFFFFF, false);
+        g.drawString(font, "Variables & functions", x + 5, y + 4, 0xFFFFFFFF, false);
 
         List<Row> rows = buildRows();
         scroll = clampScroll(scroll, rows);
@@ -165,6 +181,19 @@ public final class VariablePanel {
                 g.fill(x + 4, ry + 1, x + w - 4, ry + ROW_H - 1, hover ? 0x66FFD080 : 0x33FFD080);
                 g.drawString(font, "+ New folder", x + 8, ry + 3, 0xFFFFD080, false);
             }
+            case K_ADD_FUNC -> {
+                g.fill(x + 4, ry + 1, x + w - 4, ry + ROW_H - 1, hover ? 0x669B6BEF : 0x339B6BEF);
+                g.drawString(font, "+ Add function", x + 8, ry + 3, FUNC_TEXT, false);
+            }
+            case K_FUNC -> {
+                FuncDecl f = script().functions().get(row.varIndex());
+                int indent = row.folder().isEmpty() ? 0 : 8;
+                if (hover) g.fill(x + 1, ry, x + w - 1, ry + ROW_H, 0x22FFFFFF);
+                if (indent > 0) g.fill(x + 3, ry, x + 4, ry + ROW_H, 0x339B6BEF);
+                String label = f.name() + "(" + f.arity() + ")";
+                g.drawString(font, trim(label, w - 24 - indent), x + 4 + indent, ry + 3, FUNC_TEXT, false);
+                g.drawString(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
+            }
             default -> {}
         }
     }
@@ -181,12 +210,22 @@ public final class VariablePanel {
     }
 
     private void renderDragGhost(GuiGraphics g) {
-        if (!dragging || pressVar < 0 || pressVar >= script().variables().size()) return;
-        String nm = script().variables().get(pressVar).name();
+        if (!dragging) return;
+        String nm;
+        int accent;
+        if (pressFunc >= 0 && pressFunc < script().functions().size()) {
+            nm = script().functions().get(pressFunc).name();
+            accent = 0xFF9B6BEF;
+        } else if (pressVar >= 0 && pressVar < script().variables().size()) {
+            nm = script().variables().get(pressVar).name();
+            accent = 0xFF6AB0FF;
+        } else {
+            return;
+        }
         int gw = font.width(nm) + 10;
         int gx = (int) dragX + 6, gy = (int) dragY - 6;
         g.fill(gx, gy, gx + gw, gy + 13, 0xEE303030);
-        g.fill(gx, gy, gx + gw, gy + 1, 0xFF6AB0FF);
+        g.fill(gx, gy, gx + gw, gy + 1, accent);
         g.drawString(font, nm, gx + 4, gy + 3, 0xFFFFFFFF, false);
     }
 
@@ -226,6 +265,7 @@ public final class VariablePanel {
         }
         if (!inside(mx, my)) return false;
         pressVar = -1;
+        pressFunc = -1;
         dragging = false;
         Row row = rowAt(my);
         if (row == null) return true;
@@ -250,13 +290,22 @@ public final class VariablePanel {
             }
             case K_ADD_VAR -> { host.pushUndo(); addVariable(); }
             case K_ADD_FOLDER -> { host.pushUndo(); addFolder(); }
+            case K_ADD_FUNC -> { host.pushUndo(); addFunction(); }
+            case K_FUNC -> {
+                if (mx >= x + w - 14) { host.pushUndo(); deleteFunction(row.varIndex()); }
+                else {
+                    pressFunc = row.varIndex();
+                    pressX = mx;
+                    pressY = my;
+                }
+            }
             default -> {}
         }
         return true;
     }
 
     public boolean mouseDragged(double mx, double my) {
-        if (pressVar < 0) return false;
+        if (pressVar < 0 && pressFunc < 0) return false;
         dragX = mx;
         dragY = my;
         if (!dragging && Math.abs(mx - pressX) + Math.abs(my - pressY) > DRAG_SLOP) dragging = true;
@@ -264,6 +313,7 @@ public final class VariablePanel {
     }
 
     public boolean mouseReleased(double mx, double my) {
+        if (pressFunc >= 0) return releaseFunction(mx, my);
         if (pressVar < 0) return false;
         int vi = pressVar;
         boolean wasDragging = dragging;
@@ -290,12 +340,12 @@ public final class VariablePanel {
             final int idx = vi;
             host.promptText("Variable name", vars.get(idx).name(), name -> {
                 if (name != null && !name.isBlank()) {
+                    String cleaned = cleanVarName(name);
+                    if (cleaned.isEmpty()) return;
                     host.pushUndo();
                     List<VarDecl> vs = script().variables();
                     if (idx < vs.size()) {
                         VarDecl old = vs.get(idx);
-                        String cleaned = name.trim().replace(" ", "");
-                        if (cleaned.isEmpty()) return;
                         String unique = uniqueName(cleaned, old.folder(), idx);
                         VarDecl renamed = old.withName(unique);
                         vs.set(idx, renamed);
@@ -307,12 +357,40 @@ public final class VariablePanel {
         return true;
     }
 
+    private boolean releaseFunction(double mx, double my) {
+        int fi = pressFunc;
+        boolean wasDragging = dragging;
+        pressFunc = -1;
+        dragging = false;
+        List<FuncDecl> funcs = script().functions();
+        if (fi < 0 || fi >= funcs.size()) return true;
+
+        if (wasDragging) {
+            if (!inside(mx, my)) {
+                host.dropFunctionBlock(funcs.get(fi).qualifiedName(), mx, my);
+                return true;
+            }
+            String target = folderTargetAt(mx, my);
+            if (target != null && !target.equals(funcs.get(fi).folder())) {
+                host.pushUndo();
+                FuncDecl old = funcs.get(fi);
+                String name = uniqueFuncName(old.name(), target, fi);
+                FuncDecl moved = old.withFolder(target).withName(name);
+                funcs.set(fi, moved);
+                host.refactorFunctionRef(old.qualifiedName(), moved.qualifiedName());
+            }
+        } else {
+            renameFunction(fi);
+        }
+        return true;
+    }
+
     private String folderTargetAt(double mx, double my) {
         if (!inside(mx, my)) return null;
         Row row = rowAt(my);
         if (row == null) return null;
         return switch (row.kind()) {
-            case K_FOLDER, K_VAR -> row.folder();
+            case K_FOLDER, K_VAR, K_FUNC -> row.folder();
             case K_UNGROUPED -> "";
             default -> null;
         };
@@ -339,14 +417,80 @@ public final class VariablePanel {
                 host.refactorVariableRef(old.qualifiedName(), moved.qualifiedName());
             }
         }
+        List<FuncDecl> funcs = script().functions();
+        for (int i = 0; i < funcs.size(); i++) {
+            if (!folder.equals(funcs.get(i).folder())) continue;
+            FuncDecl old = funcs.get(i);
+            String name = uniqueFuncName(old.name(), "", i);
+            FuncDecl moved = old.withFolder("").withName(name);
+            funcs.set(i, moved);
+            host.refactorFunctionRef(old.qualifiedName(), moved.qualifiedName());
+        }
         script().varFolders().remove(folder);
         collapsed.remove(folder);
+    }
+
+    private void addFunction() {
+        List<FuncDecl> funcs = script().functions();
+        String name = uniqueFuncName("func" + (funcs.size() + 1), "", -1);
+        funcs.add(new FuncDecl(name));
+        host.normalizeAllDefineNames();
+    }
+
+    private void deleteFunction(int fi) {
+        List<FuncDecl> funcs = script().functions();
+        if (fi < 0 || fi >= funcs.size()) return;
+        String qualified = funcs.remove(fi).qualifiedName();
+        host.refactorFunctionRef(qualified, "");
+        host.normalizeAllDefineNames();
+    }
+
+    private void renameFunction(int fi) {
+        List<FuncDecl> funcs = script().functions();
+        if (fi < 0 || fi >= funcs.size()) return;
+        host.promptText("Function name", funcs.get(fi).name(), name -> {
+            if (name == null || name.isBlank()) return;
+            String cleaned = cleanVarName(name);
+            if (cleaned.isEmpty()) return;
+            host.pushUndo();
+            List<FuncDecl> fs = script().functions();
+            if (fi >= fs.size()) return;
+            FuncDecl old = fs.get(fi);
+            String unique = uniqueFuncName(cleaned, old.folder(), fi);
+            FuncDecl renamed = old.withName(unique);
+            fs.set(fi, renamed);
+            host.refactorFunctionRef(old.qualifiedName(), renamed.qualifiedName());
+        });
+    }
+
+    private boolean funcNameTaken(String name, String folder, int excludeIndex) {
+        List<FuncDecl> funcs = script().functions();
+        for (int i = 0; i < funcs.size(); i++) {
+            if (i == excludeIndex) continue;
+            FuncDecl f = funcs.get(i);
+            if (f.folder().equals(folder) && f.name().equals(name)) return true;
+        }
+        return false;
+    }
+
+    private String uniqueFuncName(String desired, String folder, int excludeIndex) {
+        if (!funcNameTaken(desired, folder, excludeIndex)) return desired;
+        int n = 2;
+        String candidate;
+        do {
+            candidate = desired + n++;
+        } while (funcNameTaken(candidate, folder, excludeIndex));
+        return candidate;
     }
 
     private void addVariable() {
         List<VarDecl> vars = script().variables();
         String name = uniqueName("var" + (vars.size() + 1), "", -1);
         vars.add(new VarDecl(name, VarType.BOOL, false));
+    }
+
+    private static String cleanVarName(String raw) {
+        return raw.replaceAll("[^A-Za-z0-9]", "").replaceAll("^\\d+", "");
     }
 
     private boolean collides(String name, String folder, int excludeIndex) {
@@ -396,16 +540,7 @@ public final class VariablePanel {
     }
 
     public static Object defaultFor(VarType t) {
-        return switch (t) {
-            case BOOL -> false;
-            case INT -> 0;
-            case DOUBLE -> 0.0;
-            case POSITION -> "0 64 0";
-            case ROTATION -> "0 0";
-            case STRING -> "";
-            case UUID -> "00000000-0000-0000-0000-000000000000";
-            case ITEM -> "minecraft:air";
-        };
+        return hero.bane.herobot.ai.block.EffectiveSlots.defaultForVar(t);
     }
 
     private List<String> wrap(String text, int maxW) {

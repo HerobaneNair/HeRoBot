@@ -1,22 +1,29 @@
 package hero.bane.herobot.client.control;
 
+import hero.bane.herobot.bot.pathing.DebugChannel;
 import hero.bane.herobot.bot.pathing.PathSettingOps;
 import hero.bane.herobot.bot.pathing.PathSettings;
+import hero.bane.herobot.client.net.ServerLink;
 import hero.bane.herobot.control.ControlOp;
 import hero.bane.herobot.networking.PathDonePayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 
 public final class ClientOps {
     public static final ClientOps INSTANCE = new ClientOps();
 
-    private ClientOps() {}
+    private ClientOps() {
+    }
 
-    private final PathSettings pathSettings = new PathSettings();
+    private PathSettings pathSettings = new PathSettings();
     private ClientPathing path;
     private int pathSeq = -1;
 
@@ -30,6 +37,24 @@ public final class ClientOps {
             }
             case ControlOp.PATH_STOP -> stopPath(false);
             case ControlOp.PATH_SETTING -> PathSettingOps.apply(pathSettings, op.i0(), op.x());
+            case ControlOp.PATH_AVOID_BLOCK -> {
+                if (op.i1() == ControlOp.AVOID_CLEAR) {
+                    pathSettings.clearAvoidedBlocks();
+                } else {
+                    Identifier id = Identifier.tryParse(op.s0());
+                    Block block = id == null ? null : BuiltInRegistries.BLOCK.getValue(id);
+                    if (block != null) {
+                        if (op.i1() == ControlOp.AVOID_REMOVE) pathSettings.removeAvoidedBlock(block);
+                        else pathSettings.addAvoidedBlock(block);
+                    }
+                }
+            }
+            case ControlOp.PATH_DEBUG_CHANNEL -> {
+                DebugChannel[] channels = DebugChannel.values();
+                if (op.i0() >= 0 && op.i0() < channels.length) {
+                    pathSettings.setDebugChannel(channels[op.i0()], op.i1() != 0);
+                }
+            }
             case ControlOp.PATH_MOVE_TYPE -> {
                 PathSettings.MoveType[] types = PathSettings.MoveType.values();
                 if (op.i0() >= 0 && op.i0() < types.length) pathSettings.setMoveType(types[op.i0()]);
@@ -37,6 +62,10 @@ public final class ClientOps {
             case ControlOp.OPEN_INVENTORY -> {
                 Minecraft mc = Minecraft.getInstance();
                 if (mc.player != null && mc.screen == null) mc.setScreen(new InventoryScreen(mc.player));
+            }
+            case ControlOp.CLOSE_SCREEN -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.screen instanceof AbstractContainerScreen<?>) mc.setScreen(null);
             }
             case ControlOp.SET_MAIN_HAND -> {
                 Minecraft mc = Minecraft.getInstance();
@@ -69,6 +98,16 @@ public final class ClientOps {
         }
     }
 
+    Float pathViewYaw(float partialTick) {
+        ClientPathing p = path;
+        return p == null ? null : p.viewYaw(partialTick);
+    }
+
+    Float pathViewPitch(float partialTick) {
+        ClientPathing p = path;
+        return p == null ? null : p.viewPitch(partialTick);
+    }
+
     public void stopPath(boolean silent) {
         if (path == null) return;
         path.stop();
@@ -90,10 +129,13 @@ public final class ClientOps {
             path.stop();
             path = null;
         }
+        // Back to defaults so the server's RemotePathSettings mirror, cleared on the same
+        // disconnect, keeps matching what this client actually has.
+        pathSettings = new PathSettings();
     }
 
     private static void sendDone(int seq) {
-        if (ClientPlayNetworking.canSend(PathDonePayload.TYPE)) {
+        if (ServerLink.canSend(PathDonePayload.TYPE)) {
             ClientPlayNetworking.send(new PathDonePayload(seq));
         }
     }

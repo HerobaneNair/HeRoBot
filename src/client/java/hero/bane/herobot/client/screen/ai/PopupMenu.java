@@ -16,6 +16,7 @@ public final class PopupMenu {
     private int scrollOffset;
     private final List<String> labels = new ArrayList<>();
     private final List<Runnable> actions = new ArrayList<>();
+    private final List<Boolean> enabled = new ArrayList<>();
 
     public PopupMenu(Font font) {
         this.font = font;
@@ -24,11 +25,17 @@ public final class PopupMenu {
     public void clear() {
         labels.clear();
         actions.clear();
+        enabled.clear();
     }
 
     public void add(String label, Runnable r) {
+        add(label, true, r);
+    }
+
+    public void add(String label, boolean on, Runnable r) {
         labels.add(label);
         actions.add(r);
+        enabled.add(on);
     }
 
     public boolean isEmpty() {
@@ -72,7 +79,7 @@ public final class PopupMenu {
         if (!open) return false;
         int idx = hitTest(mx, my);
         open = false;
-        if (idx >= 0) actions.get(idx).run();
+        if (idx >= 0 && enabled.get(idx)) actions.get(idx).run();
         return true;
     }
 
@@ -84,8 +91,9 @@ public final class PopupMenu {
         for (int local = 0; local < vis; local++) {
             int i = scrollOffset + local;
             int ry = y + 1 + local * ROW_H;
-            if (i == hi) g.fill(x, ry, x + w, ry + ROW_H, 0xFF3A5A8A);
-            g.drawString(font, labels.get(i), x + 6, ry + 3, 0xFFE0E0E0, false);
+            boolean on = enabled.get(i);
+            if (i == hi && on) g.fill(x, ry, x + w, ry + ROW_H, 0xFF3A5A8A);
+            g.drawString(font, labels.get(i), x + 6, ry + 3, on ? 0xFFE0E0E0 : 0xFF707070, false);
         }
         if (labels.size() > MAX_VISIBLE) renderScrollbar(g);
     }

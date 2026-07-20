@@ -103,6 +103,18 @@ public final class AiScriptIO {
         for (String f : script.varFolders()) varFolders.add(f);
         root.add("varFolders", varFolders);
 
+        JsonArray functions = new JsonArray();
+        for (FuncDecl f : script.functions()) {
+            JsonObject fo = new JsonObject();
+            fo.addProperty("name", f.name());
+            if (!f.folder().isEmpty()) fo.addProperty("folder", f.folder());
+            JsonArray params = new JsonArray();
+            for (VarType t : f.params()) params.add(t.name());
+            fo.add("params", params);
+            functions.add(fo);
+        }
+        root.add("functions", functions);
+
         JsonArray blocks = new JsonArray();
         for (BlockInstance b : script.blocks().values()) {
             blocks.add(blockToJson(b));
@@ -145,7 +157,7 @@ public final class AiScriptIO {
         Set<Integer> expanded = new HashSet<>(ids);
         for (int id : ids) {
             BlockInstance b = s.block(id);
-            if (b != null && b.pairedId() >= 0 && b.type() != BlockType.LOOP_ITER) {
+            if (b != null && b.pairedId() >= 0 && !refsOwner(b.type())) {
                 expanded.add(b.pairedId());
             }
         }
@@ -191,8 +203,6 @@ public final class AiScriptIO {
     public static List<Integer> pasteBlocks(AiScript s, String json, double dx, double dy) {
         List<Integer> newTop = new ArrayList<>();
         Map<Integer, Integer> idMap = new HashMap<>();
-        // Every clone, nested reporters included — s.block() only finds top-level blocks, so the
-        // pairedId fixup below cannot go through the script to reach reporters in param slots.
         List<BlockInstance> clones = new ArrayList<>();
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         if (root.has("blocks")) {
@@ -217,13 +227,19 @@ public final class AiScriptIO {
             Integer mapped = idMap.get(nb.pairedId());
             if (mapped != null) {
                 nb.setPairedId(mapped);
-            } else if (nb.type() != BlockType.LOOP_ITER || s.block(nb.pairedId()) == null) {
-                // The partner wasn't part of the copied selection. A LOOP_ITER may still resolve
-                // when pasting back into the same script, where its loop's id is still live.
+            } else if (!refsOwner(nb.type()) || s.block(nb.pairedId()) == null) {
                 nb.setPairedId(-1);
             }
         }
         return newTop;
+    }
+
+    /**
+     * These types point pairedId at an owning block rather than a matching half, so copying one must
+     * not drag its owner along, and pasting one alone keeps it bound to the original owner.
+     */
+    private static boolean refsOwner(BlockType type) {
+        return type == BlockType.LOOP_ITER || type == BlockType.FUNC_PARAM;
     }
 
     private static BlockInstance cloneWithNewIds(BlockInstance src, AiScript s, double dx, double dy,
@@ -262,6 +278,20 @@ public final class AiScriptIO {
             }
         }
 
+        if (root.has("functions")) {
+            for (JsonElement e : root.getAsJsonArray("functions")) {
+                JsonObject fo = e.getAsJsonObject();
+                List<VarType> params = new ArrayList<>();
+                if (fo.has("params")) {
+                    for (JsonElement pe : fo.getAsJsonArray("params")) {
+                        params.add(VarType.valueOf(pe.getAsString()));
+                    }
+                }
+                String ffolder = fo.has("folder") ? fo.get("folder").getAsString() : "";
+                s.functions().add(new FuncDecl(fo.get("name").getAsString(), params, ffolder));
+            }
+        }
+
         if (root.has("blocks")) {
             for (JsonElement e : root.getAsJsonArray("blocks")) {
                 BlockInstance b = blockFromJson(e.getAsJsonObject());
@@ -280,7 +310,6 @@ public final class AiScriptIO {
                 int from = wo.get("from").getAsInt();
                 int to = wo.get("to").getAsInt();
                 int toPort = wo.has("toPort") ? wo.get("toPort").getAsInt() : 0;
-                // A dangling wire surfaces later as a null block mid-run; drop it at the door.
                 if (s.block(from) == null || s.block(to) == null) {
                     HeroBot.LOGGER.warn("Script {}: dropping wire {} -> {} (no such block)", name, from, to);
                     continue;
@@ -390,7 +419,6 @@ public final class AiScriptIO {
             return calc;
         }
 
-        // Legacy: the trade-execute block was removed; a menu click on the result slot reproduces it.
         if (typeName.equals("TRADE_EXECUTE")) {
             BlockInstance click = new BlockInstance(id, BlockType.INV_CLICK, x, y);
             click.setParam("menu", "container");
@@ -399,22 +427,17 @@ public final class AiScriptIO {
             return click;
         }
 
-        // Legacy: the pitch sensor was merged into the yaw block with an axis selector.
         boolean legacyPitch = typeName.equals("PITCH");
         if (legacyPitch) typeName = "YAW";
 
-        // Legacy: the offhand swap block was folded into the hotbar swap block.
         boolean legacyOffhand = typeName.equals("INV_SWAP_OFFHAND");
         if (legacyOffhand) typeName = "INV_SWAP_HOTBAR";
 
-        // Legacy enum rename: LOOK_YAW_PITCH -> LOOK_DIRECTION, old LOOK_DIRECTION (cardinal) -> LOOK_CARDINAL.
         if (typeName.equals("LOOK_YAW_PITCH")) typeName = "LOOK_DIRECTION";
         else if (typeName.equals("LOOK_DIRECTION") && isLegacyCardinal(o)) typeName = "LOOK_CARDINAL";
 
-        // Legacy: open-container action became open-inventory (it always opened the bot's own inventory).
         if (typeName.equals("OPEN_CONTAINER")) typeName = "OPEN_INVENTORY";
 
-        // Legacy: the container-open sensor folded into the menu-open sensor, which reports 0/1/2.
         if (typeName.equals("CONTAINER_OPEN")) typeName = "INVENTORY_OPEN";
 
         boolean legacyDropStack = typeName.equals("DROP_STACK");
@@ -431,20 +454,17 @@ public final class AiScriptIO {
                 b.setParam(e.getKey(), jsonToParam(e.getValue(), slot));
             }
         }
-        // Legacy: the look block used separate yaw/pitch params; combine into one direction.
         if (type == BlockType.LOOK_DIRECTION && b.getParam("direction") == null
                 && (b.getParam("yaw") != null || b.getParam("pitch") != null)) {
             b.setParam("direction",
                     num(legacyDouble(b.getParam("yaw"))) + " " + num(legacyDouble(b.getParam("pitch"))));
         }
-        // Legacy: swap block's hotbarSlot param became a combined "with" selector.
         if (type == BlockType.INV_SWAP_HOTBAR) {
             if (legacyOffhand) b.setParam("with", "offhand");
             else if (b.getParam("with") == null && b.getParam("hotbarSlot") != null) {
                 b.setParam("with", b.getParam("hotbarSlot").toString());
             }
         }
-        // Legacy: place recipe's boolean "max" became a single/max mode.
         if (type == BlockType.RECIPE_BOOK && b.getParam("mode") == null && b.getParam("max") != null) {
             Object mx = b.getParam("max");
             boolean isMax = mx instanceof Boolean bb ? bb : Boolean.parseBoolean(String.valueOf(mx));
@@ -488,7 +508,6 @@ public final class AiScriptIO {
         return v instanceof Number n ? n.doubleValue() : 0;
     }
 
-    /** Old LOOK_DIRECTION (cardinal) stored a cardinal direction; the new LOOK_DIRECTION stores a rotation. */
     private static boolean isLegacyCardinal(JsonObject o) {
         if (!o.has("params")) return false;
         JsonObject p = o.getAsJsonObject("params");
@@ -531,11 +550,6 @@ public final class AiScriptIO {
         return jsonToParam(el, null);
     }
 
-    /**
-     * A variable's declared type decides how its default is read. Without this, the slot-less
-     * jsonToParam collapses every whole number to int, so a DOUBLE default of 5.0 reloads as
-     * Integer 5 and 3.0E9 saturates to Integer.MAX_VALUE.
-     */
     private static Object jsonToVarDefault(JsonElement el, VarType type) {
         if (el == null || el.isJsonNull()) return null;
         if (el.isJsonPrimitive()) {

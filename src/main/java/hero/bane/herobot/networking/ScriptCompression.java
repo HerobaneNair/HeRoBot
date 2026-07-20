@@ -10,8 +10,8 @@ import java.util.zip.Deflater;
 import java.util.zip.Inflater;
 
 public final class ScriptCompression {
-    public static final int CHUNK_SIZE = 30000;
-    public static final int MAX_CHUNK = 1 << 16;
+    public static final int CHUNK_SIZE = 28000;
+    public static final int MAX_CHUNK = 32767;
 
     private ScriptCompression() {}
 

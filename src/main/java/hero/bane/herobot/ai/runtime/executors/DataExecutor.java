@@ -94,7 +94,7 @@ public final class DataExecutor {
         return e != null ? e.getDisplayName().getString() : id.toString();
     }
 
-    private static Object coerce(VarType type, Object value, ScriptRunner r) {
+    public static Object coerce(VarType type, Object value, ScriptRunner r) {
         return switch (type) {
             case BOOL -> ParamEval.asBool(value);
             case INT -> ParamEval.asInt(value);

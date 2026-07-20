@@ -3,14 +3,9 @@ package hero.bane.herobot.client.screen.ai;
 import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.AiScriptIO;
 import hero.bane.herobot.ai.Comment;
-import hero.bane.herobot.ai.block.BlockDef;
-import hero.bane.herobot.ai.block.BlockDefRegistry;
-import hero.bane.herobot.ai.block.BlockInstance;
-import hero.bane.herobot.ai.block.BlockType;
-import hero.bane.herobot.ai.block.EffectiveSlots;
-import hero.bane.herobot.ai.block.ParamSlot;
-import hero.bane.herobot.ai.block.ParamType;
-import hero.bane.herobot.ai.block.Wire;
+import hero.bane.herobot.ai.FuncDecl;
+import hero.bane.herobot.ai.VarType;
+import hero.bane.herobot.ai.block.*;
 import hero.bane.herobot.client.EditorDraft;
 import hero.bane.herobot.client.EditorPrefs;
 import net.minecraft.client.Minecraft;
@@ -24,15 +19,7 @@ import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.NonNull;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Deque;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 
 public final class AiEditorScreen extends Screen {
@@ -70,6 +57,7 @@ public final class AiEditorScreen extends Screen {
     private BlockType paletteDragType;
     private BlockType paletteHoverType;
     private BlockType canvasHoverType;
+    private BlockType canvasWireTargetType;
     private double paletteDragX, paletteDragY;
     private int paletteX, paletteY, paletteW, paletteH;
 
@@ -77,6 +65,34 @@ public final class AiEditorScreen extends Screen {
     private static final int VAR_W = 140;
     private static final int ARROW = 9;
     private boolean leftCollapsed, rightCollapsed, topCollapsed;
+
+    private static final long PEEK_OPEN_MS = 200;
+    private static final long PEEK_CLOSE_MS = 2000;
+
+    private static final class Region {
+        SidebarMode mode = SidebarMode.MAXIMIZED;
+        boolean peekOpen;
+        long openHoverStart;
+        long closeStart;
+
+        boolean collapsed() {
+            return mode == SidebarMode.MINIMIZED || (mode == SidebarMode.HOVER && !peekOpen);
+        }
+
+        void cycle(boolean toAuto) {
+            if (toAuto) {
+                mode = mode == SidebarMode.HOVER ? SidebarMode.MAXIMIZED : SidebarMode.HOVER;
+            } else {
+                mode = mode == SidebarMode.MINIMIZED ? SidebarMode.MAXIMIZED : SidebarMode.MINIMIZED;
+            }
+            peekOpen = false;
+            openHoverStart = 0;
+            closeStart = 0;
+        }
+    }
+
+    private final Region leftRegion = new Region();
+    private final Region rightRegion = new Region();
 
     private String statusMessage;
     private int statusTicks;
@@ -117,6 +133,7 @@ public final class AiEditorScreen extends Screen {
     public BlockType paletteDragType() { return paletteDragType; }
     public BlockType paletteHoverType() { return paletteHoverType; }
     public BlockType canvasHoverType() { return canvasHoverType; }
+    public BlockType canvasWireTargetType() { return canvasWireTargetType; }
 
     public Set<Integer> selection() { return selection; }
     public boolean isSelected(int id) { return selection.contains(id); }
@@ -175,6 +192,11 @@ public final class AiEditorScreen extends Screen {
         exprEditor = new ExpressionEditor(font);
         selectorEditor = new SelectorEditor(font);
 
+        leftRegion.mode = EditorPrefs.leftPanelMode();
+        rightRegion.mode = EditorPrefs.rightPanelMode();
+        leftCollapsed = leftRegion.collapsed();
+        rightCollapsed = rightRegion.collapsed();
+
         relayout();
     }
 
@@ -213,16 +235,97 @@ public final class AiEditorScreen extends Screen {
                 : (mx >= 0 && mx < ARROW && my >= 0 && my < Toolbar.HEIGHT);
     }
 
-    private boolean handleChromeClick(double mx, double my) {
+    private boolean handleChromeClick(double mx, double my, boolean shift) {
         if (inTopToggle(mx, my)) { topCollapsed = !topCollapsed; relayout(); return true; }
         if (inLeftToggle(mx, my)) {
-            leftCollapsed = !leftCollapsed;
+            leftRegion.cycle(shift);
+            EditorPrefs.setLeftPanelMode(leftRegion.mode);
+            syncRegions();
             if (leftCollapsed) palette.unfocusSearch();
-            relayout();
             return true;
         }
-        if (inRightToggle(mx, my)) { rightCollapsed = !rightCollapsed; relayout(); return true; }
+        if (inRightToggle(mx, my)) {
+            rightRegion.cycle(shift);
+            EditorPrefs.setRightPanelMode(rightRegion.mode);
+            syncRegions();
+            return true;
+        }
         return false;
+    }
+
+    private void syncRegions() {
+        boolean l = leftRegion.collapsed(), r = rightRegion.collapsed();
+        if (l != leftCollapsed || r != rightCollapsed) {
+            leftCollapsed = l;
+            rightCollapsed = r;
+            relayout();
+        }
+    }
+
+    private void updateRegions(int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        boolean dragging = paletteDragType != null
+                || canvas.draggingBlockId() >= 0 || canvas.isDraggingComments()
+                || canvas.isDraggingBlackHole();
+        updatePeek(leftRegion, inLeftFootprint(mouseX, mouseY), mouseX, mouseY, dragging, now);
+        updatePeek(rightRegion, inRightFootprint(mouseX, mouseY), mouseX, mouseY, dragging, now);
+        syncRegions();
+    }
+
+    private void updatePeek(Region r, boolean inFootprint, int mouseX, int mouseY, boolean dragging, long now) {
+        if (r.mode != SidebarMode.HOVER) return;
+        if (!r.peekOpen) {
+            boolean overNothing = inFootprint && !dragging && !canvas.overBlockOrComment(mouseX, mouseY);
+            if (overNothing) {
+                if (r.openHoverStart == 0) r.openHoverStart = now;
+                else if (now - r.openHoverStart >= PEEK_OPEN_MS) { r.peekOpen = true; r.closeStart = 0; }
+            } else {
+                r.openHoverStart = 0;
+            }
+        } else {
+            if (inFootprint || dragging) {
+                r.closeStart = 0;
+            } else {
+                if (r.closeStart == 0) r.closeStart = now;
+                else if (now - r.closeStart >= PEEK_CLOSE_MS) {
+                    r.peekOpen = false;
+                    r.closeStart = 0;
+                    r.openHoverStart = 0;
+                }
+            }
+        }
+    }
+
+    private boolean inLeftFootprint(int mx, int my) {
+        return mx >= 0 && mx < SIDE_W && my >= topH() && my < height;
+    }
+
+    private boolean inRightFootprint(int mx, int my) {
+        return mx >= width - VAR_W && mx < width && my >= topH() && my < height;
+    }
+
+    private float regionTransition(Region r) {
+        if (r.mode != SidebarMode.HOVER) return 0f;
+        long now = System.currentTimeMillis();
+        if (!r.peekOpen && r.openHoverStart != 0) {
+            return clamp01((now - r.openHoverStart) / (float) PEEK_OPEN_MS);
+        }
+        if (r.peekOpen && r.closeStart != 0) {
+            return clamp01((now - r.closeStart) / (float) PEEK_CLOSE_MS);
+        }
+        return 0f;
+    }
+
+    private static float clamp01(float t) {
+        return t < 0f ? 0f : (Math.min(t, 1f));
+    }
+
+    private static int lerpColor(int from, int to, float t) {
+        int a = ((from >>> 24) & 0xFF) + Math.round((((to >>> 24) & 0xFF) - ((from >>> 24) & 0xFF)) * t);
+        int r = ((from >>> 16) & 0xFF) + Math.round((((to >>> 16) & 0xFF) - ((from >>> 16) & 0xFF)) * t);
+        int g = ((from >>> 8) & 0xFF) + Math.round((((to >>> 8) & 0xFF) - ((from >>> 8) & 0xFF)) * t);
+        int b = (from & 0xFF) + Math.round(((to & 0xFF) - (from & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     public void pushUndo() {
@@ -247,6 +350,10 @@ public final class AiEditorScreen extends Screen {
         select(-1);
     }
 
+    public boolean hasClipboard() {
+        return clipboard != null;
+    }
+
     public void copySelection() {
         if (selection.isEmpty()) {
             if (selectedId >= 0) clipboard = AiScriptIO.copyBlocks(script, Set.of(selectedId));
@@ -259,6 +366,7 @@ public final class AiEditorScreen extends Screen {
         if (clipboard == null) return;
         pushUndo();
         List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, 16, 16);
+        normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
 
@@ -268,6 +376,7 @@ public final class AiEditorScreen extends Screen {
         if (mn == null) return;
         pushUndo();
         List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, worldX - mn[0], worldY - mn[1]);
+        normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
 
@@ -278,6 +387,7 @@ public final class AiEditorScreen extends Screen {
         double dx = 16, dy = (b != null) ? (b[3] - b[1]) + 16 : 16;
         pushUndo();
         List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, dx, dy);
+        normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
 
@@ -287,7 +397,6 @@ public final class AiEditorScreen extends Screen {
             BlockInstance b = script.block(attachTo);
             Comment c = script.addComment(worldX, worldY, "");
             if (b != null) {
-                // Pin the comment's bottom-left corner to the block's top-left corner.
                 double h = canvas.measureComment(c);
                 c.setAttachedTo(b.id());
                 c.setOffset(0, -h);
@@ -306,21 +415,36 @@ public final class AiEditorScreen extends Screen {
         if (!canvas.inside(screenX, screenY)) return;
         double[] w = canvas.screenToWorld(screenX, screenY);
         Object[] tgt = canvas.slotTargetAt(w[0], w[1]);
+        BlockInstance nb = createBlockAt(BlockType.READ_VAR, w[0], w[1]);
+        nb.setParam("name", qualifiedName);
         if (tgt != null) {
             BlockInstance target = (BlockInstance) tgt[0];
             String slot = (String) tgt[1];
-            if (canvas.canNestType(target, slot, BlockType.READ_VAR)) {
-                BlockInstance nb = createBlockAt(BlockType.READ_VAR, w[0], w[1]);
-                nb.setParam("name", qualifiedName);
+            if (canvas.canNest(target, slot, nb)) {
                 script.blocks().remove(nb.id());
                 target.setReporter(slot, nb);
                 ternarySlotChanged(target, slot);
                 select(target.id());
-                return;
             }
         }
-        BlockInstance b = createBlockAt(BlockType.READ_VAR, w[0], w[1]);
-        b.setParam("name", qualifiedName);
+    }
+
+    /** Drops a call block, or a define block when the function has no definition yet. */
+    public void dropFunctionBlock(String qualifiedName, double screenX, double screenY) {
+        if (!canvas.inside(screenX, screenY)) return;
+        if (script.function(qualifiedName) == null) return;
+        double[] w = canvas.screenToWorld(screenX, screenY);
+        boolean defined = false;
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() == BlockType.FUNC_DEFINE && qualifiedName.equals(EffectiveSlots.funcName(b))) {
+                defined = true;
+                break;
+            }
+        }
+        BlockType type = defined ? BlockType.FUNC_CALL : BlockType.FUNC_DEFINE;
+        BlockInstance nb = createBlockAt(type, w[0], w[1]);
+        nb.setParam("name", qualifiedName);
+        select(nb.id());
     }
 
     public void editComment(Comment c) {
@@ -364,7 +488,12 @@ public final class AiEditorScreen extends Screen {
     public void saveScriptAs() {
         promptText("Save script as", isUnnamed() ? "" : script.name(), name -> {
             if (name == null || name.isBlank()) return;
-            script.setName(name.trim());
+            String cleaned = name.trim();
+            if (cleaned.equalsIgnoreCase("untitled")) {
+                setStatus("'untitled' is reserved - pick another name");
+                return;
+            }
+            script.setName(cleaned);
             ScriptTransfer.upload(script.name(), script);
             toolbar.flashFile();
             autosaveTicks = 0;
@@ -489,7 +618,7 @@ public final class AiEditorScreen extends Screen {
         if (EditorPrefs.cometsEnabled()) {
             g.fill(cbX + 2, rowY + 2, cbX + cbSize - 2, rowY + cbSize - 2, 0xFF55D07A);
         }
-        g.drawString(font, "Comets", cbX + cbSize + 6, rowY + 1, 0xFFE0E0E0, false);
+        g.drawString(font, "Comets naturally spawn", cbX + cbSize + 6, rowY + 1, 0xFFE0E0E0, false);
 
         int autosaveY = settingsAutosaveRowY(y);
         if (mouseX >= x + 6 && mouseX <= x + w - 6 && mouseY >= autosaveY - 2 && mouseY < autosaveY + 12) {
@@ -515,6 +644,7 @@ public final class AiEditorScreen extends Screen {
         g.drawString(font, "Esc to close", x + 8, y + h - 12, 0xFF909090, false);
     }
 
+    @SuppressWarnings("SameReturnValue")
     private boolean settingsClick(double mx, double my) {
         int w = 180, h = 104;
         int x = (width - w) / 2, y = (height - h) / 2;
@@ -555,10 +685,14 @@ public final class AiEditorScreen extends Screen {
             {"Shift+Left or Middle Drag", "Move the canvas"},
             {"Left Drag", "Box-select [marquee] multiple blocks"},
             {"Ctrl+Click", "Add/remove from selection"},
-            {"Double-click comment", "Edit comment text"},
+            {"Double-Click comment", "Edit comment text"},
+            {"Left Drag port", "Connect two ports together"},
+            {"Double-Click port", "Auto-connect that port to the nearest valid one"},
+            {"Sidebar Toggle", "Cycle expanded/collapsed sidebar"},
+            {"Shift+Sidebar Toggle", "Show sidebar on hover mode"},
             {"Right Click", "Open context [right click] menu"},
-            {"Shift+Right Click", "Spawn a star randomly"},
-            {"Shift+Right Drag", "Spawn a stream of stars"},
+            {"Shift+Right Click", "Spawn a comet randomly"},
+            {"Shift+Right Drag", "Spawn a stream of comets"},
             {"Scroll", "Zoom"},
     };
 
@@ -575,7 +709,7 @@ public final class AiEditorScreen extends Screen {
         int w = Math.max(180, 12 + keyW + 12 + descW + 12);
         int h = 30 + shortcutLegend.length * 12 + 18;
         int x = (width - w) / 2;
-        int y = Math.max(4, Math.min((height - h) / 2, height - h - 4));
+        int y = Math.clamp((height - h) / 2, 4, height - h - 4);
         g.fill(0, 0, width, height, 0x88000000);
         g.fill(x, y, x + w, y + h, 0xFF1E1E1E);
         g.fill(x - 1, y - 1, x + w + 1, y, 0xFFFFFFFF);
@@ -654,12 +788,7 @@ public final class AiEditorScreen extends Screen {
     }
 
     private boolean isUnnamed() {
-        return script.name() == null || script.name().isBlank() || script.name().equals("untitled");
-    }
-
-    public void createBlock(BlockType type) {
-        double[] c = canvas.centerWorld();
-        createBlockAt(type, c[0], c[1]);
+        return script.name() == null || script.name().isBlank() || script.name().equalsIgnoreCase("untitled");
     }
 
     public BlockInstance createBlockAt(BlockType type, double worldX, double worldY) {
@@ -670,6 +799,12 @@ public final class AiEditorScreen extends Screen {
         }
         if (type == BlockType.SET_VAR || type == BlockType.CHANGE_VAR || type == BlockType.READ_VAR) {
             List<String> names = variableNames();
+            if (!names.isEmpty()) b.setParam("name", names.getFirst());
+        }
+        if (type == BlockType.FUNC_DEFINE) {
+            b.setParam("name", freeFunctionName(b.id()));
+        } else if (type == BlockType.FUNC_CALL) {
+            List<String> names = EffectiveSlots.functionNames(script);
             if (!names.isEmpty()) b.setParam("name", names.getFirst());
         }
         if (isContainer(type)) {
@@ -769,6 +904,21 @@ public final class AiEditorScreen extends Screen {
             }
         } else {
             b.setParam("targetOther", true);
+        }
+    }
+
+    public void toggleSendOp(BlockInstance b) {
+        if (!EffectiveSlots.sendTakesOp(b.type())) return;
+        pushUndo();
+        if (EffectiveSlots.isOpShown(b)) {
+            b.params().remove("op");
+            BlockInstance child = b.reporterParams().remove("op");
+            if (child != null) {
+                child.setPos(b.x() + 20, b.y() + 20);
+                script.putBlock(child);
+            }
+        } else {
+            b.setParam("op", false);
         }
     }
 
@@ -931,6 +1081,166 @@ public final class AiEditorScreen extends Screen {
         return p == null ? "" : p.toString();
     }
 
+    private FuncDecl declFor(BlockInstance b) {
+        return script.function(EffectiveSlots.funcName(b));
+    }
+
+    /** First declared function with no define block yet, or "" when every function is already defined. */
+    private String freeFunctionName(int exceptBlockId) {
+        Set<String> taken = new HashSet<>();
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() != BlockType.FUNC_DEFINE || b.id() == exceptBlockId) continue;
+            String n = EffectiveSlots.funcName(b);
+            if (!n.isEmpty()) taken.add(n);
+        }
+        for (FuncDecl f : script.functions()) {
+            if (!taken.contains(f.qualifiedName())) return f.qualifiedName();
+        }
+        return "";
+    }
+
+    private boolean definedElsewhere(String name, int exceptId) {
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() == BlockType.FUNC_DEFINE && b.id() != exceptId
+                    && name.equals(EffectiveSlots.funcName(b))) return true;
+        }
+        return false;
+    }
+
+    /** Re-run naming over every define block; call after the function list changes. */
+    public void normalizeAllDefineNames() {
+        List<Integer> ids = new ArrayList<>();
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() == BlockType.FUNC_DEFINE) ids.add(b.id());
+        }
+        normalizeDefineNames(ids);
+    }
+
+    /** A function may only have one define block, so pasted or unnamed ones claim a free name instead. */
+    public void normalizeDefineNames(List<Integer> ids) {
+        for (int id : ids) {
+            BlockInstance b = script.block(id);
+            if (b == null || b.type() != BlockType.FUNC_DEFINE) continue;
+            String n = EffectiveSlots.funcName(b);
+            if (n.isEmpty() || definedElsewhere(n, b.id())) {
+                b.setParam("name", freeFunctionName(b.id()));
+            }
+        }
+    }
+
+    public void addFuncParam(BlockInstance b) {
+        FuncDecl decl = declFor(b);
+        if (decl == null || decl.arity() >= EffectiveSlots.MAX_FUNC_PARAMS) return;
+        pushUndo();
+        setFunction(decl, decl.withParamAdded(VarType.INT));
+    }
+
+    public void removeLastFuncParam(BlockInstance b) {
+        FuncDecl decl = declFor(b);
+        if (decl == null || decl.arity() == 0) return;
+        pushUndo();
+        int last = decl.arity() - 1;
+        setFunction(decl, decl.withParamRemoved(last));
+        dropFuncParamRefs(decl.qualifiedName(), last);
+        dropArgValues(decl.qualifiedName(), last);
+        refitAllReporters();
+    }
+
+    /** Remove every reference chip for inputs that no longer exist. */
+    private void dropFuncParamRefs(String func, int fromIndex) {
+        List<Integer> gone = new ArrayList<>();
+        for (BlockInstance b : script.blocks().values()) {
+            if (isStaleParamRef(b, func, fromIndex)) gone.add(b.id());
+            else pruneStaleParamRefs(b, func, fromIndex);
+        }
+        for (int id : gone) deleteBlock(id);
+    }
+
+    private boolean isStaleParamRef(BlockInstance b, String func, int fromIndex) {
+        if (b == null || b.type() != BlockType.FUNC_PARAM || !func.equals(b.getParam("func"))) return false;
+        Object idx = b.getParam("index");
+        return idx instanceof Number n && n.intValue() >= fromIndex;
+    }
+
+    private void pruneStaleParamRefs(BlockInstance host, String func, int fromIndex) {
+        host.reporterParams().entrySet().removeIf(e -> isStaleParamRef(e.getValue(), func, fromIndex));
+        for (BlockInstance child : host.reporterParams().values()) {
+            if (child != null) pruneStaleParamRefs(child, func, fromIndex);
+        }
+    }
+
+    /** Deleting a define block takes its reference chips with it. */
+    private void dropFuncParams(int defineId) {
+        List<Integer> gone = new ArrayList<>();
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() == BlockType.FUNC_PARAM && b.pairedId() == defineId) gone.add(b.id());
+            else pruneNestedParams(b, defineId);
+        }
+        for (int id : gone) deleteBlock(id);
+    }
+
+    private void pruneNestedParams(BlockInstance host, int defineId) {
+        host.reporterParams().entrySet().removeIf(e -> {
+            BlockInstance child = e.getValue();
+            return child != null && child.type() == BlockType.FUNC_PARAM && child.pairedId() == defineId;
+        });
+        for (BlockInstance child : host.reporterParams().values()) {
+            if (child != null) pruneNestedParams(child, defineId);
+        }
+    }
+
+    public void setFuncParamType(BlockInstance b, int index, VarType type) {
+        FuncDecl decl = declFor(b);
+        if (decl == null || decl.paramType(index) == type) return;
+        pushUndo();
+        setFunction(decl, decl.withParamType(index, type));
+        refitAllReporters();
+    }
+
+    private void setFunction(FuncDecl oldDecl, FuncDecl next) {
+        int i = script.functionIndex(oldDecl.qualifiedName());
+        if (i >= 0) script.functions().set(i, next);
+    }
+
+    /** Drop stored call arguments past the new arity; refitAllReporters pops any nested blocks out. */
+    private void dropArgValues(String func, int newArity) {
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() != BlockType.FUNC_CALL || !func.equals(b.getParam("name"))) continue;
+            for (int i = newArity; i < EffectiveSlots.MAX_FUNC_PARAMS; i++) {
+                b.params().remove("Arg" + (i + 1));
+            }
+        }
+    }
+
+    private void refitAllReporters() {
+        for (BlockInstance b : new ArrayList<>(script.blocks().values())) refitReportersDeep(b);
+    }
+
+    public BlockInstance spawnFuncParam(BlockInstance define, int index, double worldX, double worldY) {
+        FuncDecl decl = declFor(define);
+        if (decl == null || index < 0 || index >= decl.arity()) return null;
+        pushUndo();
+        BlockInstance nb = createBlockAt(BlockType.FUNC_PARAM, worldX, worldY);
+        nb.setParam("func", decl.qualifiedName());
+        nb.setParam("index", index);
+        nb.setPairedId(define.id());
+        return nb;
+    }
+
+    public void refactorFunctionRef(String oldName, String newName) {
+        if (oldName == null || newName == null || oldName.equals(newName)) return;
+        for (BlockInstance b : script.blocks().values()) refactorFuncRefDeep(b, oldName, newName);
+    }
+
+    private void refactorFuncRefDeep(BlockInstance b, String oldName, String newName) {
+        if (b.type() == BlockType.FUNC_DEFINE || b.type() == BlockType.FUNC_CALL) {
+            if (oldName.equals(b.getParam("name"))) b.setParam("name", newName);
+        } else if (b.type() == BlockType.FUNC_PARAM) {
+            if (oldName.equals(b.getParam("func"))) b.setParam("func", newName);
+        }
+        for (BlockInstance child : b.reporterParams().values()) refactorFuncRefDeep(child, oldName, newName);
+    }
+
     public void refactorVariableRef(String oldQ, String newQ) {
         if (oldQ == null || newQ == null || oldQ.equals(newQ)) return;
         for (BlockInstance b : script.blocks().values()) refactorRefDeep(b, oldQ, newQ);
@@ -1014,7 +1324,7 @@ public final class AiEditorScreen extends Screen {
 
     private void convertClipboardAt(double worldX, double worldY) {
         String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
-        if (clip == null || clip.isBlank()) { setStatus("Clipboard is empty"); return; }
+        if (clip.isBlank()) { setStatus("Clipboard is empty"); return; }
 
         pushUndo();
         List<Integer> created = new ArrayList<>();
@@ -1040,7 +1350,6 @@ public final class AiEditorScreen extends Screen {
             y += blockHeight(b) + 8;
         }
 
-        // Comments with no command below them become floating comments under the final block.
         double cx = lastBlock != null ? lastBlock.x() : worldX;
         double cy = lastBlock != null ? lastBlock.y() + blockHeight(lastBlock) + 8 : y;
         for (String text : pending) {
@@ -1067,7 +1376,6 @@ public final class AiEditorScreen extends Screen {
         return b;
     }
 
-    // Stacks pending comments above the block, the closest one's bottom-left at the block's top-left.
     private void attachPendingComments(List<String> texts, BlockInstance b) {
         double offY = 0;
         for (int i = texts.size() - 1; i >= 0; i--) {
@@ -1131,8 +1439,11 @@ public final class AiEditorScreen extends Screen {
 
     public void deleteBlock(int id) {
         BlockInstance b = script.block(id);
-        int paired = b != null && b.type() != BlockType.LOOP_ITER ? b.pairedId() : -1;
+        // LOOP_ITER and FUNC_PARAM point pairedId at their owner, so they must not cascade into it.
+        int paired = b != null && b.type() != BlockType.LOOP_ITER && b.type() != BlockType.FUNC_PARAM
+                ? b.pairedId() : -1;
         if (b != null && EffectiveSlots.isLoopBlock(b.type())) dropLoopIterators(id);
+        if (b != null && b.type() == BlockType.FUNC_DEFINE) dropFuncParams(id);
         script.comments().removeIf(c -> c.attachedTo() == id);
         script.wires().removeIf(w -> w.fromBlockId() == id || w.toBlockId() == id);
         script.removeBlock(id);
@@ -1180,6 +1491,7 @@ public final class AiEditorScreen extends Screen {
                 String clip = AiScriptIO.copyBlocks(foreign, new HashSet<>(foreign.blocks().keySet()));
                 pushUndo();
                 List<Integer> ids = AiScriptIO.pasteBlocks(script, clip, 0, 0);
+                normalizeDefineNames(ids);
                 selectMany(ids, false);
             } else {
                 this.script = AiScriptIO.fromJson(json, name);
@@ -1216,6 +1528,7 @@ public final class AiEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        updateRegions(mouseX, mouseY);
         g.fill(0, 0, width, height, 0xFF0E0E12);
         canvas.render(g, mouseX, mouseY);
 
@@ -1225,8 +1538,10 @@ public final class AiEditorScreen extends Screen {
             paletteHoverType = palette.hovered(mouseX, mouseY);
             palette.render(g, mouseX, mouseY);
         }
-        boolean draggingSomething = paletteDragType != null || canvas.draggingBlockId() >= 0 || canvas.isDraggingComments();
+        boolean draggingSomething = paletteDragType != null || canvas.draggingBlockId() >= 0
+                || canvas.isDraggingComments() || canvas.isDraggingBlackHole();
         canvasHoverType = draggingSomething ? null : canvas.hoveredType(mouseX, mouseY);
+        canvasWireTargetType = canvas.wireTargetType(mouseX, mouseY);
 
         if (!rightCollapsed) varPanel.render(g, mouseX, mouseY);
         if (!topCollapsed) {
@@ -1282,6 +1597,8 @@ public final class AiEditorScreen extends Screen {
         int panel = 0xFF1A1A1A;
         int border = 0xFF000000;
 
+        int flash = 0xFF444444;
+
         boolean topHover = inTopToggle(mouseX, mouseY);
         int topCol = topHover ? 0xFFD0D0D0 : 0xFF808080;
         if (topCollapsed) {
@@ -1289,28 +1606,30 @@ public final class AiEditorScreen extends Screen {
             g.fill(0, ARROW, width, ARROW + 1, border);
             g.drawString(font, "▾", 2, 1, topCol, false);
         } else {
-            g.fill(0, 0, ARROW, Toolbar.HEIGHT, topHover ? 0xFF454545 : 0xFF383838);
+            g.fill(0, 0, ARROW, Toolbar.HEIGHT, topHover ? 0xFF454545 : 0xFF2A2A2A);
             g.drawString(font, "▴", 2, 7, topCol, false);
         }
 
         int leftCol = inLeftToggle(mouseX, mouseY) ? 0xFFD0D0D0 : 0xFF808080;
+        int leftBg = lerpColor(panel, flash, regionTransition(leftRegion));
         if (leftCollapsed) {
-            g.fill(0, top, ARROW, height, panel);
+            g.fill(0, top, ARROW, height, leftBg);
             g.fill(ARROW, top, ARROW + 1, height, border);
-            g.drawString(font, "▸", 1, top + 1, leftCol, false);
+            g.drawString(font, leftRegion.mode == SidebarMode.HOVER ? "\uD83D\uDC7B" : "▸", 1, top + 1, leftCol, false);
         } else {
-            g.fill(0, top, SIDE_W, top + ARROW, panel);
-            g.drawString(font, "◂", SIDE_W - ARROW + 1, top + 1, leftCol, false);
+            g.fill(0, top, SIDE_W, top + ARROW, leftBg);
+            g.drawString(font, leftRegion.mode == SidebarMode.HOVER ? "\uD83D\uDC7B" : "◂", SIDE_W - ARROW + 1, top + 1, leftCol, false);
         }
 
         int rightCol = inRightToggle(mouseX, mouseY) ? 0xFFD0D0D0 : 0xFF808080;
+        int rightBg = lerpColor(panel, flash, regionTransition(rightRegion));
         if (rightCollapsed) {
-            g.fill(width - ARROW, top, width, height, panel);
+            g.fill(width - ARROW, top, width, height, rightBg);
             g.fill(width - ARROW - 1, top, width - ARROW, height, border);
-            g.drawString(font, "◂", width - ARROW + 1, top + 1, rightCol, false);
+            g.drawString(font, rightRegion.mode == SidebarMode.HOVER ? "\uD83D\uDC7B" : "◂", width - ARROW + 1, top + 1, rightCol, false);
         } else {
-            g.fill(width - VAR_W, top, width, top + ARROW, panel);
-            g.drawString(font, "▸", width - VAR_W + 2, top + 1, rightCol, false);
+            g.fill(width - VAR_W, top, width, top + ARROW, rightBg);
+            g.drawString(font, rightRegion.mode == SidebarMode.HOVER ? "\uD83D\uDC7B" : "▸", width - VAR_W + 2, top + 1, rightCol, false);
         }
     }
 
@@ -1324,8 +1643,6 @@ public final class AiEditorScreen extends Screen {
         g.fill(gx, gy, gx + w, gy + 9, (def.category().color() & 0x00FFFFFF) | 0xDD000000);
         g.drawString(font, label, gx + 6, gy + 6, 0xFFFFFFFF, false);
     }
-
-    private int loadRowY(int i) { return height / 2 - 60 + 18 + i * 12; }
 
     private void renderLoadDialog(GuiGraphics g, int mouseX, int mouseY) {
         int w = 220, h = 140;
@@ -1348,6 +1665,7 @@ public final class AiEditorScreen extends Screen {
         }
     }
 
+    @SuppressWarnings("SameReturnValue")
     private boolean loadDialogClick(double mx, double my) {
         int w = 220, h = 140;
         int x = (width - w) / 2, y = (height - h) / 2;
@@ -1374,7 +1692,7 @@ public final class AiEditorScreen extends Screen {
 
     private void renderLoadFailedDialog(GuiGraphics g) {
         String title = "Failed to load '" + loadFailedName + "'";
-        String line = "The script may use an unsupported or outdated format.";
+        String line = "The script may be outdated or corrupted, sorry";
         int w = Math.max(220, 16 + Math.max(font.width(title), font.width(line)));
         int h = 76;
         int x = (width - w) / 2, y = (height - h) / 2;
@@ -1383,10 +1701,11 @@ public final class AiEditorScreen extends Screen {
         g.fill(x - 1, y - 1, x + w + 1, y, 0xFFFFFFFF);
         g.drawString(font, title, x + 8, y + 6, 0xFFFF7070, false);
         g.drawString(font, line, x + 8, y + 20, 0xFFE0E0E0, false);
-        g.drawString(font, "Delete this file", x + 8, y + h - 24, 0xFFFF7070, false);
+        g.drawString(font, "Delete", x + 8, y + h - 24, 0xFFFF7070, false);
         g.drawString(font, "Cancel", x + 8, y + h - 12, 0xFFE0E0E0, false);
     }
 
+    @SuppressWarnings("SameReturnValue")
     private boolean loadFailedClick(double mx, double my) {
         String title = "Failed to load '" + loadFailedName + "'";
         String line = "The script may use an unsupported or outdated format.";
@@ -1420,7 +1739,7 @@ public final class AiEditorScreen extends Screen {
         if (settingsOpen) return settingsClick(mx, my);
         if (shortcutsOpen) { shortcutsOpen = false; return true; }
 
-        if (handleChromeClick(mx, my)) return true;
+        if (handleChromeClick(mx, my, (event.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0)) return true;
 
         if (!topCollapsed && toolbar.mouseClicked(mx, my)) return true;
         if (!leftCollapsed) {
@@ -1446,6 +1765,7 @@ public final class AiEditorScreen extends Screen {
             paletteDragX = event.x(); paletteDragY = event.y();
             return true;
         }
+        if (palette.mouseDragged(event.x(), event.y())) return true;
         if (!rightCollapsed && varPanel.mouseDragged(event.x(), event.y())) return true;
         return canvas.mouseDragged(event.x(), event.y());
     }
@@ -1453,6 +1773,7 @@ public final class AiEditorScreen extends Screen {
     @Override
     public boolean mouseReleased(@NonNull MouseButtonEvent event) {
         if (paramEditor.isActive() || exprEditor.isActive() || selectorEditor.isActive() || loadDialogOpen || loadFailedName != null) return true;
+        if (palette.mouseReleased(event.y())) return true;
         if (!rightCollapsed && varPanel.mouseReleased(event.x(), event.y())) return true;
         if (paletteDragType != null) {
             BlockType t = paletteDragType;
@@ -1487,6 +1808,10 @@ public final class AiEditorScreen extends Screen {
             pushUndo();
             for (int id : canvas.draggedBlockIds()) deleteBlock(id);
             canvas.cancelDrag();
+            return true;
+        }
+        if (canvas.isDraggingBlackHole() && overDeletePanel) {
+            canvas.deleteBlackHole();
             return true;
         }
         if (canvas.isDraggingComments() && overDeletePanel) {

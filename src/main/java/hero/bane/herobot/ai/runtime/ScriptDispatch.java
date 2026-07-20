@@ -5,6 +5,7 @@ import hero.bane.herobot.ai.runtime.executors.ActionExecutor;
 import hero.bane.herobot.ai.runtime.executors.ControlExecutor;
 import hero.bane.herobot.ai.runtime.executors.DataExecutor;
 import hero.bane.herobot.ai.runtime.executors.EventExecutor;
+import hero.bane.herobot.ai.runtime.executors.FunctionExecutor;
 import hero.bane.herobot.ai.runtime.executors.InventoryExecutor;
 import hero.bane.herobot.ai.runtime.executors.LookExecutor;
 import hero.bane.herobot.ai.runtime.executors.MotionExecutor;
@@ -31,6 +32,7 @@ public final class ScriptDispatch {
         DataExecutor.register(FLOW, REPORTER);
         SensorExecutor.register(REPORTER);
         OperatorExecutor.register(REPORTER);
+        FunctionExecutor.register(FLOW, REPORTER);
     }
 
     private ScriptDispatch() {}

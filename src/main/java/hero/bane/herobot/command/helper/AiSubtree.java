@@ -5,7 +5,6 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import hero.bane.herobot.HeroBot;
 import hero.bane.herobot.ai.AiHexCodec;
 import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.AiScriptRegistry;
@@ -131,7 +130,7 @@ public final class AiSubtree {
             if (r.isPaused()) {
                 context.getSource().sendFailure(
                         Component.literal(player.getGameProfile().name()
-                                + " is paused — use 'ai resume' to carry on, or 'ai stop' first to restart"));
+                                + " is paused - use 'ai resume' to carry on, or 'ai stop' first to restart"));
                 continue;
             }
             AiScriptRegistry.fireStart(player);
@@ -220,7 +219,7 @@ public final class AiSubtree {
             context.getSource().sendSuccess(
                     () -> Component.literal(playerName + ": " +
                             (name == null ? "<no script>" : "'" + name + "'") +
-                            " — " + branches + " active branch" + (branches == 1 ? "" : "es") + paused),
+                            " - " + branches + " active branch" + (branches == 1 ? "" : "es") + paused),
                     false);
         }
         return 1;

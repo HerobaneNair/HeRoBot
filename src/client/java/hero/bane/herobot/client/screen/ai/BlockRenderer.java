@@ -1,14 +1,7 @@
 package hero.bane.herobot.client.screen.ai;
 
 import hero.bane.herobot.ai.AiScript;
-import hero.bane.herobot.ai.block.BlockDef;
-import hero.bane.herobot.ai.block.BlockDefRegistry;
-import hero.bane.herobot.ai.block.BlockInstance;
-import hero.bane.herobot.ai.block.BlockShape;
-import hero.bane.herobot.ai.block.BlockType;
-import hero.bane.herobot.ai.block.EffectiveSlots;
-import hero.bane.herobot.ai.block.ParamSlot;
-import hero.bane.herobot.ai.block.Wire;
+import hero.bane.herobot.ai.block.*;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
@@ -42,6 +35,17 @@ public final class BlockRenderer {
 
     public record Word(String text, int x) {}
 
+    /** One declared input on a define block: type chip over its draggable reference chip. */
+    public record ParamRow(int index, String typeLabel, String chipLabel,
+                           int[] typeRect, int[] dragRect) {
+        public static boolean hits(int[] r, double px, double py) {
+            return px >= r[0] && px <= r[0] + r[2] && py >= r[1] && py <= r[1] + r[3];
+        }
+    }
+
+    /** Height of a define block once it has inputs: two stacked chip rows plus padding. */
+    public static final int PARAM_BLOCK_H = CHIP_H * 2 + 12;
+
     public static String iterTag(int iterId) {
         return iterId <= 0 ? "i?" : "i" + iterId;
     }
@@ -67,6 +71,7 @@ public final class BlockRenderer {
         public final List<ChipRect> chips = new ArrayList<>();
         public final List<Nested> nested = new ArrayList<>();
         public final List<Word> words = new ArrayList<>();
+        public final List<ParamRow> paramRows = new ArrayList<>();
 
         public boolean cShape;
         public int spineW;
@@ -105,6 +110,9 @@ public final class BlockRenderer {
             }
         }
         L.h = Math.max(HEADER_H, maxChildH + 6);
+        if (def.type() == BlockType.FUNC_DEFINE && funcArity(inst, script) > 0) {
+            L.h = Math.max(L.h, PARAM_BLOCK_H);
+        }
 
         int chipY = oy + (L.h - CHIP_H) / 2;
         int midY = oy + L.h / 2;
@@ -119,12 +127,12 @@ public final class BlockRenderer {
             cx = ox + PAD;
             cx = placeSlot(L, inst, slots.getFirst(), childLayouts[0], cx, chipY, midY, font);
             L.labelX = cx;
-            cx += font.width(blockLabel(def)) + 6;
+            cx += font.width(blockLabel(def, inst)) + 6;
             cx = placeSlot(L, inst, slots.get(1), childLayouts[1], cx, chipY, midY, font);
             contentRight = cx - 4;
         } else {
             L.labelX = ox + PAD;
-            contentRight = ox + PAD + font.width(blockLabel(def));
+            contentRight = ox + PAD + font.width(blockLabel(def, inst));
             cx = contentRight + PAD;
             String infixWord = varInfixWord(def.type());
             for (int i = 0; i < slots.size(); i++) {
@@ -176,6 +184,10 @@ public final class BlockRenderer {
             L.w += 13;
             L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
             L.expanderMinus = EffectiveSlots.isSensorTargetShown(inst);
+        } else if (EffectiveSlots.sendTakesOp(def.type())) {
+            L.w += 13;
+            L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
+            L.expanderMinus = EffectiveSlots.isOpShown(inst);
         } else if (EffectiveSlots.isCalcBlock(def.type())) {
             boolean canRemove = EffectiveSlots.calcInputCount(inst) > 0;
             L.w += canRemove ? 26 : 13;
@@ -197,6 +209,10 @@ public final class BlockRenderer {
             }
             L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
             L.expanderMinus = shown;
+        }
+
+        if (def.type() == BlockType.FUNC_DEFINE) {
+            layoutParamColumns(L, inst, font, ox, oy, script);
         }
 
         L.inX = ox + L.w / 2;
@@ -271,6 +287,40 @@ public final class BlockRenderer {
         return L;
     }
 
+    private static int funcArity(BlockInstance inst, AiScript script) {
+        if (script == null) return 0;
+        hero.bane.herobot.ai.FuncDecl decl = script.function(EffectiveSlots.funcName(inst));
+        return decl == null ? 0 : decl.arity();
+    }
+
+    /** Inputs run left to right, each a column of type chip (with delete) over its draggable reference chip. */
+    private static void layoutParamColumns(Layout L, BlockInstance inst, Font font, int ox, int oy, AiScript script) {
+        String fname = EffectiveSlots.funcName(inst);
+        hero.bane.herobot.ai.FuncDecl decl = script == null ? null : script.function(fname);
+        int arity = decl == null ? 0 : decl.arity();
+        if (arity > 0) {
+            int topY = oy + (L.h - (CHIP_H * 2 + 2)) / 2;
+            int botY = topY + CHIP_H + 2;
+            int cx = ox + L.w;
+            for (int i = 0; i < arity; i++) {
+                String tlabel = decl.paramType(i).chipLabel();
+                String chip = (fname.isEmpty() ? "?" : fname) + ":" + (i + 1);
+                int tw = font.width(tlabel) + 8;
+                int dw = font.width(chip) + 8;
+                L.paramRows.add(new ParamRow(i, tlabel, chip,
+                        new int[]{cx, topY, tw, CHIP_H}, new int[]{cx, botY, dw, CHIP_H}));
+                cx += Math.max(tw, dw) + 6;
+            }
+            L.w = (cx - ox) + PAD - 6;
+        }
+        L.w += arity > 0 ? 26 : 13;
+        L.plus = new int[]{ox + L.w - 12, oy + 3, 9, 9};
+        if (arity > 0) {
+            L.expander = new int[]{ox + L.w - 24, oy + 3, 9, 9};
+            L.expanderMinus = true;
+        }
+    }
+
     private static int placeSlot(Layout L, BlockInstance inst, ParamSlot slot, Layout cl,
                                  int cx, int chipY, int midY, Font font) {
         if (cl != null) {
@@ -303,11 +353,23 @@ public final class BlockRenderer {
             if (slotName.equals("trueValue")) return "then";
             if (slotName.equals("falseValue")) return "else";
         }
+        if (type == BlockType.SEND_MESSAGE && slotName.equals("op")) return "op";
         return null;
     }
 
     public static String blockLabel(BlockDef def) {
         return def.type() == BlockType.ELSE_IF ? "else (if" : def.label();
+    }
+
+    /** Param references render as their own name, e.g. "myFunc:1", instead of the generic label. */
+    public static String blockLabel(BlockDef def, BlockInstance inst) {
+        if (def.type() == BlockType.FUNC_PARAM && inst != null) {
+            Object f = inst.getParam("func");
+            Object i = inst.getParam("index");
+            String fn = f == null || f.toString().isEmpty() ? "?" : f.toString();
+            return fn + ":" + (i instanceof Number n ? n.intValue() + 1 : 1);
+        }
+        return blockLabel(def);
     }
 
     private static String tickWord(BlockInstance inst) {
@@ -333,6 +395,9 @@ public final class BlockRenderer {
             ChipRect c = L.chips.get(i);
             L.chips.set(i, new ChipRect(c.name(), c.x() + dx, c.y() + dy, c.w(), c.h()));
         }
+        for (ParamRow p : L.paramRows) {
+            for (int[] r : new int[][]{p.typeRect(), p.dragRect()}) { r[0] += dx; r[1] += dy; }
+        }
         for (Nested ns : L.nested) translate(ns.layout(), dx, dy);
     }
 
@@ -342,7 +407,7 @@ public final class BlockRenderer {
 
     public static void draw(GuiGraphics g, Font font, BlockDef def, BlockInstance inst,
                             Layout L, int selectedId, int hoveredId, int hoverPort, int litPort,
-                            int inputHighlight, boolean conflict, AiScript script) {
+                            int targetPort, boolean targetOk, int inputHighlight, boolean conflict, AiScript script) {
         int base = def.category().color();
         int body = darken(base, 0.78f);
         boolean reporter = def.shape() == BlockShape.REPORTER || def.shape() == BlockShape.BOOLEAN;
@@ -368,29 +433,29 @@ public final class BlockRenderer {
         }
 
         if (L.hasInput) {
+            int inCol = inputHighlight == INPUT_OK ? 0xFFFFFFFF
+                    : inputHighlight == INPUT_BAD ? 0xFFFF3030
+                    : lighten(base, 0.1f);
             if (L.sideInput) {
-                drawSideInputPort(g, L.inX, L.inY, L.inHalfW, lighten(base, 0.1f), inputHighlight);
+                drawSideInputPort(g, L.inX, L.inY, L.inHalfW, inCol);
             } else {
-                drawInputPort(g, L.inX, L.y, L.inHalfW, lighten(base, 0.1f), inputHighlight);
+                drawInputPort(g, L.inX, L.y, L.inHalfW, inCol);
             }
         }
         for (int i = 0; i < L.outPorts.size(); i++) {
             int[] p = L.outPorts.get(i);
             boolean lit = i == litPort;
-            int pcol = lit ? lighten(base, 0.55f) : darken(base, 0.6f);
+            boolean target = i == targetPort;
+            boolean hover = i == hoverPort;
+            int pcol = target ? (targetOk ? 0xFFFFFFFF : 0xFFFF3030)
+                    : hover ? 0xFFFFFFFF
+                    : lit ? lighten(base, 0.55f) : darken(base, 0.6f);
 
             if (i == L.sideOutPort) {
                 int x0 = p[0], y0 = p[1] - PORT_W / 2, x1 = p[0] + PORT_H, y1 = p[1] + PORT_W / 2;
                 int pgy0 = y0 + PORT_NOTCH, pgy1 = y1 - PORT_NOTCH;
                 g.fill(x0, y0, x0 + PORT_H / 2, y1, pcol);
                 g.fill(x0 + PORT_H / 2, pgy0, x1, pgy1, pcol);
-                if (lit || i == hoverPort) {
-                    int o = lit ? 0xFFFFFFFF : 0xFFE6E6E6;
-                    g.fill(x0 - 1, y0 - 1, x0, y1 + 1, o);
-                    g.fill(x1, y0 - 1, x1 + 1, y1 + 1, o);
-                    g.fill(x0, y0 - 1, x1, y0, o);
-                    g.fill(x0, y1, x1, y1 + 1, o);
-                }
                 continue;
             }
 
@@ -398,22 +463,15 @@ public final class BlockRenderer {
             int pgx0 = x0 + PORT_NOTCH, pgx1 = x1 - PORT_NOTCH;
             g.fill(x0, y0, x1, y0 + PORT_H / 2, pcol);
             g.fill(pgx0, y0 + PORT_H / 2, pgx1, y1, pcol);
-            if (lit || i == hoverPort) {
-                int o = lit ? 0xFFFFFFFF : 0xFFE6E6E6;
-                g.fill(x0 - 1, y0 - 1, x1 + 1, y0, o);
-                g.fill(x0 - 1, y1, x1 + 1, y1 + 1, o);
-                g.fill(x0 - 1, y0, x0, y1, o);
-                g.fill(x1, y0, x1 + 1, y1, o);
-            }
         }
 
         int labelColor = def.type() == BlockType.ELSE_IF ? 0xFFFFFFBB : 0xFFFFFFFF;
         if (def.type() == BlockType.ELSE_IF) {
             g.drawString(font, "else", L.labelX, L.labelY, 0xFFFFFFFF, false);
             int restX = L.labelX + font.width("else");
-            g.drawString(font, blockLabel(def).substring("else".length()), restX, L.labelY, labelColor, false);
+            g.drawString(font, blockLabel(def, inst).substring("else".length()), restX, L.labelY, labelColor, false);
         } else {
-            g.drawString(font, blockLabel(def), L.labelX, L.labelY, labelColor, false);
+            g.drawString(font, blockLabel(def, inst), L.labelX, L.labelY, labelColor, false);
         }
         if (L.suffix != null) {
             g.drawString(font, L.suffix, L.suffixX, L.labelY, labelColor, false);
@@ -455,9 +513,21 @@ public final class BlockRenderer {
             g.drawString(font, chipText(v), c.x() + 4, c.y() + 2, 0xFFFFFFFF, false);
         }
 
+        for (ParamRow p : L.paramRows) {
+            int[] t = p.typeRect();
+            g.fill(t[0] - 1, t[1] - 1, t[0] + t[2] + 1, t[1] + t[3] + 1, darken(base, 0.3f));
+            g.fill(t[0], t[1], t[0] + t[2], t[1] + t[3], darken(base, 0.45f));
+            g.drawString(font, p.typeLabel(), t[0] + 4, t[1] + 2, 0xFFFFFFFF, false);
+
+            int[] c = p.dragRect();
+            g.fill(c[0] - 1, c[1] - 1, c[0] + c[2] + 1, c[1] + c[3] + 1, darken(base, 0.15f));
+            g.fill(c[0], c[1], c[0] + c[2], c[1] + c[3], base);
+            g.drawString(font, p.chipLabel(), c[0] + 4, c[1] + 2, labelColor, false);
+        }
+
         for (Nested ns : L.nested) {
             BlockDef nd = BlockDefRegistry.get(ns.block().type());
-            draw(g, font, nd, ns.block(), ns.layout(), selectedId, hoveredId, -1, -1, INPUT_NONE, false, script);
+            draw(g, font, nd, ns.block(), ns.layout(), selectedId, hoveredId, -1, -1, -1, false, INPUT_NONE, false, script);
         }
 
         if (hovered && !selected) {
@@ -471,36 +541,22 @@ public final class BlockRenderer {
         }
     }
 
-    private static void drawSideInputPort(GuiGraphics g, int left, int cy, int halfW, int bcol, int inputHighlight) {
+    private static void drawSideInputPort(GuiGraphics g, int left, int cy, int halfW, int bcol) {
         int by0 = cy - halfW, by1 = cy + halfW;
         int bx0 = left - PORT_H;
         int bgy0 = by0 + PORT_NOTCH, bgy1 = by1 - PORT_NOTCH;
         g.fill(bx0, by0, left, bgy0, bcol);
         g.fill(bx0, bgy1, left, by1, bcol);
         g.fill(bx0 + PORT_H / 2, bgy0, left, bgy1, bcol);
-        if (inputHighlight != INPUT_NONE) {
-            int o = inputHighlight == INPUT_BAD ? 0xFFFF3030 : 0xFFE6E6E6;
-            g.fill(bx0 - 1, by0 - 1, left + 1, by0, o);
-            g.fill(bx0 - 1, by1, left + 1, by1 + 1, o);
-            g.fill(bx0 - 1, by0, bx0, by1, o);
-            g.fill(left, by0, left + 1, by1, o);
-        }
     }
 
-    private static void drawInputPort(GuiGraphics g, int cx, int top, int halfW, int bcol, int inputHighlight) {
+    private static void drawInputPort(GuiGraphics g, int cx, int top, int halfW, int bcol) {
         int bx0 = cx - halfW, bx1 = cx + halfW;
         int by0 = top - PORT_H;
         int bgx0 = bx0 + PORT_NOTCH, bgx1 = bx1 - PORT_NOTCH;
         g.fill(bx0, by0, bgx0, top, bcol);
         g.fill(bgx1, by0, bx1, top, bcol);
         g.fill(bgx0, by0 + PORT_H / 2, bgx1, top, bcol);
-        if (inputHighlight != INPUT_NONE) {
-            int o = inputHighlight == INPUT_BAD ? 0xFFFF3030 : 0xFFE6E6E6;
-            g.fill(bx0 - 1, by0 - 1, bx1 + 1, by0, o);
-            g.fill(bx0 - 1, top, bx1 + 1, top + 1, o);
-            g.fill(bx0 - 1, by0, bx0, top, o);
-            g.fill(bx1, by0, bx1 + 1, top, o);
-        }
     }
 
     private static void drawCShape(GuiGraphics g, Layout L, int body, int base, int border) {

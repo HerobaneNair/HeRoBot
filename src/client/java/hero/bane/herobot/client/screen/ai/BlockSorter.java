@@ -1,22 +1,10 @@
 package hero.bane.herobot.client.screen.ai;
 
 import hero.bane.herobot.ai.AiScript;
-import hero.bane.herobot.ai.block.BlockDef;
-import hero.bane.herobot.ai.block.BlockDefRegistry;
-import hero.bane.herobot.ai.block.BlockInstance;
-import hero.bane.herobot.ai.block.BlockShape;
-import hero.bane.herobot.ai.block.BlockType;
-import hero.bane.herobot.ai.block.Wire;
+import hero.bane.herobot.ai.block.*;
 import net.minecraft.client.gui.Font;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public final class BlockSorter {
     private static final double MARGIN = 20;

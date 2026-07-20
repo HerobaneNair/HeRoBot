@@ -9,6 +9,13 @@ final class Comet {
     private static final int MAX_BOUNCES = 3;
     private static final double WIRE_T = 3.0;
 
+    private static final double STRETCH_RATE = 6.0;
+    private static final double NOSE_LEN = 22.0;
+    private static final double ELONGATE = 1.6;
+    private static final double MAX_ELONGATE = 3.0;
+    private static final double PINCH = 0.75;
+    private static final double SPAGHETTI_ALPHA = 0.3;
+
     private static final int HEAD_RGB = 0xFFFFFF;
     private static final int TRAIL_RGB = 0xEAF1FF;
 
@@ -19,11 +26,19 @@ final class Comet {
     double groupAge;
     double gravityMul = 1.0;
     boolean straight;
+    boolean spiraling;
+    boolean spiralFed;
+    double spiralAngle, spiralR, spiralHand, spiralBlend, spiralTime;
     private double lockVx, lockVy;
+
+    private double stretch, hnx, hny, holeDist;
 
     private final List<double[]> trail = new ArrayList<>();
     private int[] trailCover;
     private double[][] trailPts;
+    private double[][] warpPts;
+    private double[] nosePt;
+    private double[] headPt;
 
     Comet(double x, double y, double vx, double vy) {
         this.x = x;
@@ -52,6 +67,25 @@ final class Comet {
             lockVx += dvx;
             lockVy += dvy;
         }
+    }
+
+    void setStretch(double target, double holeX, double holeY, double dt) {
+        double dx = holeX - x, dy = holeY - y;
+        double d = Math.hypot(dx, dy);
+        if (d > 1e-6) {
+            hnx = dx / d;
+            hny = dy / d;
+            holeDist = d;
+        }
+        stretch += (target - stretch) * Math.min(1.0, dt * STRETCH_RATE);
+    }
+
+    void decayStretch(double dt) {
+        if (stretch <= 1e-4) {
+            stretch = 0;
+            return;
+        }
+        stretch += (0 - stretch) * Math.min(1.0, dt * STRETCH_RATE);
     }
 
     void advance(double dt) {
@@ -131,25 +165,54 @@ final class Comet {
 
     void draw(PixelBatch batch, int left, int top, int right, int bottom) {
         double alpha = Math.min(1.0, life / FADE_IN);
+        if (alpha <= 0.001) return;
         drawTrail(batch, alpha, left, top, right, bottom);
         int hx = (int) x, hy = (int) y;
-        batch.rect(hx - 1, hy - 1, hx + 2, hy + 2, ((int) (alpha * 90) << 24) | HEAD_RGB);
+        batch.rect(hx - 1, hy - 1, hx + 2, hy + 2, ((int) (alpha * 90 * (1.0 - stretch)) << 24) | HEAD_RGB);
         batch.pixel(hx, hy, ((int) (alpha * 255) << 24) | HEAD_RGB);
     }
 
     private void drawTrail(PixelBatch batch, double alpha, int left, int top, int right, int bottom) {
         int n = trail.size();
         if (n == 0) return;
-        if (trailPts == null || trailPts.length < n + 1) trailPts = new double[TRAIL + 1][];
+        if (trailPts == null) trailPts = new double[TRAIL + 2][];
         double[][] pts = trailPts;
-        if (pts[0] == null) pts[0] = new double[2];
-        pts[0][0] = x;
-        pts[0][1] = y;
-        for (int i = 0; i < n; i++) pts[i + 1] = trail.get(i);
-        int segs = n;
+        boolean warped = stretch > 1e-3;
+        int base = warped ? 1 : 0;
+        if (warped) {
+            if (nosePt == null) nosePt = new double[2];
+            double len = Math.min(NOSE_LEN * stretch, Math.max(0, holeDist - 1));
+            nosePt[0] = x + hnx * len;
+            nosePt[1] = y + hny * len;
+            pts[0] = nosePt;
+        }
+        if (headPt == null) headPt = new double[2];
+        headPt[0] = x;
+        headPt[1] = y;
+        pts[base] = headPt;
+        for (int i = 0; i < n; i++) pts[base + i + 1] = trail.get(i);
+        int segs = n + base;
+
+        double thin = 1.0 - stretch * PINCH;
+        double rThin = Math.max(0.45, thin);
+        double headR = HEAD_R * rThin, tailR = TAIL_R * rThin;
+
+        if (warped) {
+            if (warpPts == null) warpPts = new double[TRAIL + 2][2];
+            double elong = Math.min(1.0 + stretch * ELONGATE, MAX_ELONGATE);
+            for (int i = 0; i <= segs; i++) {
+                double[] p = pts[i];
+                double dx = p[0] - x, dy = p[1] - y;
+                double rad = (dx * hnx + dy * hny) * elong;
+                double tx = dx - (dx * hnx + dy * hny) * hnx, ty = dy - (dx * hnx + dy * hny) * hny;
+                warpPts[i][0] = x + hnx * rad + tx * thin;
+                warpPts[i][1] = y + hny * rad + ty * thin;
+            }
+            pts = warpPts;
+        }
 
         double minX = x, maxX = x, minY = y, maxY = y;
-        for (int i = 0; i <= n; i++) {
+        for (int i = 0; i <= segs; i++) {
             double[] p = pts[i];
             minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
             minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
@@ -170,7 +233,8 @@ final class Comet {
             double[] pa = pts[s], pb = pts[s + 1];
             double dx = pb[0] - pa[0], dy = pb[1] - pa[1];
             double len2 = dx * dx + dy * dy;
-            double segR = TAIL_R + (HEAD_R - TAIL_R) * (1.0 - (double) s / segs);
+            double segR = tailR + (headR - tailR) * (1.0 - (double) s / segs);
+            double segAlpha = warped && s == 0 ? alpha * SPAGHETTI_ALPHA : alpha;
 
             int sx0 = Math.max(x0, (int) Math.floor(Math.min(pa[0], pb[0]) - segR));
             int sx1 = Math.min(x1, (int) Math.ceil(Math.max(pa[0], pb[0]) + segR));
@@ -187,9 +251,9 @@ final class Comet {
                     double ex = cx - (pa[0] + dx * t), ey = cy - (pa[1] + dy * t);
                     double d = Math.sqrt(ex * ex + ey * ey);
                     double f = 1.0 - (s + t) / segs;
-                    double radius = TAIL_R + (HEAD_R - TAIL_R) * f;
+                    double radius = tailR + (headR - tailR) * f;
                     double edge = clamp01(radius - d);
-                    int a = (int) (alpha * f * f * 230 * edge);
+                    int a = (int) (segAlpha * f * f * 230 * edge);
                     int idx = row + (px - x0);
                     if (a > cover[idx]) cover[idx] = a;
                 }

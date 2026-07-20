@@ -20,6 +20,8 @@ public interface PlayerController {
     PlayerController stopAll();
 
     void setSlot(int slot);
+    void pickBlock(boolean includeData);
+    void attemptAutoJump();
 
     PlayerController look(Direction direction);
     PlayerController look(Direction direction, int ticks);

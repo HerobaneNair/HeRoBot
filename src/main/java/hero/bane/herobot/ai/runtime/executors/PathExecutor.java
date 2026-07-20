@@ -11,6 +11,7 @@ import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.bot.pathing.PathSettings;
 import hero.bane.herobot.control.ControlOp;
 import hero.bane.herobot.control.RemoteOps;
+import hero.bane.herobot.control.RemotePathSettings;
 import hero.bane.herobot.control.RemotePathState;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -91,6 +92,7 @@ public final class PathExecutor {
             if (r.bot() != null) {
                 PathSettingOps.apply(r.bot().getPathSettings(), index, parsed);
             } else {
+                PathSettingOps.apply(RemotePathSettings.of(r.player()), index, parsed);
                 RemoteOps.send(r.player(), ControlOp.pathSetting(index, parsed));
             }
             return StepResult.continueVia(0);
@@ -106,6 +108,7 @@ public final class PathExecutor {
             if (r.bot() != null) {
                 r.bot().getPathSettings().setMoveType(type);
             } else {
+                RemotePathSettings.of(r.player()).setMoveType(type);
                 RemoteOps.send(r.player(), ControlOp.pathMoveType(type.ordinal()));
             }
             return StepResult.continueVia(0);

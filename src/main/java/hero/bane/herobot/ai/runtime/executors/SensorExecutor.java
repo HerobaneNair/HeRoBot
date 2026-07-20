@@ -186,7 +186,7 @@ public final class SensorExecutor {
             String cmd = ParamEval.evalString(b, "command", r, br).trim();
             if (cmd.startsWith("/")) cmd = cmd.substring(1);
             MinecraftServer server = r.player().level().getServer();
-            if (cmd.isEmpty() || server == null) return 0.0;
+            if (cmd.isEmpty()) return 0.0;
             int[] result = {0};
             CommandSourceStack src = r.player().createCommandSourceStack()
                     .withPermission(PermissionSet.ALL_PERMISSIONS)

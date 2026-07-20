@@ -1,10 +1,6 @@
 package hero.bane.herobot.ai.block;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public final class BlockDefRegistry {
     private static final Map<BlockType, BlockDef> DEFS = new EnumMap<>(BlockType.class);
@@ -17,6 +13,7 @@ public final class BlockDefRegistry {
             List.of("USE", "SWING", "JUMP", "ATTACK", "DROP_ITEM", "DROP_STACK", "SWAP_HANDS");
     private static final List<String> HANDEDNESS = List.of("left", "right");
     private static final List<String> DROP_AMOUNTS = List.of("1", "stack");
+    private static final List<String> PICK_BLOCK_DATA = List.of("no data", "with data");
     private static final List<String> DOING_ACTIONS =
             List.of("walking", "strafing", "sprinting", "sneaking", "using",
                     "attacking", "swinging", "jumping", "dropping", "swapping");
@@ -47,7 +44,7 @@ public final class BlockDefRegistry {
     );
     public static final List<String> FACES = List.of("north", "south", "east", "west", "up", "down", "any");
     static {
-        hat(BlockType.START, "start");
+        start();
 
         register(new BlockDef(BlockType.ON_TOGGLE, BlockCategory.EVENT, BlockShape.HAT, "when toggled true",
                 1, List.of(ParamSlot.ofBool("condition", false))));
@@ -67,6 +64,7 @@ public final class BlockDefRegistry {
         actionBlock(BlockType.USE, "use");
         actionBlock(BlockType.SWING, "swing");
         actionBlock(BlockType.JUMP, "jump");
+        stmt(BlockType.ATTEMPT_AUTOJUMP, BlockCategory.ACTION, "auto jump");
         actionBlock(BlockType.ATTACK, "attack", ATTACK_MODES);
         register(new BlockDef(BlockType.DROP_ITEM, BlockCategory.ACTION, BlockShape.STATEMENT, "drop", 1,
                 List.of(
@@ -76,6 +74,8 @@ public final class BlockDefRegistry {
                         ParamSlot.ofInt("ticks", 0)
                 )));
         actionBlock(BlockType.SWAP_HANDS, "swap hands");
+        stmt(BlockType.PICK_BLOCK, BlockCategory.ACTION, "pick block",
+                ParamSlot.ofEnum("data", PICK_BLOCK_DATA, "no data"));
         stmt(BlockType.SEND_MESSAGE, BlockCategory.ACTION, "send message",
                 ParamSlot.ofString("message", "Hello World"));
         stmt(BlockType.STOP_ACTION, BlockCategory.ACTION, "stop action",
@@ -274,10 +274,17 @@ public final class BlockDefRegistry {
                 ParamSlot.ofDouble("yaw", 0.0), ParamSlot.ofDouble("pitch", 0.0));
         reporter(BlockType.TO_STRING, BlockCategory.DATA_MANIPULATION, "toString",
                 ParamSlot.ofString("value", ""));
+
+        register(new BlockDef(BlockType.FUNC_DEFINE, BlockCategory.FUNCTIONS, BlockShape.HAT, "define",
+                1, List.of(ParamSlot.ofEnum("name", List.of(), ""))));
+        stmt(BlockType.FUNC_CALL, BlockCategory.FUNCTIONS, "call",
+                ParamSlot.ofEnum("name", List.of(), ""));
+        reporter(BlockType.FUNC_PARAM, BlockCategory.FUNCTIONS, "input",
+                ParamSlot.ofString("func", ""), ParamSlot.ofInt("index", 0));
     }
 
-    private static void hat(BlockType type, String label) {
-        register(new BlockDef(type, BlockCategory.EVENT, BlockShape.HAT, label, 1, List.of()));
+    private static void start() {
+        register(new BlockDef(BlockType.START, BlockCategory.EVENT, BlockShape.HAT, "start", 1, List.of()));
     }
 
     private static void stmt(BlockType type, BlockCategory cat, String label, ParamSlot... slots) {

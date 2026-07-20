@@ -10,11 +10,7 @@ import hero.bane.herobot.client.record.MovementRecorder.Frame;
 import hero.bane.herobot.client.record.MovementRecorder.InvAction;
 import net.minecraft.util.Mth;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 

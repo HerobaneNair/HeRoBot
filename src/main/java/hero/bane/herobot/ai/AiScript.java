@@ -10,12 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 public final class AiScript {
-    public static final int CURRENT_VERSION = 3;
+    public static final int CURRENT_VERSION = 4;
 
     private String name;
     private int version = CURRENT_VERSION;
     private final List<VarDecl> variables = new ArrayList<>();
     private final List<String> varFolders = new ArrayList<>();
+    private final List<FuncDecl> functions = new ArrayList<>();
     private final Map<Integer, BlockInstance> blocks = new HashMap<>();
     private final List<Wire> wires = new ArrayList<>();
     private final List<Comment> comments = new ArrayList<>();
@@ -33,6 +34,20 @@ public final class AiScript {
 
     public List<VarDecl> variables() { return variables; }
     public List<String> varFolders() { return varFolders; }
+    public List<FuncDecl> functions() { return functions; }
+
+    public FuncDecl function(String qualifiedName) {
+        if (qualifiedName == null) return null;
+        for (FuncDecl f : functions) if (f.qualifiedName().equals(qualifiedName)) return f;
+        return null;
+    }
+
+    public int functionIndex(String qualifiedName) {
+        for (int i = 0; i < functions.size(); i++) {
+            if (functions.get(i).qualifiedName().equals(qualifiedName)) return i;
+        }
+        return -1;
+    }
     public Map<Integer, BlockInstance> blocks() { return blocks; }
     public List<Wire> wires() { return wires; }
     public List<Comment> comments() { return comments; }

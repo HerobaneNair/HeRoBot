@@ -42,6 +42,14 @@ public final class StarField {
     private final PixelBatch batch = new PixelBatch();
     private final java.util.Random rng = new java.util.Random();
     private long lastNanos;
+    private BlackHole blackHole;
+
+    public static final int BLACK_HOLE_THRESHOLD = 10;
+    private static final int BIG_SPARKLE_SPARKS = 8;
+    private static final double COLLAPSE_COVER = 0.85;
+    private static final double COLLAPSE_K = 0.05;
+    private static final double COLLAPSE_MIN = 0.5;
+    private static final double COLLAPSE_MAX = 3.0;
 
     public void tick(int left, int top, int right, int bottom, double panX, double panY, double zoom) {
         if (!EditorPrefs.cometsEnabled()) return;
@@ -55,13 +63,56 @@ public final class StarField {
         for (int i = 0; i < count; i++) spawn(left, top, right, bottom, panX, panY, zoom);
     }
 
+    public boolean canSpawnBlackHole() {
+        return blackHole == null || blackHole.drained();
+    }
+
+    public void spawnBlackHole(int left, int top, int right, int bottom) {
+        if (blackHole != null && !blackHole.drained()) {
+            blackHole.growToMax();
+            return;
+        }
+        if (right - left < 32 || bottom - top < 32) return;
+        double cx = (left + right) / 2.0, cy = (top + bottom) / 2.0;
+        blackHole = new BlackHole(cx, cy);
+        blackHole.fillToMax();
+        sparkle(cx, cy);
+    }
+
+    public boolean blackHoleGrabbed(double x, double y) {
+        return blackHole != null && blackHole.grabbed(x, y);
+    }
+
+    public double[] blackHolePos() {
+        return blackHole == null ? null : new double[]{blackHole.x, blackHole.y};
+    }
+
+    public void moveBlackHole(double x, double y) {
+        if (blackHole != null) blackHole.moveTo(x, y);
+    }
+
+    public void removeBlackHole() {
+        if (blackHole == null) return;
+        sparkle(blackHole.x, blackHole.y);
+        blackHole = null;
+    }
+
+    public double[] blackHoleWarp() {
+        return blackHole == null ? null : new double[]{blackHole.x, blackHole.y, blackHole.radius()};
+    }
+
     public void sparkle(double x, double y) {
         twinkles.add(new Twinkle(x, y, Twinkle.LEN, true));
     }
 
+    public void bigSparkle(double x, double y) {
+        twinkles.add(new Twinkle(x, y, Twinkle.BIG_LEN, true));
+        for (int i = 0; i < BIG_SPARKLE_SPARKS; i++) spark(x, y);
+    }
+
     public void spark(double x, double y) {
         double ang = rng.nextDouble() * Math.PI * 2;
-        double sp = 25 + rng.nextDouble() * 35;
+        double sp = 110 + rng.nextDouble() * 140;
         double life = 0.4 + rng.nextDouble() * 0.4;
         sparks.add(new Spark(x, y, Math.cos(ang) * sp, Math.sin(ang) * sp, life, 0xFFFFFF));
     }
@@ -82,6 +133,7 @@ public final class StarField {
             if (count > 1) c.makeStraight();
             comets.add(c);
         }
+        if (count >= BLACK_HOLE_THRESHOLD && blackHole == null) blackHole = new BlackHole(cx, cy);
     }
 
     public void render(GuiGraphics g, int left, int top, int right, int bottom,
@@ -96,17 +148,50 @@ public final class StarField {
 
         for (Comet c : comets)
             if (!c.straight) applyFieldForces(c, dt, left, top, step, ox, oy, mouseInside, mouseX, mouseY);
-        ClusterPhysics.apply(comets, dt);
+        List<Comet> clusterComets = comets;
+        if (blackHole != null) {
+            clusterComets = new ArrayList<>(comets.size());
+            for (Comet c : comets) if (!blackHole.inRange(c)) clusterComets.add(c);
+        }
+        ClusterPhysics.apply(clusterComets, dt);
         for (Comet c : comets) c.relock();
         if (mouseInside) for (Comet c : comets) if (c.straight) applyMouseForce(c, dt, mouseX, mouseY);
+        for (Comet c : comets) {
+            if (blackHole != null && blackHole.inRange(c)) {
+                if (c.spiraling || blackHole.captures(c)) {
+                    blackHole.spiral(c, dt);
+                    if (!c.spiralFed) {
+                        c.spiralFed = true;
+                        blackHole.feed(true);
+                    }
+                } else {
+                    blackHole.pull(c, dt);
+                }
+                c.setStretch(blackHole.tidal(c.x, c.y), blackHole.x, blackHole.y, dt);
+            } else {
+                c.spiraling = false;
+                c.spiralFed = false;
+                c.decayStretch(dt);
+            }
+        }
 
         double lifespan = lifespanFor(comets.size());
         Iterator<Comet> it = comets.iterator();
         while (it.hasNext()) {
             Comet c = it.next();
             c.advance(dt);
-            if (!c.straight) c.bounce(blocks, wires);
-            if (c.exploded()) {
+            if (blackHole != null && blackHole.swallows(c)) {
+                blackHole.feed(!c.spiralFed);
+                it.remove();
+                continue;
+            }
+            if (c.spiraling) {
+                c.recordTrail();
+                c.draw(batch, left, top, right, bottom);
+                continue;
+            }
+            if (!c.straight && (blackHole == null || !blackHole.inRange(c))) c.bounce(blocks, wires);
+            if (c.exploded() && !swallowedInstead(c.x, c.y)) {
                 explode(c.x, c.y, 1);
                 it.remove();
                 continue;
@@ -126,7 +211,19 @@ public final class StarField {
             c.draw(batch, left, top, right, bottom);
         }
 
-        for (ClusterPhysics.Blast b : ClusterPhysics.collide(comets)) explode(b.x(), b.y(), b.size());
+        List<Comet> collidable = comets;
+        if (blackHole != null) {
+            collidable = new ArrayList<>(comets.size());
+            for (Comet c : comets) if (!c.spiraling) collidable.add(c);
+        }
+        for (ClusterPhysics.Blast b : ClusterPhysics.collide(collidable)) {
+            if (!swallowedInstead(b.x(), b.y())) explode(b.x(), b.y(), b.size());
+        }
+
+        if (blackHole != null) {
+            if (blackHole.update(dt)) blackHole.draw(batch);
+            else blackHole = null;
+        }
 
         drawSparks(dt, left, top, right, bottom);
         drawTwinkles(dt);
@@ -136,14 +233,22 @@ public final class StarField {
     public void explodeSelection(double x0, double y0, double x1, double y1) {
         double lx = Math.min(x0, x1), hx = Math.max(x0, x1);
         double ly = Math.min(y0, y1), hy = Math.max(y0, y1);
+        if (blackHole != null && blackHole.shadowCoverage(lx, ly, hx, hy) >= COLLAPSE_COVER) {
+            double area = (hx - lx) * (hy - ly);
+            blackHole.drain(Math.clamp(COLLAPSE_K * Math.cbrt(area), COLLAPSE_MIN, COLLAPSE_MAX));
+        }
         Iterator<Comet> it = comets.iterator();
         while (it.hasNext()) {
             Comet c = it.next();
-            if (c.x >= lx && c.x <= hx && c.y >= ly && c.y <= hy) {
+            if (!c.spiraling && c.x >= lx && c.x <= hx && c.y >= ly && c.y <= hy && !swallowedInstead(c.x, c.y)) {
                 explode(c.x, c.y, 1);
                 it.remove();
             }
         }
+    }
+
+    private boolean swallowedInstead(double x, double y) {
+        return blackHole != null && (blackHole.inRange(x, y) || blackHole.smothers(x, y));
     }
 
     private void spawn(int left, int top, int right, int bottom, double panX, double panY, double zoom) {
@@ -266,7 +371,7 @@ public final class StarField {
     }
 
     private static int hsv(double h) {
-        double s = 0.85, v = 1.0;
+        double s = 0.85, v = 0.5;
         double c = v * s;
         double x = c * (1 - Math.abs((h / 60.0) % 2 - 1));
         double m = v - c;

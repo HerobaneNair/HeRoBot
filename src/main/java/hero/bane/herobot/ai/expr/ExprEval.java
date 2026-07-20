@@ -105,35 +105,35 @@ public final class ExprEval {
     record Sub(Expr expr, int end) {}
 
     private static final class Parser {
-        private final String s;
+        private final String input;
         private final boolean strict;
         private final Function<String, ParamType> types;
         private int pos;
 
-        Parser(String s) {
-            this(s, false, null);
+        Parser(String input) {
+            this(input, false, null);
         }
 
-        Parser(String s, boolean strict, Function<String, ParamType> types) {
-            this.s = s;
+        Parser(String input, boolean strict, Function<String, ParamType> types) {
+            this.input = input;
             this.strict = strict;
             this.types = types;
         }
 
         boolean atEnd() {
-            return pos >= s.length();
+            return pos >= input.length();
         }
 
         void skipWs() {
-            while (pos < s.length() && Character.isWhitespace(s.charAt(pos))) pos++;
+            while (pos < input.length() && Character.isWhitespace(input.charAt(pos))) pos++;
         }
 
         private char peek() {
-            return pos < s.length() ? s.charAt(pos) : '\0';
+            return pos < input.length() ? input.charAt(pos) : '\0';
         }
 
         private boolean lookahead(String tok) {
-            return s.regionMatches(pos, tok, 0, tok.length());
+            return input.regionMatches(pos, tok, 0, tok.length());
         }
 
         Expr expr() {
@@ -191,8 +191,8 @@ public final class ExprEval {
             skipWs();
             if (peek() == '^') {
                 pos++;
-                Expr b = base, e = power();
-                return vars -> Math.pow(b.eval(vars), e.eval(vars));
+                Expr e = power();
+                return vars -> Math.pow(base.eval(vars), e.eval(vars));
             }
             return base;
         }
@@ -250,8 +250,8 @@ public final class ExprEval {
         Expr variable() {
             pos++;
             int start = pos;
-            while (pos < s.length() && s.charAt(pos) != '}') pos++;
-            String name = s.substring(start, pos).trim();
+            while (pos < input.length() && input.charAt(pos) != '}') pos++;
+            String name = input.substring(start, pos).trim();
             if (peek() == '}') pos++;
             else if (strict) throw new RuntimeException("expected }");
             int idx = parseIndex();
@@ -265,9 +265,9 @@ public final class ExprEval {
             pos++;
             skipWs();
             int start = pos;
-            while (pos < s.length() && Character.isDigit(s.charAt(pos))) pos++;
+            while (pos < input.length() && Character.isDigit(input.charAt(pos))) pos++;
             if (pos == start) throw new RuntimeException("expected index");
-            int idx = Integer.parseInt(s.substring(start, pos));
+            int idx = Integer.parseInt(input.substring(start, pos));
             skipWs();
             if (peek() == ']') pos++;
             else if (strict) throw new RuntimeException("expected ]");
@@ -290,23 +290,23 @@ public final class ExprEval {
 
         Expr number() {
             int start = pos;
-            while (pos < s.length()) {
-                char c = s.charAt(pos);
+            while (pos < input.length()) {
+                char c = input.charAt(pos);
                 if (Character.isDigit(c) || c == '.') pos++;
                 else break;
             }
-            double val = Double.parseDouble(s.substring(start, pos));
+            double val = Double.parseDouble(input.substring(start, pos));
             return vars -> val;
         }
 
         Expr identifier() {
             int start = pos;
-            while (pos < s.length()) {
-                char c = s.charAt(pos);
+            while (pos < input.length()) {
+                char c = input.charAt(pos);
                 if (Character.isLetterOrDigit(c) || c == '_') pos++;
                 else break;
             }
-            String name = s.substring(start, pos);
+            String name = input.substring(start, pos);
             skipWs();
             if (peek() == '(') return callFunction(name);
             return constant(name);
@@ -345,25 +345,25 @@ public final class ExprEval {
             }
             if (peek() == ')') pos++;
             else if (strict) throw new RuntimeException("expected )");
-            Expr a = arg, b = arg2;
+            Expr b = arg2;
             boolean two = twoArgs;
             return switch (name) {
-                case "sin" -> vars -> Math.sin(a.eval(vars));
-                case "cos" -> vars -> Math.cos(a.eval(vars));
-                case "tan" -> vars -> Math.tan(a.eval(vars));
-                case "asin", "arcsin" -> vars -> Math.asin(a.eval(vars));
-                case "acos", "arccos" -> vars -> Math.acos(a.eval(vars));
-                case "atan", "arctan" -> vars -> Math.atan(a.eval(vars));
-                case "sqrt" -> vars -> Math.sqrt(a.eval(vars));
-                case "floor" -> vars -> Math.floor(a.eval(vars));
-                case "ceil" -> vars -> Math.ceil(a.eval(vars));
-                case "abs" -> vars -> Math.abs(a.eval(vars));
-                case "pow" -> vars -> two ? Math.pow(a.eval(vars), b.eval(vars)) : a.eval(vars);
+                case "sin" -> vars -> Math.sin(arg.eval(vars));
+                case "cos" -> vars -> Math.cos(arg.eval(vars));
+                case "tan" -> vars -> Math.tan(arg.eval(vars));
+                case "asin", "arcsin" -> vars -> Math.asin(arg.eval(vars));
+                case "acos", "arccos" -> vars -> Math.acos(arg.eval(vars));
+                case "atan", "arctan" -> vars -> Math.atan(arg.eval(vars));
+                case "sqrt" -> vars -> Math.sqrt(arg.eval(vars));
+                case "floor" -> vars -> Math.floor(arg.eval(vars));
+                case "ceil" -> vars -> Math.ceil(arg.eval(vars));
+                case "abs" -> vars -> Math.abs(arg.eval(vars));
+                case "pow" -> vars -> two ? Math.pow(arg.eval(vars), b.eval(vars)) : arg.eval(vars);
                 case "rand", "random" -> vars -> two
-                        ? a.eval(vars) + Math.random() * (b.eval(vars) - a.eval(vars))
-                        : Math.random() * a.eval(vars);
+                        ? arg.eval(vars) + Math.random() * (b.eval(vars) - arg.eval(vars))
+                        : Math.random() * arg.eval(vars);
                 case "randomint", "randint" -> vars -> {
-                    double x = a.eval(vars);
+                    double x = arg.eval(vars);
                     double y = two ? b.eval(vars) : 0;
                     long lo = (long) Math.floor(Math.min(x, y));
                     long hi = (long) Math.floor(Math.max(x, y));

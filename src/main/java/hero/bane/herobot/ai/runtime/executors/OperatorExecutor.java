@@ -88,7 +88,7 @@ public final class OperatorExecutor {
         });
         reporter.put(BlockType.EQUALITY, (b, r, br) -> {
             boolean eq = valuesEqual(ParamEval.raw(b, "a", r, br), ParamEval.raw(b, "b", r, br));
-            return "≠".equals(ParamEval.evalString(b, "op", r, br)) ? !eq : eq;
+            return "≠".equals(ParamEval.evalString(b, "op", r, br)) != eq;
         });
         reporter.put(BlockType.LOGIC, (b, r, br) -> {
             boolean a = ParamEval.evalBool(b, "a", r, br);

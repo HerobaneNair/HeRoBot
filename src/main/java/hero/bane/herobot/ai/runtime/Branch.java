@@ -9,6 +9,7 @@ public final class Branch {
     private boolean dead;
     private boolean parked;
     private int turns;
+    private int callsThisTick;
 
     private int originId = -1;
     private int pathWaitFor = -1;
@@ -39,6 +40,10 @@ public final class Branch {
     public void useTurn() { turns++; }
     public void resetTurns() { turns = 0; }
 
+    public int callsThisTick() { return callsThisTick; }
+    public void useCall() { callsThisTick++; }
+    public void resetCalls() { callsThisTick = 0; }
+
     public int originId() { return originId; }
     public void setOriginId(int id) { this.originId = id; }
 
@@ -52,6 +57,7 @@ public final class Branch {
         copy.originId = this.originId;
         copy.pathWaitFor = this.pathWaitFor;
         copy.turns = this.turns;
+        copy.callsThisTick = this.callsThisTick;
         for (ControlFrame f : this.frames) {
             ControlFrame nf = new ControlFrame(f.containerBlockId(), f.activationId());
             nf.data().putAll(f.data());

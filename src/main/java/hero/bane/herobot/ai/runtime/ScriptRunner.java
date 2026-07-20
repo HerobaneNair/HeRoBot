@@ -5,6 +5,7 @@ import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.VarDecl;
 import hero.bane.herobot.ai.VarType;
 import hero.bane.herobot.ai.runtime.executors.DataExecutor;
+import hero.bane.herobot.ai.runtime.executors.FunctionExecutor;
 import hero.bane.herobot.ai.runtime.executors.PathExecutor;
 import hero.bane.herobot.control.PlayerControllers;
 import hero.bane.herobot.ai.block.BlockCategory;
@@ -23,11 +24,6 @@ import java.util.List;
 import java.util.Map;
 
 public final class ScriptRunner {
-    /**
-     * Rebound every tick: Minecraft replaces the ServerPlayer instance on respawn and on dimension
-     * change while keeping the UUID, so a reference captured at construction goes stale and every
-     * action would target the old entity.
-     */
     private ServerPlayer player;
     private final AiScript script;
     private final List<Branch> branches = new ArrayList<>();
@@ -35,13 +31,6 @@ public final class ScriptRunner {
     private final Map<String, RuntimeVariable> variables = new HashMap<>();
     private int activationSeq;
 
-    /**
-     * Wire/hat lookups, resolved once instead of scanning every wire on every block transition.
-     *
-     * Safe to cache because a script is immutable while a runner holds it: only the editor mutates
-     * an AiScript (via the wires()/blocks() views), and it never runs a ScriptRunner over the
-     * instance it is editing. Anything that changes a script hands the runner a new AiScript.
-     */
     private final Map<Long, List<Wire>> outIndex = new HashMap<>();
     private final Map<Integer, List<Wire>> inIndex = new HashMap<>();
     private final Map<BlockType, List<BlockInstance>> hatIndex = new EnumMap<>(BlockType.class);
@@ -64,8 +53,6 @@ public final class ScriptRunner {
             outIndex.computeIfAbsent(outKey(w.fromBlockId(), w.outPort()), k -> new ArrayList<>()).add(w);
             inIndex.computeIfAbsent(w.toBlockId(), k -> new ArrayList<>()).add(w);
         }
-        // Pre-sorted once here rather than on every navigate. Ordering is semantic: it decides the
-        // order forked branches run in, so it must stay identical to the old per-step sort.
         for (List<Wire> bucket : outIndex.values()) {
             if (bucket.size() > 1) bucket.sort(byTargetCanvasOrder());
         }
@@ -75,12 +62,10 @@ public final class ScriptRunner {
         return ((long) blockId << 32) | (outPort & 0xFFFFFFFFL);
     }
 
-    /** Outgoing wires for a port, pre-sorted into canvas order. Never null; do not mutate. */
     public List<Wire> outgoing(int blockId, int outPort) {
         return outIndex.getOrDefault(outKey(blockId, outPort), List.of());
     }
 
-    /** Incoming wires for a block. Never null; do not mutate. */
     public List<Wire> incoming(int blockId) {
         return inIndex.getOrDefault(blockId, List.of());
     }
@@ -91,7 +76,6 @@ public final class ScriptRunner {
 
     public ServerPlayer player() { return player; }
 
-    /** Points the runner at the live entity after Minecraft replaced it (respawn, dimension change). */
     public void rebind(ServerPlayer current) {
         if (current != null) this.player = current;
     }
@@ -103,26 +87,15 @@ public final class ScriptRunner {
 
     public boolean isPaused() { return paused; }
 
-    /**
-     * Freezes the script exactly where it is: branches, frames and variables are all kept, so a
-     * resume carries on from the same block. The bot is stopped too, otherwise a "paused" script
-     * would leave it walking its current path and swinging.
-     */
     public void pause() {
         if (paused) return;
         paused = true;
         releaseExternalState();
-        // A branch parked on a goto is still sitting on that block, so clearing what it was waiting
-        // for makes it re-issue the path on resume rather than treat the cancelled walk as arrived.
         for (Branch b : branches) b.setPathWaitFor(-1);
     }
 
     public void resume() { paused = false; }
 
-    /**
-     * Stops the script without unloading it: the runner stays assigned so the script can be started
-     * again, but nothing it left running in the world keeps going.
-     */
     public void stop() {
         for (Branch b : branches) b.kill();
         branches.clear();
@@ -131,8 +104,6 @@ public final class ScriptRunner {
         releaseExternalState();
     }
 
-    /** Anything the script drives that outlives a branch has to be handed back, or the bot keeps
-     *  pathing and swinging with no script left to stop it. */
     private void releaseExternalState() {
         try {
             BotPlayer bot = bot();
@@ -148,10 +119,6 @@ public final class ScriptRunner {
         }
     }
 
-    /**
-     * Releases the activations a dying branch was holding. Only the last branch out of a shared
-     * activation may drop it, which is exactly what runningCount answers.
-     */
     private void killBranch(Branch br) {
         br.kill();
         for (ControlFrame f : br.frames()) {
@@ -261,10 +228,6 @@ public final class ScriptRunner {
         }
     }
 
-    /**
-     * Script variables are shared by every branch: a value stored by one branch is visible to all
-     * the others, including branches that were already running when the store happened.
-     */
     public RuntimeVariable variable(String name) {
         return variables.get(name);
     }
@@ -273,7 +236,6 @@ public final class ScriptRunner {
         variables.put(name, v);
     }
 
-    /** Branch order is canvas order: leftmost script first, ties broken top-to-bottom. */
     private Comparator<Wire> byTargetCanvasOrder() {
         return (a, b) -> {
             BlockInstance ba = script.block(a.toBlockId());
@@ -293,17 +255,14 @@ public final class ScriptRunner {
         for (Branch br : branches) {
             if (br.isDead()) continue;
             br.resetTurns();
+            br.resetCalls();
             br.setParked(br.decrementWait());
         }
 
-        // Branches advance in lock-step rather than one draining before the next starts: each gets
-        // a slice, runs top-to-bottom until it reaches a yield point, then hands off to the branch
-        // on its right. Rounds repeat until every branch is parked for the tick or dead.
         boolean anyRan = true;
         while (anyRan) {
             anyRan = false;
-            for (int i = 0; i < branches.size(); i++) {
-                Branch br = branches.get(i);
+            for (Branch br : branches) {
                 if (br.isDead() || br.parked() || br.turns() >= MAX_TURNS_PER_TICK) continue;
                 br.useTurn();
                 try {
@@ -324,7 +283,6 @@ public final class ScriptRunner {
     private static final int STEP_BUDGET = 1_000_000;
     private static final int MAX_TURNS_PER_TICK = 256;
 
-    /** Runs one branch until it yields, parks for the tick, or dies. */
     private void runSlice(Branch br) {
         for (int budget = 0; budget < STEP_BUDGET; budget++) {
             BlockInstance b = script.block(br.currentBlockId());
@@ -332,7 +290,7 @@ public final class ScriptRunner {
 
             Executor exec = ScriptDispatch.flow(b.type());
             if (exec == null) {
-                HeroBot.LOGGER.warn("No flow executor for {} — ending branch", b.type());
+                HeroBot.LOGGER.warn("No flow executor for {} - ending branch", b.type());
                 killBranch(br);
                 return;
             }
@@ -341,7 +299,6 @@ public final class ScriptRunner {
             applyResult(br, b, r);
 
             if (br.isDead()) return;
-            // A pause block takes effect immediately; the branch stays on the block it advanced to.
             if (paused) {
                 br.setParked(true);
                 return;
@@ -354,15 +311,10 @@ public final class ScriptRunner {
         }
     }
 
-    /**
-     * Blocks that hand the slice to the next branch once they have run: every control block
-     * (wait included, break excluded, since a break is just a jump) plus the two pathing blocks.
-     * Everything else runs straight through so plain block-to-block wires cost no time.
-     */
     private static boolean yieldsAfter(BlockType t) {
         return switch (t) {
             case BREAK -> false;
-            case GOTO_POS, GOTO_ENTITY -> true;
+            case GOTO_POS, GOTO_ENTITY, FUNC_CALL -> true;
             default -> BlockDefRegistry.get(t).category() == BlockCategory.CONTROL;
         };
     }
@@ -399,7 +351,7 @@ public final class ScriptRunner {
     private void navigate(Branch br, int fromBlockId, int outPort) {
         List<Wire> wires = outgoing(fromBlockId, outPort);
         if (wires.isEmpty()) {
-            killBranch(br);
+            if (!returnFromFunction(br)) killBranch(br);
             return;
         }
         Wire first = wires.getFirst();
@@ -408,6 +360,18 @@ public final class ScriptRunner {
             Wire w = wires.get(i);
             branches.add(br.forkAt(w.toBlockId()));
         }
+    }
+
+    /** A body that runs out of blocks returns to its caller instead of ending the branch. */
+    public boolean returnFromFunction(Branch br) {
+        ControlFrame top = br.frames().peek();
+        if (!FunctionExecutor.isCallFrame(top)) return false;
+        br.frames().pop();
+        FunctionExecutor.restoreParams(top, this);
+        int callId = FunctionExecutor.callBlockId(top);
+        if (script.block(callId) == null) return false;
+        navigate(br, callId, 0);
+        return true;
     }
 
     public Object evalReporter(BlockInstance reporter, Branch branch) {

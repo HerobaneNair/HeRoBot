@@ -48,13 +48,18 @@ public final class ControlExecutor {
             int endId = -1;
             int found = 0;
             for (ControlFrame f : br.frames()) {
+                // A function call is a barrier: break never escapes into the caller's loops.
+                if (FunctionExecutor.isCallFrame(f)) break;
                 JoinState js = r.joinState(f.activationId());
                 if (js == null) continue;
                 target = f;
                 endId = js.endBlockId();
                 if (++found >= want) break;
             }
-            if (target == null) return StepResult.end();
+            if (target == null) {
+                // No loop left inside this function: return from it rather than killing the branch.
+                return r.returnFromFunction(br) ? StepResult.handled() : StepResult.end();
+            }
 
             while (!br.frames().isEmpty()) {
                 ControlFrame f = br.frames().pop();
@@ -67,7 +72,7 @@ public final class ControlExecutor {
             for (Wire w : r.outgoing(endId, 0)) {
                 return StepResult.jumpTo(w.toBlockId());
             }
-            return StepResult.end();
+            return r.returnFromFunction(br) ? StepResult.handled() : StepResult.end();
         });
 
         flow.put(BlockType.STOP_SCRIPT, (b, r, br) -> {

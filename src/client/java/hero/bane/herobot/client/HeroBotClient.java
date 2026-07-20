@@ -4,16 +4,11 @@ import com.mojang.blaze3d.platform.InputConstants;
 import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.client.control.ClientOps;
 import hero.bane.herobot.client.control.ClientPlayerController;
+import hero.bane.herobot.client.net.ServerLink;
 import hero.bane.herobot.client.record.MovementRecorder;
 import hero.bane.herobot.client.screen.ai.AiEditorScreen;
 import hero.bane.herobot.client.screen.ai.ScriptTransfer;
-import hero.bane.herobot.networking.AiDownloadFailedPayload;
-import hero.bane.herobot.networking.AiDownloadPayload;
-import hero.bane.herobot.networking.AiListPayload;
-import hero.bane.herobot.networking.ChunkReassembler;
-import hero.bane.herobot.networking.ControlPlayerPayload;
-import hero.bane.herobot.networking.HeroBotSyncPayload;
-import hero.bane.herobot.networking.ScriptCompression;
+import hero.bane.herobot.networking.*;
 import hero.bane.herobot.rule.RuleConfigIO;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -23,14 +18,23 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.ARGB;
 import org.lwjgl.glfw.GLFW;
 
 public class HeroBotClient implements ClientModInitializer {
     private static boolean heroBotLoaded = false;
     public static KeyMapping openAiEditorKey;
+
+    private static final int REC_TICKS = 30;
+    private static final int REC_FADE_TICKS = 10;
+    private static int recIndicatorTicks;
+    private static Component recIndicatorText = Component.empty();
 
     private static final ChunkReassembler DOWNLOAD_REASSEMBLER = new ChunkReassembler();
 
@@ -41,14 +45,22 @@ public class HeroBotClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(HeroBotSyncPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> {
+                    if (payload.protocol() != HeroBotSyncPayload.PROTOCOL) {
+                        hero.bane.herobot.HeroBot.LOGGER.warn(
+                                "HeroBot server protocol {} does not match client protocol {}; disabling",
+                                payload.protocol(), HeroBotSyncPayload.PROTOCOL);
+                        return;
+                    }
                     RuleConfigIO.applyRemoteSettings(payload.settingsJson());
                     heroBotLoaded = true;
                     HeroBotSettings.serverHasHeroBot = true;
+                    ServerLink.onHandshake();
                 }));
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             heroBotLoaded = false;
             HeroBotSettings.serverHasHeroBot = false;
+            ServerLink.reset();
             RuleConfigIO.reapplyLayers();
             ClientOps.INSTANCE.reset();
             ClientPlayerController.INSTANCE.reset();
@@ -115,19 +127,36 @@ public class HeroBotClient implements ClientModInitializer {
             MovementRecorder.INSTANCE.clientTick();
             if (MovementRecorder.INSTANCE.isRecording() && client.player != null) {
                 int secs = MovementRecorder.INSTANCE.recordedTicks() / 20;
-                client.player.displayClientMessage(
-                        Component.literal("§c● REC §f" + secs + "s — /herorecord stop"), true);
+                // hehe secs
+                recIndicatorText = Component.literal("§c⬤ REC §f" + secs + "s - /herorecord stop");
+                recIndicatorTicks = REC_TICKS;
+            } else if (recIndicatorTicks > 0) {
+                recIndicatorTicks--;
             }
         });
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(ClientCommandManager.literal("herorecord")
-                    .executes(ctx -> stopRecording(false))
-                    .then(ClientCommandManager.literal("stop")
-                            .executes(ctx -> stopRecording(false)))
-                    .then(ClientCommandManager.literal("cancel")
-                            .executes(ctx -> stopRecording(true))));
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("herobot", "rec_indicator"), (graphics, deltaTracker) -> {
+            if (recIndicatorTicks <= 0) return;
+            float remaining = recIndicatorTicks - deltaTracker.getGameTimeDeltaPartialTick(false);
+            int alpha = (int) (remaining * 255.0F / REC_FADE_TICKS);
+            if (alpha > 255) alpha = 255;
+            if (alpha <= 0) return;
+
+            Font font = Minecraft.getInstance().font;
+            int width = font.width(recIndicatorText);
+            graphics.pose().pushMatrix();
+            graphics.pose().translate((float) graphics.guiWidth() / 2, graphics.guiHeight() - 68);
+            graphics.drawStringWithBackdrop(font, recIndicatorText, -width / 2, -4, width, ARGB.white(alpha));
+            graphics.pose().popMatrix();
         });
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
+                dispatcher.register(ClientCommandManager.literal("herorecord")
+                .executes(ctx -> stopRecording(false))
+                .then(ClientCommandManager.literal("stop")
+                        .executes(ctx -> stopRecording(false)))
+                .then(ClientCommandManager.literal("cancel")
+                        .executes(ctx -> stopRecording(true)))));
     }
 
     private static int stopRecording(boolean cancel) {

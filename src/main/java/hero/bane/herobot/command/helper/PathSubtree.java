@@ -7,7 +7,12 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import hero.bane.herobot.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.bot.pathing.DebugChannel;
+import hero.bane.herobot.bot.pathing.PathSettingOps;
 import hero.bane.herobot.bot.pathing.PathSettings;
+import hero.bane.herobot.control.ControlOp;
+import hero.bane.herobot.control.RemoteOps;
+import hero.bane.herobot.control.RemotePathSettings;
+import hero.bane.herobot.control.RemotePathState;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -16,15 +21,45 @@ import net.minecraft.commands.arguments.blocks.BlockStateArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public final class PathSubtree {
 
     private PathSubtree() {}
+
+    private record PathTarget(ServerPlayer player, PathSettings settings, boolean remote) {
+        String name() {
+            return player.getGameProfile().name();
+        }
+
+        void send(ControlOp op) {
+            if (remote) RemoteOps.send(player, op);
+        }
+    }
+
+    private static List<PathTarget> pathTargets(CommandContext<CommandSourceStack> context)
+            throws CommandSyntaxException {
+        List<PathTarget> targets = new ArrayList<>();
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            if (player instanceof BotPlayer bot) {
+                targets.add(new PathTarget(player, bot.getPathSettings(), false));
+            } else if (RemoteOps.canSend(player)) {
+                targets.add(new PathTarget(player, RemotePathSettings.of(player), true));
+            } else {
+                context.getSource().sendFailure(Component.literal(
+                        player.getGameProfile().name() + " can't be made to path: they don't have HeroBot installed"));
+            }
+        }
+        return targets;
+    }
 
     public static LiteralArgumentBuilder<CommandSourceStack> build(CommandBuildContext ctx) {
         return Commands.literal("path")
@@ -98,26 +133,34 @@ public final class PathSubtree {
 
     private static int pathToPos(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         Vec3 target = Vec3Argument.getVec3(context, "position");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            PathSettings settings = bot.getPathSettings();
+        for (PathTarget t : pathTargets(context)) {
+            PathSettings settings = t.settings();
 
-            BotPathing existing = bot.getPathFollower();
-            if (existing != null && !existing.isDone() && !existing.isEntityMode()
-                    && existing.getTarget().distanceTo(target) < 0.01) {
-                context.getSource().sendFailure(Component.literal(bot.getGameProfile().name() + " is already pathing to that target"));
-                return 0;
+            if (!t.remote()) {
+                BotPlayer bot = (BotPlayer) t.player();
+                BotPathing existing = bot.getPathFollower();
+                if (existing != null && !existing.isDone() && !existing.isEntityMode()
+                        && existing.getTarget().distanceTo(target) < 0.01) {
+                    context.getSource().sendFailure(Component.literal(t.name() + " is already pathing to that target"));
+                    return 0;
+                }
             }
 
             if (settings.isWithinTarget(
-                    Math.sqrt(hDistSq(bot.position(), target)),
-                    Math.abs(bot.position().y - target.y))) {
-                context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " is already at target"), false);
+                    Math.sqrt(hDistSq(t.player().position(), target)),
+                    Math.abs(t.player().position().y - target.y))) {
+                context.getSource().sendSuccess(() -> Component.literal(t.name() + " is already at target"), false);
                 continue;
             }
 
-            BotPathing follower = new BotPathing(bot, target, context.getSource(), settings);
-            bot.setPathFollower(follower);
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " is pathing to " +
+            if (t.remote()) {
+                int seq = RemotePathState.begin(t.player());
+                RemoteOps.send(t.player(), ControlOp.pathGotoPos(target, seq));
+            } else {
+                BotPlayer bot = (BotPlayer) t.player();
+                bot.setPathFollower(new BotPathing(bot, target, context.getSource(), settings));
+            }
+            context.getSource().sendSuccess(() -> Component.literal(t.name() + " is pathing to " +
                     String.format("%.1f, %.1f, %.1f", target.x, target.y, target.z)), false);
         }
         return 1;
@@ -125,35 +168,72 @@ public final class PathSubtree {
 
     private static int pathToEntity(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         Entity target = EntityArgument.getEntity(context, "entity");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            BotPathing existing = bot.getPathFollower();
-            if (existing != null && !existing.isDone() && existing.isEntityMode()
-                    && existing.getTargetEntity() == target) {
-                context.getSource().sendFailure(Component.literal(bot.getGameProfile().name() + " is already pathing to that target"));
-                return 0;
+        for (PathTarget t : pathTargets(context)) {
+            if (!t.remote()) {
+                BotPlayer bot = (BotPlayer) t.player();
+                BotPathing existing = bot.getPathFollower();
+                if (existing != null && !existing.isDone() && existing.isEntityMode()
+                        && existing.getTargetEntity() == target) {
+                    context.getSource().sendFailure(Component.literal(t.name() + " is already pathing to that target"));
+                    return 0;
+                }
             }
 
-            PathSettings settings = bot.getPathSettings();
-            BotPathing follower = new BotPathing(bot, target, context.getSource(), settings);
-            bot.setPathFollower(follower);
+            if (t.remote()) {
+                int seq = RemotePathState.begin(t.player());
+                RemoteOps.send(t.player(), ControlOp.pathGotoEntity(target.getId(), seq));
+            } else {
+                BotPlayer bot = (BotPlayer) t.player();
+                bot.setPathFollower(new BotPathing(bot, target, context.getSource(), t.settings()));
+            }
             String targetName = target.getName().getString();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " is following " + targetName), false);
+            context.getSource().sendSuccess(() -> Component.literal(t.name() + " is following " + targetName), false);
         }
         return 1;
     }
 
     public static int pathStop(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.clearPathFollower();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " stopped pathing"), false);
+        for (PathTarget t : pathTargets(context)) {
+            if (t.remote()) {
+                RemotePathState.deactivate(t.player());
+                RemoteOps.send(t.player(), ControlOp.pathStop());
+            } else {
+                ((BotPlayer) t.player()).clearPathFollower();
+            }
+            context.getSource().sendSuccess(() -> Component.literal(t.name() + " stopped pathing"), false);
+        }
+        return 1;
+    }
+
+    // Applies a scalar setting to the bot's own settings or the remote mirror, mirrors it to the
+    // client when remote, and reports it. Message reads "Set <name>'s <label> to <display>".
+    private static int setSetting(CommandContext<CommandSourceStack> context, int index, double value,
+                                  String label, String display) throws CommandSyntaxException {
+        for (PathTarget t : pathTargets(context)) {
+            PathSettingOps.apply(t.settings(), index, value);
+            t.send(ControlOp.pathSetting(index, value));
+            context.getSource().sendSuccess(() -> Component.literal(
+                    "Set " + t.name() + "'s " + label + " to " + display), false);
+        }
+        return 1;
+    }
+
+    // Reports a setting as "<name>'s <label>: <value><suffix>".
+    private static int getSetting(CommandContext<CommandSourceStack> context, String label,
+                                  Function<PathSettings, String> read, String suffix)
+            throws CommandSyntaxException {
+        for (PathTarget t : pathTargets(context)) {
+            String value = read.apply(t.settings());
+            context.getSource().sendSuccess(() -> Component.literal(
+                    t.name() + "'s " + label + ": " + value + suffix), false);
         }
         return 1;
     }
 
     private static int listPathSettings(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            PathSettings s = bot.getPathSettings();
-            String msg = bot.getGameProfile().name() + "'s path settings:" +
+        for (PathTarget t : pathTargets(context)) {
+            PathSettings s = t.settings();
+            String msg = t.name() + "'s path settings:" +
                     "\n  moveType: " + s.getMoveType().displayName() +
                     "\n  final horizontal: " + s.getMaxHorizontalDistance() +
                     "\n  final vertical: " + (s.getMaxVerticalDistance() < 0 ? "ground-seek" : s.getMaxVerticalDistance()) +
@@ -170,15 +250,15 @@ public final class PathSubtree {
     }
 
     private static int listAvoidedBlocks(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            PathSettings settings = bot.getPathSettings();
+        for (PathTarget t : pathTargets(context)) {
+            PathSettings settings = t.settings();
             if (settings.getAvoidedBlocks().isEmpty()) {
-                context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " has no avoided blocks"), false);
+                context.getSource().sendSuccess(() -> Component.literal(t.name() + " has no avoided blocks"), false);
             } else {
                 String list = settings.getAvoidedBlocks().stream()
                         .map(b -> BuiltInRegistries.BLOCK.getKey(b).toString())
                         .collect(Collectors.joining(", "));
-                context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + " avoided blocks: " + list), false);
+                context.getSource().sendSuccess(() -> Component.literal(t.name() + " avoided blocks: " + list), false);
             }
         }
         return 1;
@@ -186,136 +266,103 @@ public final class PathSubtree {
 
     private static int addAvoidedBlock(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         Block block = BlockStateArgument.getBlock(context, "block").getState().getBlock();
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().addAvoidedBlock(block);
+        for (PathTarget t : pathTargets(context)) {
+            t.settings().addAvoidedBlock(block);
+            t.send(ControlOp.pathAvoidBlock(BuiltInRegistries.BLOCK.getKey(block).toString(), ControlOp.AVOID_ADD));
             String name = BuiltInRegistries.BLOCK.getKey(block).toString();
-            context.getSource().sendSuccess(() -> Component.literal("Added " + name + " to " + bot.getGameProfile().name() + "'s avoided blocks"), false);
+            context.getSource().sendSuccess(() -> Component.literal("Added " + name + " to " + t.name() + "'s avoided blocks"), false);
         }
         return 1;
     }
 
     private static int removeAvoidedBlock(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         Block block = BlockStateArgument.getBlock(context, "block").getState().getBlock();
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            boolean removed = bot.getPathSettings().removeAvoidedBlock(block);
+        for (PathTarget t : pathTargets(context)) {
+            boolean removed = t.settings().removeAvoidedBlock(block);
+            t.send(ControlOp.pathAvoidBlock(BuiltInRegistries.BLOCK.getKey(block).toString(), ControlOp.AVOID_REMOVE));
             String name = BuiltInRegistries.BLOCK.getKey(block).toString();
             if (removed) {
-                context.getSource().sendSuccess(() -> Component.literal("Removed " + name + " from " + bot.getGameProfile().name() + "'s avoided blocks"), false);
+                context.getSource().sendSuccess(() -> Component.literal("Removed " + name + " from " + t.name() + "'s avoided blocks"), false);
             } else {
-                context.getSource().sendFailure(Component.literal(name + " was not in " + bot.getGameProfile().name() + "'s avoided blocks"));
+                context.getSource().sendFailure(Component.literal(name + " was not in " + t.name() + "'s avoided blocks"));
             }
         }
         return 1;
     }
 
     private static int clearAvoidedBlocks(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().clearAvoidedBlocks();
-            context.getSource().sendSuccess(() -> Component.literal("Cleared " + bot.getGameProfile().name() + "'s avoided blocks"), false);
+        for (PathTarget t : pathTargets(context)) {
+            t.settings().clearAvoidedBlocks();
+            t.send(ControlOp.pathAvoidBlock("", ControlOp.AVOID_CLEAR));
+            context.getSource().sendSuccess(() -> Component.literal("Cleared " + t.name() + "'s avoided blocks"), false);
         }
         return 1;
     }
 
     private static int getMoveType(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            String type = bot.getPathSettings().getMoveType().displayName();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s move type: " + type), false);
-        }
-        return 1;
+        return getSetting(context, "move type", s -> s.getMoveType().displayName(), "");
     }
 
     private static int setMoveType(CommandContext<CommandSourceStack> context, PathSettings.MoveType type) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setMoveType(type);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s move type to " + type.displayName()), false);
+        for (PathTarget t : pathTargets(context)) {
+            t.settings().setMoveType(type);
+            t.send(ControlOp.pathMoveType(type.ordinal()));
+            context.getSource().sendSuccess(() -> Component.literal("Set " + t.name() + "'s move type to " + type.displayName()), false);
         }
         return 1;
     }
 
     private static int getMaxHorizontalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getMaxHorizontalDistance();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s target horizontal: " + val + " (default: 1.0)"), false);
-        }
-        return 1;
+        return getSetting(context, "target horizontal",
+                s -> String.valueOf(s.getMaxHorizontalDistance()), " (default: 1.0)");
     }
 
     private static int setMaxHorizontalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setMaxHorizontalDistance(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s target horizontal to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.MAX_HORIZONTAL, value, "target horizontal", String.valueOf(value));
     }
 
     private static int getMaxVerticalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getMaxVerticalDistance();
-            String display = val < 0 ? "ground-seek" : String.valueOf(val);
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s target vertical: " + display + " (default: 2.0)"), false);
-        }
-        return 1;
+        return getSetting(context, "target vertical",
+                s -> s.getMaxVerticalDistance() < 0 ? "ground-seek" : String.valueOf(s.getMaxVerticalDistance()),
+                " (default: 2.0)");
     }
 
     private static int setMaxVerticalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setMaxVerticalDistance(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s target vertical to " + (value < 0 ? "ground-seek" : value)), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.MAX_VERTICAL, value, "target vertical",
+                value < 0 ? "ground-seek" : String.valueOf(value));
     }
 
     private static int getNodeHorizontalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getNodeHorizontalDistance();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s node horizontal: " + val + " (default: 0.5)"), false);
-        }
-        return 1;
+        return getSetting(context, "node horizontal",
+                s -> String.valueOf(s.getNodeHorizontalDistance()), " (default: 0.5)");
     }
 
     private static int setNodeHorizontalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setNodeHorizontalDistance(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s node horizontal to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.NODE_HORIZONTAL, value, "node horizontal", String.valueOf(value));
     }
 
     private static int getNodeVerticalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getNodeVerticalDistance();
-            String display = val < 0 ? "disabled" : String.valueOf(val);
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s node vertical: " + display + " (default: 1.0)"), false);
-        }
-        return 1;
+        return getSetting(context, "node vertical",
+                s -> s.getNodeVerticalDistance() < 0 ? "disabled" : String.valueOf(s.getNodeVerticalDistance()),
+                " (default: 1.0)");
     }
 
     private static int setNodeVerticalDistance(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setNodeVerticalDistance(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s node vertical to " + (value < 0 ? "disabled" : value)), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.NODE_VERTICAL, value, "node vertical",
+                value < 0 ? "disabled" : String.valueOf(value));
     }
 
     private static int getStopFollowing(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            boolean val = bot.getPathSettings().isStopFollowing();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s stopFollowing: " + val + " (default: true)"), false);
-        }
-        return 1;
+        return getSetting(context, "stopFollowing",
+                s -> String.valueOf(s.isStopFollowing()), " (default: true)");
     }
 
     private static int setStopFollowing(CommandContext<CommandSourceStack> context, boolean value) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setStopFollowing(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s stopFollowing to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.STOP_FOLLOWING, value ? 1 : 0, "stopFollowing", String.valueOf(value));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> buildDebugNode() {
@@ -341,90 +388,72 @@ public final class PathSubtree {
     }
 
     private static int getDebug(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            String enabled = bot.getPathSettings().describeDebug();
+        for (PathTarget t : pathTargets(context)) {
+            String enabled = t.settings().describeDebug();
             String available = java.util.Arrays.stream(DebugChannel.values())
                     .map(ch -> ch.id() + " (" + ch.description() + ")")
                     .collect(Collectors.joining("\n  "));
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s debug channels: " + enabled +
+            context.getSource().sendSuccess(() -> Component.literal(t.name() + "'s debug channels: " + enabled +
                     "\nAvailable channels:\n  " + available), false);
         }
         return 1;
     }
 
     private static int setDebugAll(CommandContext<CommandSourceStack> context, boolean value) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setDebug(value);
-            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled all" : "Disabled all") + " debug particles for " + bot.getGameProfile().name()), false);
+        for (PathTarget t : pathTargets(context)) {
+            t.settings().setDebug(value);
+            t.send(ControlOp.pathSetting(PathSettingOps.DEBUG, value ? 1 : 0));
+            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled all" : "Disabled all") + " debug particles for " + t.name()), false);
         }
         return 1;
     }
 
     private static int toggleDebugChannel(CommandContext<CommandSourceStack> context, DebugChannel channel) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            boolean enabled = bot.getPathSettings().toggleDebugChannel(channel);
-            context.getSource().sendSuccess(() -> Component.literal((enabled ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + bot.getGameProfile().name()), false);
+        for (PathTarget t : pathTargets(context)) {
+            boolean enabled = t.settings().toggleDebugChannel(channel);
+            t.send(ControlOp.pathDebugChannel(channel.ordinal(), enabled));
+            context.getSource().sendSuccess(() -> Component.literal((enabled ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + t.name()), false);
         }
         return 1;
     }
 
     private static int setDebugChannel(CommandContext<CommandSourceStack> context, DebugChannel channel, boolean value) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setDebugChannel(channel, value);
-            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + bot.getGameProfile().name()), false);
+        for (PathTarget t : pathTargets(context)) {
+            t.settings().setDebugChannel(channel, value);
+            t.send(ControlOp.pathDebugChannel(channel.ordinal(), value));
+            context.getSource().sendSuccess(() -> Component.literal((value ? "Enabled " : "Disabled ") + channel.id() + " debug particles for " + t.name()), false);
         }
         return 1;
     }
 
     private static int getHorizontalMoveCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getHorizontalMoveCost();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s cost horizontal: " + val + " (default: 1.0)"), false);
-        }
-        return 1;
+        return getSetting(context, "cost horizontal",
+                s -> String.valueOf(s.getHorizontalMoveCost()), " (default: 1.0)");
     }
 
     private static int setHorizontalMoveCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setHorizontalMoveCost(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s cost horizontal to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.HORIZONTAL_COST, value, "cost horizontal", String.valueOf(value));
     }
 
     private static int getVerticalMoveCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getVerticalMoveCost();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s cost vertical: " + val + " (default: 1.5)"), false);
-        }
-        return 1;
+        return getSetting(context, "cost vertical",
+                s -> String.valueOf(s.getVerticalMoveCost()), " (default: 1.5)");
     }
 
     private static int setVerticalMoveCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setVerticalMoveCost(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s cost vertical to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.VERTICAL_COST, value, "cost vertical", String.valueOf(value));
     }
 
     private static int getSwimCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            double val = bot.getPathSettings().getSwimCostMultiplier();
-            context.getSource().sendSuccess(() -> Component.literal(bot.getGameProfile().name() + "'s cost swim: " + String.format("%.2f", val) + " (auto-calculated from gear)"), false);
-        }
-        return 1;
+        return getSetting(context, "cost swim",
+                s -> String.format("%.2f", s.getSwimCostMultiplier()), " (auto-calculated from gear)");
     }
 
     private static int setSwimCost(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         double value = DoubleArgumentType.getDouble(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.getPathSettings().setSwimCostMultiplier(value);
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s cost swim to " + value), false);
-        }
-        return 1;
+        return setSetting(context, PathSettingOps.SWIM_COST, value, "cost swim", String.valueOf(value));
     }
 
     private static double hDistSq(Vec3 a, Vec3 b) {

@@ -1,11 +1,14 @@
 package hero.bane.herobot.ai.block;
 
 import hero.bane.herobot.ai.AiScript;
+import hero.bane.herobot.ai.FuncDecl;
 import hero.bane.herobot.ai.VarDecl;
 import hero.bane.herobot.ai.VarType;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class EffectiveSlots {
     private EffectiveSlots() {}
@@ -26,10 +29,38 @@ public final class EffectiveSlots {
         if (isCalcBlock(type)) {
             return calcSlots(type, block);
         }
+        if (type == BlockType.FUNC_DEFINE) {
+            return funcDefineSlots(block, script);
+        }
+        if (type == BlockType.FUNC_CALL) {
+            return funcCallSlots(block, script);
+        }
+        if (type == BlockType.FUNC_PARAM) {
+            return List.of();
+        }
         if (sensorTakesTarget(type)) {
             return sensorSlots(type, block);
         }
+        if (sendTakesOp(type)) {
+            return sendSlots(block);
+        }
         return BlockDefRegistry.get(type).params();
+    }
+
+    public static boolean sendTakesOp(BlockType type) {
+        return type == BlockType.SEND_MESSAGE;
+    }
+
+    public static boolean isOpShown(BlockInstance block) {
+        return block.getParam("op") != null || block.getReporter("op") != null;
+    }
+
+    private static List<ParamSlot> sendSlots(BlockInstance block) {
+        List<ParamSlot> base = BlockDefRegistry.get(BlockType.SEND_MESSAGE).params();
+        if (!isOpShown(block)) return base;
+        List<ParamSlot> out = new ArrayList<>(base);
+        out.add(ParamSlot.ofBool("op", false));
+        return out;
     }
 
     public static boolean isCalcBlock(BlockType type) {
@@ -58,6 +89,76 @@ public final class EffectiveSlots {
             out.add(new ParamSlot("Input" + i, t, t == ParamType.DOUBLE ? 0.0 : ""));
         }
         return out;
+    }
+
+    public static final int MAX_FUNC_PARAMS = 9;
+
+    public static String funcName(BlockInstance block) {
+        String n = asString(block.getParam("name"));
+        return n == null ? "" : n;
+    }
+
+    /** Function names a define block may take: every declared function minus those already defined elsewhere. */
+    public static List<String> defineNameChoices(BlockInstance block, AiScript script) {
+        List<String> out = new ArrayList<>();
+        if (script == null) return out;
+        String own = funcName(block);
+        Set<String> taken = new HashSet<>();
+        for (BlockInstance b : script.blocks().values()) {
+            if (b.type() != BlockType.FUNC_DEFINE || b.id() == block.id()) continue;
+            String n = funcName(b);
+            if (!n.isEmpty()) taken.add(n);
+        }
+        for (FuncDecl f : script.functions()) {
+            String q = f.qualifiedName();
+            if (!taken.contains(q) || q.equals(own)) out.add(q);
+        }
+        return out;
+    }
+
+    public static List<String> functionNames(AiScript script) {
+        List<String> out = new ArrayList<>();
+        if (script == null) return out;
+        for (FuncDecl f : script.functions()) out.add(f.qualifiedName());
+        return out;
+    }
+
+    private static List<ParamSlot> funcDefineSlots(BlockInstance block, AiScript script) {
+        return List.of(ParamSlot.ofEnum("name", defineNameChoices(block, script), funcName(block)));
+    }
+
+    private static List<ParamSlot> funcCallSlots(BlockInstance block, AiScript script) {
+        List<ParamSlot> out = new ArrayList<>();
+        out.add(ParamSlot.ofEnum("name", functionNames(script), funcName(block)));
+        FuncDecl decl = script == null ? null : script.function(funcName(block));
+        if (decl == null) return out;
+        for (int i = 0; i < decl.arity(); i++) {
+            VarType t = decl.paramType(i);
+            out.add(new ParamSlot("Arg" + (i + 1), paramTypeOf(t), defaultForVar(t)));
+        }
+        return out;
+    }
+
+    public static VarType funcParamType(AiScript script, BlockInstance reporter) {
+        if (script == null || reporter == null) return null;
+        FuncDecl f = script.function(asString(reporter.getParam("func")));
+        if (f == null) return null;
+        Object idx = reporter.getParam("index");
+        return f.paramType(idx instanceof Number n ? n.intValue() : -1);
+    }
+
+    public static Object defaultForVar(VarType t) {
+        if (t == null) return "";
+        return switch (t) {
+            case BOOL -> false;
+            case INT -> 0;
+            case DOUBLE -> 0.0;
+            case POSITION -> "0 64 0";
+            case ROTATION -> "0 0";
+            case STRING -> "";
+            case UUID -> "00000000-0000-0000-0000-000000000000";
+            case ITEM -> "minecraft:air";
+        };
     }
 
     public static boolean sensorTakesTarget(BlockType type) {
@@ -299,6 +400,7 @@ public final class EffectiveSlots {
             case RANDOM_INT, GET_COUNT, MAX_COUNT, INVENTORY_OPEN, CONTAINER_SIZE, LOOP_ITER -> ParamType.INT;
             case COMPARE, EQUALITY, LOGIC, AND, OR, NOT, IS_TOUCHING_BLOCK, HAS_TAG, IN_PATH, EVERY_X_TICKS, ON_DAMAGE, BOOL_CALC, DOING_ACTION -> ParamType.BOOLEAN;
             case READ_VAR -> paramTypeOf(varType(script, asString(reporter.getParam("name"))));
+            case FUNC_PARAM -> paramTypeOf(funcParamType(script, reporter));
             case TERNARY -> {
                 ParamType t = ternaryLockedType(reporter, script);
                 yield t == null ? ParamType.INT : t;

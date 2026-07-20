@@ -4,6 +4,7 @@ import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.AiScriptIO;
 import hero.bane.herobot.ai.AiScriptRegistry;
 import hero.bane.herobot.command.*;
+import hero.bane.herobot.control.RemotePathSettings;
 import hero.bane.herobot.control.RemotePathState;
 import hero.bane.herobot.networking.AiDeleteRequestPayload;
 import hero.bane.herobot.networking.AiDownloadFailedPayload;
@@ -50,8 +51,10 @@ public class HeroBot implements ModInitializer {
         PayloadTypeRegistry.playC2S().register(PathDonePayload.TYPE, PathDonePayload.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(PathDonePayload.TYPE, (payload, context) ->
                 RemotePathState.finish(context.player(), payload.seq()));
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                RemotePathState.clear(handler.player.getUUID()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            RemotePathState.clear(handler.player.getUUID());
+            RemotePathSettings.clear(handler.player.getUUID());
+        });
 
         PayloadTypeRegistry.playC2S().register(AiUploadPayload.TYPE, AiUploadPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(AiDownloadRequestPayload.TYPE, AiDownloadRequestPayload.STREAM_CODEC);
@@ -190,13 +193,13 @@ public class HeroBot implements ModInitializer {
 
     public static void syncSettingsToPlayer(ServerPlayer player) {
         if (ServerPlayNetworking.canSend(player, HeroBotSyncPayload.TYPE)) {
-            ServerPlayNetworking.send(player, new HeroBotSyncPayload(RuleConfigIO.serializeCurrentSettings()));
+            ServerPlayNetworking.send(player, HeroBotSyncPayload.of(RuleConfigIO.serializeCurrentSettings()));
         }
     }
 
     public static void syncSettingsToAllPlayers() {
         if (currentServer == null) return;
-        HeroBotSyncPayload payload = new HeroBotSyncPayload(RuleConfigIO.serializeCurrentSettings());
+        HeroBotSyncPayload payload = HeroBotSyncPayload.of(RuleConfigIO.serializeCurrentSettings());
         for (ServerPlayer player : currentServer.getPlayerList().getPlayers()) {
             if (ServerPlayNetworking.canSend(player, HeroBotSyncPayload.TYPE)) {
                 ServerPlayNetworking.send(player, payload);

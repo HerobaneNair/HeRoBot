@@ -3,17 +3,21 @@ package hero.bane.herobot.client.control;
 import com.mojang.blaze3d.platform.InputConstants;
 import hero.bane.herobot.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
+import hero.bane.herobot.client.mixin.KeyboardHandlerInvoker;
+import hero.bane.herobot.client.mixin.MouseHandlerInvoker;
 import hero.bane.herobot.control.PlayerController;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.phys.Vec2;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.*;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -25,10 +29,20 @@ public final class ClientPlayerController implements PlayerController {
 
     private ClientPlayerController() {}
 
+    private static final int PULSE_TICKS = 2;
+    private static final float VIEW_RATE = 15.0f;
+
+    private float viewStartYaw, viewStartPitch;
+    private float viewTargetYaw, viewTargetPitch;
+    private long viewT0;
+    private boolean viewActive;
+    private float lastAppliedYaw, lastAppliedPitch;
+
     private float forward, strafe;
     private boolean sneaking, sprinting;
-    @SuppressWarnings("unused")
-    private boolean autoJump;
+
+    private final Map<ActionType, Integer> pulses = new EnumMap<>(ActionType.class);
+    private int autoJumpPulse;
 
     private Float pendingYaw, pendingPitch;
     private LookInterp interp;
@@ -41,7 +55,20 @@ public final class ClientPlayerController implements PlayerController {
     @Override public PlayerController setStrafing(float value) { strafe = value; updateMovementKeys(); return this; }
     @Override public PlayerController setSneaking(boolean v)   { sneaking = v; updateMovementKeys(); return this; }
     @Override public PlayerController setSprinting(boolean v)  { sprinting = v; updateMovementKeys(); return this; }
-    @Override public PlayerController setAutoJump(boolean v)   { autoJump = v; return this; }
+    @Override
+    public PlayerController setAutoJump(boolean v) {
+        Options o = mc().options;
+        if (o != null) o.autoJump().set(v);
+        return this;
+    }
+
+    @Override
+    public void attemptAutoJump() {
+        Options o = mc().options;
+        if (o == null || o.autoJump().get()) return;
+        o.autoJump().set(true);
+        autoJumpPulse = PULSE_TICKS;
+    }
 
     @Override
     public PlayerController stopMovement() {
@@ -72,13 +99,17 @@ public final class ClientPlayerController implements PlayerController {
             return this;
         }
         actions.put(type, new Act(mode, action.ticksRemaining(), Math.max(1, action.interval)));
-        if (mode == MODE_CONTINUOUS && isHeld(type)) setActionDown(type, true);
+        if (mode == MODE_CONTINUOUS && isHeld(type)) {
+            pulses.remove(type);
+            setActionDown(type, true);
+        }
         return this;
     }
 
     @Override
     public PlayerController stop(ActionType type) {
         actions.remove(type);
+        pulses.remove(type);
         setActionDown(type, false);
         return this;
     }
@@ -91,50 +122,113 @@ public final class ClientPlayerController implements PlayerController {
             return this;
         }
         actions.put(type, new Act(MODE_CONTINUOUS, ticks, 1));
-        if (isHeld(type)) setActionDown(type, true);
+        if (isHeld(type)) {
+            pulses.remove(type);
+            setActionDown(type, true);
+        }
         return this;
     }
 
     @Override
     public PlayerController stopAll() {
         for (ActionType type : actions.keySet()) setActionDown(type, false);
+        for (ActionType type : pulses.keySet()) setActionDown(type, false);
+        pulses.clear();
         actions.clear();
         stopInterpolation();
         return stopMovement();
     }
 
+    private static KeyMapping keyFor(ActionType type) {
+        Options o = mc().options;
+        if (o == null) return null;
+        return switch (type) {
+            case ATTACK -> o.keyAttack;
+            case USE -> o.keyUse;
+            case JUMP -> o.keyJump;
+            case SWAP_HANDS -> o.keySwapOffhand;
+            default -> null;
+        };
+    }
+
     private boolean isHeld(ActionType type) {
-        return type == ActionType.JUMP;
+        return type == ActionType.ATTACK || type == ActionType.USE || type == ActionType.JUMP;
     }
 
     private void setActionDown(ActionType type, boolean down) {
-        if (type != ActionType.JUMP) return;
-        Options o = mc().options;
-        if (o != null) o.keyJump.setDown(down);
+        KeyMapping key = keyFor(type);
+        if (key == null) return;
+        if (down && type == ActionType.ATTACK) mc().missTime = 0;
+        sendKey(key, down);
+    }
+
+    @SuppressWarnings("resource")
+    private static void sendKey(KeyMapping mapping, boolean down) {
+        Minecraft mc = mc();
+        if (mc.screen != null || mc.getOverlay() != null) return;
+        InputConstants.Key key = KeyBindingHelper.getBoundKeyOf(mapping);
+        if (key.equals(InputConstants.UNKNOWN)) return;
+        long window = mc.getWindow().handle();
+        int action = down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE;
+        switch (key.getType()) {
+            case MOUSE -> ((MouseHandlerInvoker) mc.mouseHandler)
+                    .herobot$onButton(window, new MouseButtonInfo(key.getValue(), 0), action);
+            case KEYSYM -> ((KeyboardHandlerInvoker) mc.keyboardHandler)
+                    .herobot$keyPress(window, action, new KeyEvent(key.getValue(), 0, 0));
+            case SCANCODE -> ((KeyboardHandlerInvoker) mc.keyboardHandler)
+                    .herobot$keyPress(window, action, new KeyEvent(InputConstants.UNKNOWN.getValue(), key.getValue(), 0));
+        }
     }
 
     private void execOnce(ActionType type) {
         LocalPlayer p = mc().player;
+        if (keyFor(type) != null) {
+            setActionDown(type, true);
+            pulses.put(type, PULSE_TICKS);
+            return;
+        }
         switch (type) {
-            case ATTACK -> click(mc().options.keyAttack);
-            case USE -> click(mc().options.keyUse);
-            case JUMP -> click(mc().options.keyJump);
-            case SWAP_HANDS -> click(mc().options.keySwapOffhand);
             case SWING -> { if (p != null) p.swing(InteractionHand.MAIN_HAND); }
-            case DROP_ITEM -> { if (p != null) p.drop(false); }
-            case DROP_STACK -> { if (p != null) p.drop(true); }
+            case DROP_ITEM -> { if (p != null && p.drop(false)) p.swing(InteractionHand.MAIN_HAND); }
+            case DROP_STACK -> { if (p != null && p.drop(true)) p.swing(InteractionHand.MAIN_HAND); }
         }
     }
 
-    private static void click(KeyMapping key) {
-        InputConstants.Key bound = KeyBindingHelper.getBoundKeyOf(key);
-        KeyMapping.click(bound);
+    private void releasePulses() {
+        if (autoJumpPulse > 0 && --autoJumpPulse == 0) {
+            Options o = mc().options;
+            if (o != null) o.autoJump().set(false);
+        }
+        if (pulses.isEmpty()) return;
+        var it = pulses.entrySet().iterator();
+        while (it.hasNext()) {
+            var e = it.next();
+            if (e.getValue() <= 1) {
+                setActionDown(e.getKey(), false);
+                it.remove();
+            } else {
+                e.setValue(e.getValue() - 1);
+            }
+        }
     }
 
     @Override
     public void setSlot(int slot) {
         LocalPlayer p = mc().player;
         if (p != null) p.getInventory().setSelectedSlot(Mth.clamp(slot - 1, 0, 8));
+    }
+
+    @Override
+    public void pickBlock(boolean includeData) {
+        LocalPlayer p = mc().player;
+        HitResult hit = mc().hitResult;
+        if (p == null || mc().gameMode == null || hit == null || hit.getType() == HitResult.Type.MISS) return;
+        boolean data = includeData && p.hasInfiniteMaterials();
+        switch (hit) {
+            case BlockHitResult b -> mc().gameMode.handlePickItemFromBlock(b.getBlockPos(), data);
+            case EntityHitResult e -> mc().gameMode.handlePickItemFromEntity(e.getEntity(), data);
+            default -> { }
+        }
     }
 
     @Override public PlayerController look(Direction direction)            { return look(yawFor(direction), pitchFor(direction)); }
@@ -148,6 +242,30 @@ public final class ClientPlayerController implements PlayerController {
         pendingPitch = Mth.clamp(pitch, -90, 90);
         interp = null;
         return this;
+    }
+
+    private void retargetView(float yaw, float pitch) {
+        LocalPlayer p = mc().player;
+        if (p == null) return;
+        viewStartYaw = viewActive ? currentViewYaw() : p.getYRot();
+        viewStartPitch = viewActive ? currentViewPitch() : p.getXRot();
+        viewTargetYaw = yaw;
+        viewTargetPitch = pitch;
+        viewT0 = System.nanoTime();
+        viewActive = true;
+    }
+
+    private float viewApproach() {
+        float elapsed = (System.nanoTime() - viewT0) / 1_000_000_000.0f;
+        return 1.0f - (float) Math.exp(-VIEW_RATE * elapsed);
+    }
+
+    private float currentViewYaw() {
+        return Mth.wrapDegrees(viewStartYaw + Mth.wrapDegrees(viewTargetYaw - viewStartYaw) * viewApproach());
+    }
+
+    private float currentViewPitch() {
+        return Mth.clamp(viewStartPitch + (viewTargetPitch - viewStartPitch) * viewApproach(), -90, 90);
     }
 
     @Override
@@ -185,6 +303,7 @@ public final class ClientPlayerController implements PlayerController {
     @Override
     public void stopInterpolation() {
         interp = null;
+        viewActive = false;
     }
 
     private float yawFor(Direction d) {
@@ -233,18 +352,31 @@ public final class ClientPlayerController implements PlayerController {
 
         if (interp != null) {
             interp.elapsed++;
-            float e = easeInOutExpo(Math.min(1f, (float) interp.elapsed / interp.totalTicks));
+            float e = easeInOutSine(Math.min(1f, (float) interp.elapsed / interp.totalTicks));
+            float stepYaw = Mth.wrapDegrees(interp.startYaw + interp.deltaYaw * e);
+            float stepPitch = Mth.clamp(interp.startPitch + interp.deltaPitch * e, -90, 90);
 
-            applyRotation(p,
-                    Mth.wrapDegrees(interp.startYaw + interp.deltaYaw * e),
-                    Mth.clamp(interp.startPitch + interp.deltaPitch * e, -90, 90));
+            retargetView(stepYaw, stepPitch);
+            applyRotation(p, stepYaw, stepPitch);
+            lastAppliedYaw = stepYaw;
+            lastAppliedPitch = stepPitch;
 
             if (interp.elapsed > interp.totalTicks) interp = null;
         } else if (pendingYaw != null) {
+            retargetView(pendingYaw, pendingPitch);
             applyRotation(p, pendingYaw, pendingPitch);
+            lastAppliedYaw = pendingYaw;
+            lastAppliedPitch = pendingPitch;
             pendingYaw = null;
             pendingPitch = null;
         }
+
+        if (viewActive) {
+            boolean movedByPlayer = p.getYRot() != lastAppliedYaw || p.getXRot() != lastAppliedPitch;
+            if (movedByPlayer || viewApproach() >= 0.99f) viewActive = false;
+        }
+
+        releasePulses();
 
         if (actions.isEmpty()) return;
         var it = actions.entrySet().iterator();
@@ -279,6 +411,8 @@ public final class ClientPlayerController implements PlayerController {
         sprinting = false;
         updateMovementKeys();
         interp = null;
+        viewActive = false;
+        pulses.clear();
         pendingYaw = null;
         pendingPitch = null;
     }
@@ -297,27 +431,20 @@ public final class ClientPlayerController implements PlayerController {
     }
 
     public Float viewYaw(float partialTick) {
-        LookInterp i = interp;
-        if (i == null) return null;
-        return Mth.wrapDegrees(i.startYaw + i.deltaYaw * easeInOutExpo(frameProgress(i, partialTick)));
+        if (viewActive) return currentViewYaw();
+        return ClientOps.INSTANCE.pathViewYaw(partialTick);
     }
 
     public Float viewPitch(float partialTick) {
-        LookInterp i = interp;
-        if (i == null) return null;
-        return Mth.clamp(i.startPitch + i.deltaPitch * easeInOutExpo(frameProgress(i, partialTick)), -90, 90);
+        if (viewActive) return currentViewPitch();
+        return ClientOps.INSTANCE.pathViewPitch(partialTick);
     }
 
-    private static float frameProgress(LookInterp i, float partialTick) {
-        return Math.min(1f, (i.elapsed + partialTick) / i.totalTicks);
-    }
 
-    private static float easeInOutExpo(float t) {
+    private static float easeInOutSine(float t) {
         if (t <= 0f) return 0f;
         if (t >= 1f) return 1f;
-        return t < 0.5f
-                ? (float) Math.pow(2, 20 * t - 10) / 2f
-                : (2f - (float) Math.pow(2, -20 * t + 10)) / 2f;
+        return (float) (0.5 * (1.0 - Math.cos(Math.PI * t)));
     }
 
     private static final class LookInterp {

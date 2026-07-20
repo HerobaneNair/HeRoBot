@@ -17,14 +17,13 @@ public final class VecEval {
     public static final String OPS_LEGEND =
             "pos(x,y,z)  dir(y,p)  +  -  *  /  %  ^";
     public static final String OPS_LEGEND_2 =
-            "climb(pos)  fall(pos)  floor(v)  {var}  Input1  ~rel";
+            "climb(pos)  fall(pos)  floor(vector)  {var}  Input1  ~rel";
 
     public interface World {
         boolean isAir(int x, int y, int z);
         int minY();
         int maxY();
 
-        /** Base value for a {@code ~} relative token: axis 0/1/2 = x/y/z (position) or 0/1 = yaw/pitch (rotation). */
         default double base(int axis, boolean rotation) {
             return 0;
         }
@@ -121,29 +120,29 @@ public final class VecEval {
     private record Node(Expr fn, int arity) {}
 
     private static final class Parser {
-        private final String s;
+        private final String input;
         private final boolean strict;
         private final int requiredArity;
         private final Function<String, ParamType> types;
         private int pos;
 
-        Parser(String s, boolean strict, int requiredArity, Function<String, ParamType> types) {
-            this.s = s;
+        Parser(String input, boolean strict, int requiredArity, Function<String, ParamType> types) {
+            this.input = input;
             this.strict = strict;
             this.requiredArity = requiredArity;
             this.types = types;
         }
 
         boolean atEnd() {
-            return pos >= s.length();
+            return pos >= input.length();
         }
 
         void skipWs() {
-            while (pos < s.length() && Character.isWhitespace(s.charAt(pos))) pos++;
+            while (pos < input.length() && Character.isWhitespace(input.charAt(pos))) pos++;
         }
 
         private char peek() {
-            return pos < s.length() ? s.charAt(pos) : '\0';
+            return pos < input.length() ? input.charAt(pos) : '\0';
         }
 
         Node expr() {
@@ -228,8 +227,8 @@ public final class VecEval {
         Node variable() {
             pos++;
             int start = pos;
-            while (pos < s.length() && s.charAt(pos) != '}') pos++;
-            String name = s.substring(start, pos).trim();
+            while (pos < input.length() && input.charAt(pos) != '}') pos++;
+            String name = input.substring(start, pos).trim();
             if (peek() == '}') pos++;
             else if (strict) throw new RuntimeException("expected }");
             return ref(name);
@@ -249,23 +248,23 @@ public final class VecEval {
 
         Node number() {
             int start = pos;
-            while (pos < s.length()) {
-                char c = s.charAt(pos);
+            while (pos < input.length()) {
+                char c = input.charAt(pos);
                 if (Character.isDigit(c) || c == '.') pos++;
                 else break;
             }
-            double val = Double.parseDouble(s.substring(start, pos));
+            double val = Double.parseDouble(input.substring(start, pos));
             return new Node((vars, world) -> new double[]{val}, 1);
         }
 
         Node identifier() {
             int start = pos;
-            while (pos < s.length()) {
-                char c = s.charAt(pos);
+            while (pos < input.length()) {
+                char c = input.charAt(pos);
                 if (Character.isLetterOrDigit(c) || c == '_') pos++;
                 else break;
             }
-            String name = s.substring(start, pos);
+            String name = input.substring(start, pos);
             skipWs();
             if (peek() == '(') return callFunction(name);
             return constant(name);
@@ -304,7 +303,7 @@ public final class VecEval {
                 case "pow" -> {
                     if (strict && a.size() != 2) throw new RuntimeException("pow needs 2 arguments");
                     if (a.isEmpty()) yield new Node(ZERO, 1);
-                    yield a.size() >= 2 ? bin(a.get(0), a.get(1), Math::pow) : a.get(0);
+                    yield a.size() >= 2 ? bin(a.getFirst(), a.get(1), Math::pow) : a.getFirst();
                 }
                 case "climb" -> terrain(a, true);
                 case "fall" -> terrain(a, false);
@@ -405,9 +404,9 @@ public final class VecEval {
                 if (c == '-' || c == '+' || c == '.' || Character.isDigit(c)) {
                     int start = pos;
                     if (c == '-' || c == '+') pos++;
-                    while (pos < s.length() && (Character.isDigit(s.charAt(pos)) || s.charAt(pos) == '.')) pos++;
+                    while (pos < input.length() && (Character.isDigit(input.charAt(pos)) || input.charAt(pos) == '.')) pos++;
                     try {
-                        offset = Double.parseDouble(s.substring(start, pos));
+                        offset = Double.parseDouble(input.substring(start, pos));
                     } catch (NumberFormatException e) {
                         if (strict) throw new RuntimeException("bad ~ offset");
                     }
@@ -425,18 +424,18 @@ public final class VecEval {
         private Node perComponent(List<Node> a, DoubleUnaryOperator op) {
             if (strict && a.size() != 1) throw new RuntimeException("needs 1 argument");
             if (a.isEmpty()) return new Node(ZERO, 1);
-            return map(a.get(0), op);
+            return map(a.getFirst(), op);
         }
 
         private Node terrain(List<Node> a, boolean up) {
             if (strict) {
                 if (requiredArity != 3) throw new RuntimeException((up ? "climb" : "fall") + " only works in pos calc");
                 if (a.size() != 1) throw new RuntimeException("needs 1 argument");
-                int arity = a.get(0).arity();
+                int arity = a.getFirst().arity();
                 if (arity != 0 && arity != 3) throw new RuntimeException("argument must be a position");
             }
             if (a.isEmpty()) return new Node(ZERO, 1);
-            Expr f = a.get(0).fn();
+            Expr f = a.getFirst().fn();
             return new Node((vars, world) -> {
                 double[] p = f.eval(vars, world);
                 if (p.length != 3) throw MISMATCH;

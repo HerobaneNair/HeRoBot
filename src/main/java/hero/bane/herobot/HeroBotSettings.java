@@ -105,7 +105,7 @@ public final class HeroBotSettings {
     public static boolean deleteChunkEntities = false;
 
     @Rule(desc = "Disable moving piston blocks block rain from falling down")
-    public static boolean rainThroughMovingPiston = false;
+    public static boolean rainThroughMovingPiston = true;
 
     @Rule(desc = "Shulker Boxes will always drop, regardless if the gamerule noTileDrops is on")
     public static boolean shulkerBoxAlwaysDrops = false;

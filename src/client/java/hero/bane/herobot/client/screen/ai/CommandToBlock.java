@@ -59,6 +59,7 @@ public final class CommandToBlock {
         return switch (sub) {
             case "stop" -> args.length == 0 ? result(BlockType.STOP_ALL) : null;
             case "use", "swing", "jump", "attack", "drop", "dropStack", "swapHands" -> action(sub, args);
+            case "pickBlock" -> pickBlock(args);
             case "move" -> move(args);
             case "look" -> look(args);
             case "sneak" -> toggle(BlockType.SNEAK, true, args);
@@ -90,9 +91,6 @@ public final class CommandToBlock {
         return i;
     }
 
-    // Consumes the target. For an @-selector the selector letter is skipped, and if a '['
-    // follows it everything through the next ']' is skipped too, so selectors may contain
-    // spaces (e.g. "@e[type=cow, limit=1]"). Returns -1 for an unterminated selector.
     private static int targetEnd(String s, int i) {
         if (i >= s.length() || s.charAt(i) != '@') return wordEnd(s, i);
         i++;
@@ -103,6 +101,14 @@ public final class CommandToBlock {
             i = close + 1;
         }
         return i;
+    }
+
+    private static Result pickBlock(String[] args) {
+        if (args.length == 0) return result(BlockType.PICK_BLOCK, "data", "no data");
+        if (args.length == 1 && args[0].equals("withData")) {
+            return result(BlockType.PICK_BLOCK, "data", "with data");
+        }
+        return null;
     }
 
     private static Result action(String sub, String[] args) {
@@ -156,14 +162,14 @@ public final class CommandToBlock {
             case "north", "south", "east", "west", "up", "down" -> {
                 Map<String, Object> params = new LinkedHashMap<>();
                 params.put("direction", args[0]);
-                if (!parseTicksOnly(args, 1, params)) return null;
+                if (!parseTicksOnly(args, params)) return null;
                 return new Result(BlockType.LOOK_CARDINAL, params);
             }
             case "left", "right", "back" -> {
                 Map<String, Object> params = new LinkedHashMap<>();
                 params.put("dYaw", args[0].equals("left") ? -90.0 : args[0].equals("right") ? 90.0 : 180.0);
                 params.put("dPitch", 0.0);
-                if (!parseTicksOnly(args, 1, params)) return null;
+                if (!parseTicksOnly(args, params)) return null;
                 return new Result(BlockType.TURN, params);
             }
             case "at" -> {
@@ -205,11 +211,10 @@ public final class CommandToBlock {
         }
     }
 
-    // Parses an optional trailing "ticks <n>" only (cardinal/relative look forms).
-    private static boolean parseTicksOnly(String[] args, int i, Map<String, Object> params) {
-        if (i == args.length) return true;
-        if (args.length == i + 2 && args[i].equals("ticks")) {
-            Integer ticks = positiveInt(args[i + 1]);
+    private static boolean parseTicksOnly(String[] args, Map<String, Object> params) {
+        if (1 == args.length) return true;
+        if (args.length == 1 + 2 && args[1].equals("ticks")) {
+            Integer ticks = positiveInt(args[1 + 1]);
             if (ticks == null) return false;
             params.put("ticks", ticks);
             return true;
@@ -217,7 +222,6 @@ public final class CommandToBlock {
         return false;
     }
 
-    // Parses an optional trailing "offset <yaw> <pitch>" then an optional "ticks <n>".
     private static boolean parseLookTail(String[] args, int i, Map<String, Object> params) {
         if (i < args.length && args[i].equals("offset")) {
             if (args.length < i + 3) return false;
@@ -246,7 +250,6 @@ public final class CommandToBlock {
         }
     }
 
-    // Handles the `inventory ...` and `container ...` subtrees. `menu` is "inventory" or "container".
     private static Result menu(String menu, String[] args) {
         if (args.length == 0) return null;
         boolean container = menu.equals("container");
@@ -339,7 +342,6 @@ public final class CommandToBlock {
                 return args.length == 1 ? result(BlockType.STOP_SCRIPT) : null;
             }
             case "set" -> {
-                // Only `ai set <file> run` matches the "run script" block (assign + fire start).
                 if (args.length != 3 || !args[2].equals("run")) return null;
                 String file = unquote(args[1]);
                 return file.isEmpty() ? null : result(BlockType.SET_SCRIPT, "script", file);
@@ -381,6 +383,7 @@ public final class CommandToBlock {
     }
 
     private static Result autojump(String[] args) {
+        if (args.length == 0) return result(BlockType.ATTEMPT_AUTOJUMP);
         if (args.length != 1) return null;
         if (!args[0].equals("true") && !args[0].equals("false")) return null;
         return result(BlockType.AUTOJUMP, "value", args[0].equals("true"));

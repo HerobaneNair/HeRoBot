@@ -60,6 +60,10 @@ public final class StepResult {
         return new StepResult(Kind.JUMP, 0, 0, blockId, true, false, activationId, null);
     }
 
+    public static StepResult pushAndJump(int blockId, int activationId, Map<String, Object> data) {
+        return new StepResult(Kind.JUMP, 0, 0, blockId, true, false, activationId, data);
+    }
+
     public static StepResult popAndJump(int blockId) {
         return new StepResult(Kind.JUMP, 0, 0, blockId, false, true, -1, null);
     }

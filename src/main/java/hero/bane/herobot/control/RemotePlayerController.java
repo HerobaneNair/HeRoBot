@@ -43,6 +43,8 @@ public final class RemotePlayerController implements PlayerController {
     @Override public PlayerController stopAll()                              { return send(ControlOp.stopAll()); }
 
     @Override public void setSlot(int slot)                                 { send(ControlOp.setSlot(slot)); }
+    @Override public void pickBlock(boolean includeData)                    { send(ControlOp.pickBlock(includeData)); }
+    @Override public void attemptAutoJump()                                 { send(ControlOp.attemptAutoJump()); }
 
     @Override public PlayerController look(Direction direction)             { return send(ControlOp.lookDir(direction, 0)); }
     @Override public PlayerController look(Direction direction, int ticks)  { return send(ControlOp.lookDir(direction, ticks)); }

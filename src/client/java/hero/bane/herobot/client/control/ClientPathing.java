@@ -26,8 +26,15 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class ClientPathing {
+    private static final float VIEW_RATE = 15.0f;
+
     private final ClientPlayerController control = ClientPlayerController.INSTANCE;
     private final PathSettings settings;
+
+    private float lookStartYaw, lookStartPitch;
+    private float lookTargetYaw, lookTargetPitch;
+    private long lookT0;
+    private boolean lookInit;
 
     private List<BlockPos> path;
     private Vec3 target;
@@ -49,7 +56,7 @@ public class ClientPathing {
     private int jumpInputHoldTicks;
     private boolean jumpHeld;
 
-    private enum PendingKind { INITIAL, FULL, SPLICE }
+    private enum PendingKind {INITIAL, FULL, SPLICE}
 
     private CompletableFuture<List<BlockPos>> pendingPath;
     private PendingKind pendingKind;
@@ -613,6 +620,7 @@ public class ClientPathing {
         return isSwimmableBlock(feetX, feetY, feetZ);
     }
 
+    @SuppressWarnings("resource")
     private static boolean isSwimmableBlock(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, y, z);
         Level level = level();
@@ -644,11 +652,45 @@ public class ClientPathing {
         p.setYRot(curYaw + turnStep(dYaw));
         p.setXRot(Mth.clamp(curPitch + turnStep(dPitch), -90, 90));
         p.setYHeadRot(p.getYRot());
+        rebaseView(p.getYRot(), p.getXRot());
     }
 
+    private void rebaseView(float newYaw, float newPitch) {
+        lookStartYaw = lookInit ? currentViewYaw() : newYaw;
+        lookStartPitch = lookInit ? currentViewPitch() : newPitch;
+        lookTargetYaw = newYaw;
+        lookTargetPitch = newPitch;
+        lookT0 = System.nanoTime();
+        lookInit = true;
+    }
+
+    private float approach() {
+        float elapsed = (System.nanoTime() - lookT0) / 1_000_000_000.0f;
+        return 1.0f - (float) Math.exp(-VIEW_RATE * elapsed);
+    }
+
+    private float currentViewYaw() {
+        return Mth.wrapDegrees(lookStartYaw + Mth.wrapDegrees(lookTargetYaw - lookStartYaw) * approach());
+    }
+
+    private float currentViewPitch() {
+        return Mth.clamp(lookStartPitch + (lookTargetPitch - lookStartPitch) * approach(), -90.0f, 90.0f);
+    }
+
+    public Float viewYaw(float partialTick) {
+        return lookInit ? currentViewYaw() : null;
+    }
+
+    public Float viewPitch(float partialTick) {
+        return lookInit ? currentViewPitch() : null;
+    }
+
+    private static final float TURN_LERP = 0.25f;
+    private static final float TURN_MAX_PER_TICK = 12.0f;
+
     private static float turnStep(float delta) {
-        if (Math.abs(delta) <= 4.0f) return delta;
-        return Mth.clamp(delta * 0.5f, -60.0f, 60.0f);
+        if (Math.abs(delta) <= 1.0f) return delta;
+        return Mth.clamp(delta * TURN_LERP, -TURN_MAX_PER_TICK, TURN_MAX_PER_TICK);
     }
 
     private void setJumpHeld(boolean held) {
@@ -682,8 +724,8 @@ public class ClientPathing {
         boolean closeRange = hDistSq <= 100.0;
         boolean climbing = currentWaypoint != null
                 && (currentWaypoint.getY() > playerPos.y + 0.5
-                        || (currentIndex + 1 < path.size()
-                                && path.get(currentIndex + 1).getY() != currentWaypoint.getY()));
+                || (currentIndex + 1 < path.size()
+                && path.get(currentIndex + 1).getY() != currentWaypoint.getY()));
 
         switch (settings.getMoveType()) {
             case WALK -> {
@@ -745,6 +787,7 @@ public class ClientPathing {
         }
     }
 
+    @SuppressWarnings("resource")
     private void tickDebugParticles() {
         Level level = level();
         if (debugger != null && !debugger.isEmpty() && settings.isDebugEnabled(DebugChannel.NODES)) {
@@ -793,6 +836,7 @@ public class ClientPathing {
     public void stop() {
         if (done) return;
         done = true;
+        lookInit = false;
         pendingPath = null;
         pendingKind = null;
         pendingSplicePath = null;

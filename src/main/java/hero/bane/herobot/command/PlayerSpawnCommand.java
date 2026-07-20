@@ -9,6 +9,7 @@ import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.context.StringRange;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
 import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.config.BotNameSuggestions;
 import net.minecraft.SharedConstants;
@@ -35,12 +36,19 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
 import static net.minecraft.commands.SharedSuggestionProvider.suggest;
 
 public class PlayerSpawnCommand {
+
+    private static final Pattern VALID_NAME = Pattern.compile("[A-Za-z0-9_]+");
+
+    private static final DynamicCommandExceptionType ERROR_NOT_A_NAME =
+            new DynamicCommandExceptionType(name -> Component.literal(
+                    "'" + name + "' is not a player name - spawn needs a plain name, not a target selector"));
 
     private static final DynamicCommandExceptionType ERROR_INVALID_CARDINAL =
             new DynamicCommandExceptionType(dir -> Component.literal("Unknown direction '" + dir + "'"));
@@ -85,14 +93,18 @@ public class PlayerSpawnCommand {
                                         .executes(PlayerSpawnCommand::spawn))));
     }
 
-    private static String resolveName(CommandContext<CommandSourceStack> context) {
+    private static String resolveName(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         for (ParsedCommandNode<CommandSourceStack> node : context.getNodes()) {
-            if (node.getNode().getName().equals("player")) {
+            if (!(node.getNode() instanceof ArgumentCommandNode<?, ?>)) continue;
+            String argName = node.getNode().getName();
+            if (argName.equals("player")) {
                 return StringArgumentType.getString(context, "player");
             }
-            if (node.getNode().getName().equals("targets")) {
+            if (argName.equals("targets")) {
                 StringRange range = node.getRange();
-                return context.getInput().substring(range.getStart(), range.getEnd());
+                String raw = context.getInput().substring(range.getStart(), range.getEnd());
+                if (!VALID_NAME.matcher(raw).matches()) throw ERROR_NOT_A_NAME.create(raw);
+                return raw;
             }
         }
         return StringArgumentType.getString(context, "player");
@@ -100,12 +112,12 @@ public class PlayerSpawnCommand {
 
     public static Set<String> getNameSuggestions(CommandSourceStack source) {
         Set<String> names = new LinkedHashSet<>();
-        names.add("HerobaneNair"); // I'm an egomaniac and it's my mod. Frick you
+        names.add("HerobaneNair");
         names.add("herosbot");
         names.add("Steve");
         names.add("Alex");
-        names.addAll(BotNameSuggestions.all()); // Making it now configurable on who you want to add as a tab complete
-        names.removeAll(source.getOnlinePlayerNames()); // It should have been this from the beginning, so you don't respawn a player that's already on :)
+        names.addAll(BotNameSuggestions.all());
+        names.removeAll(source.getOnlinePlayerNames());
         return names;
     }
 

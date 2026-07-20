@@ -74,6 +74,7 @@ public abstract class LivingEntityMixin extends Entity {
         }
 
         float baseKnockback = (float) self.getAttributeValue(Attributes.ATTACK_KNOCKBACK);
+        @SuppressWarnings("resource")
         Level level = self.level();
 
         if (level instanceof ServerLevel serverLevel) {

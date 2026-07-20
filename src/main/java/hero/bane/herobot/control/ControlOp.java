@@ -8,18 +8,21 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.phys.Vec3;
 
 public record ControlOp(int kind, double x, double y, double z,
-                        float f0, float f1, int i0, int i1, int i2, int i3) {
+                        float f0, float f1, int i0, int i1, int i2, int i3, String s0) {
     public static final int FORWARD = 0, STRAFE = 1, STOP_MOVEMENT = 2, SNEAK = 3, SPRINT = 4,
             AUTOJUMP = 5, START_ACTION = 6, STOP_ACTION = 7, START_OR_EXTEND = 8, STOP_ALL = 9,
             SET_SLOT = 10, LOOK = 11, LOOK_DIR = 12, TURN = 13, LOOK_AT = 14, STOP_INTERP = 15,
             PATH_GOTO_POS = 16, PATH_GOTO_ENTITY = 17, PATH_STOP = 18, PATH_SETTING = 19,
-            PATH_MOVE_TYPE = 20, OPEN_INVENTORY = 21, SET_MAIN_HAND = 22;
+            PATH_MOVE_TYPE = 20, OPEN_INVENTORY = 21, SET_MAIN_HAND = 22, PICK_BLOCK = 23,
+            PATH_AVOID_BLOCK = 24, PATH_DEBUG_CHANNEL = 25, ATTEMPT_AUTOJUMP = 26, CLOSE_SCREEN = 27;
 
     public static final int MODE_ONCE = 0, MODE_CONTINUOUS = 1, MODE_INTERVAL = 2;
 
+    public static final int AVOID_ADD = 0, AVOID_REMOVE = 1, AVOID_CLEAR = 2;
+
     private static ControlOp of(int kind, double x, double y, double z,
                                float f0, float f1, int i0, int i1, int i2, int i3) {
-        return new ControlOp(kind, x, y, z, f0, f1, i0, i1, i2, i3);
+        return new ControlOp(kind, x, y, z, f0, f1, i0, i1, i2, i3, "");
     }
 
     public static ControlOp forward(float v)      { return of(FORWARD, 0, 0, 0, v, 0, 0, 0, 0, 0); }
@@ -43,8 +46,16 @@ public record ControlOp(int kind, double x, double y, double z,
     public static ControlOp pathStop()                              { return of(PATH_STOP, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
     public static ControlOp pathSetting(int key, double value)      { return of(PATH_SETTING, value, 0, 0, 0, 0, key, 0, 0, 0); }
     public static ControlOp pathMoveType(int ordinal)               { return of(PATH_MOVE_TYPE, 0, 0, 0, 0, 0, ordinal, 0, 0, 0); }
+    // blockKey is the namespaced block id, mode is one of AVOID_*.
+    public static ControlOp pathAvoidBlock(String blockKey, int mode) {
+        return new ControlOp(PATH_AVOID_BLOCK, 0, 0, 0, 0, 0, 0, mode, 0, 0, blockKey);
+    }
+    public static ControlOp pathDebugChannel(int channel, boolean on) { return of(PATH_DEBUG_CHANNEL, 0, 0, 0, 0, 0, channel, on ? 1 : 0, 0, 0); }
     public static ControlOp openInventory()                         { return of(OPEN_INVENTORY, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
+    public static ControlOp closeScreen()                           { return of(CLOSE_SCREEN, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
     public static ControlOp setMainHand(boolean left)               { return of(SET_MAIN_HAND, 0, 0, 0, 0, 0, left ? 1 : 0, 0, 0, 0); }
+    public static ControlOp pickBlock(boolean includeData)          { return of(PICK_BLOCK, 0, 0, 0, 0, 0, includeData ? 1 : 0, 0, 0, 0); }
+    public static ControlOp attemptAutoJump()                       { return of(ATTEMPT_AUTOJUMP, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
 
     public static ControlOp look(float yaw, float pitch, int ticks) { return of(LOOK, 0, 0, 0, yaw, pitch, ticks, 0, 0, 0); }
     public static ControlOp lookDir(Direction d, int ticks)         { return of(LOOK_DIR, 0, 0, 0, 0, 0, d.get3DDataValue(), ticks, 0, 0); }
@@ -72,6 +83,8 @@ public record ControlOp(int kind, double x, double y, double z,
             case START_OR_EXTEND -> c.startOrExtender(ActionType.values()[i0], i1);
             case STOP_ALL -> c.stopAll();
             case SET_SLOT -> c.setSlot(i0);
+            case PICK_BLOCK -> c.pickBlock(i0 != 0);
+            case ATTEMPT_AUTOJUMP -> c.attemptAutoJump();
             case LOOK -> { if (i0 > 0) c.lookInterpolated(f0, f1, i0); else c.look(f0, f1); }
             case LOOK_DIR -> { Direction d = Direction.from3DDataValue(i0); if (i1 > 0) c.look(d, i1); else c.look(d); }
             case TURN -> { if (i0 > 0) c.turn(f0, f1, i0); else c.turn(f0, f1); }
@@ -93,11 +106,13 @@ public record ControlOp(int kind, double x, double y, double z,
                 buf.writeInt(op.i1);
                 buf.writeInt(op.i2);
                 buf.writeInt(op.i3);
+                buf.writeUtf(op.s0);
             },
             buf -> new ControlOp(
                     buf.readVarInt(),
                     buf.readDouble(), buf.readDouble(), buf.readDouble(),
                     buf.readFloat(), buf.readFloat(),
-                    buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt())
+                    buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(),
+                    buf.readUtf())
     );
 }
