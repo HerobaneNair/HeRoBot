@@ -517,12 +517,6 @@ public final class AiEditorScreen extends Screen {
         setStatus("Autosaved '" + script.name() + "'", 80, 20);
     }
 
-    public void uploadScript() {
-        if (isUnnamed()) { saveScriptAs(); return; }
-        ScriptTransfer.upload(script.name(), script);
-        ScriptTransfer.requestList();
-    }
-
     public void copyJson() {
         try {
             String json = AiScriptIO.toJson(script);

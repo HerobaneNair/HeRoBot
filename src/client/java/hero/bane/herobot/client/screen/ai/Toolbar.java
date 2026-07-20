@@ -53,6 +53,7 @@ public final class Toolbar {
                 new Item("Open", host::loadDialog),
                 new Item("Save", host::saveScript, host::hasScriptContent),
                 new Item("Save As", host::saveScriptAs, host::hasScriptContent),
+                new Item("Run on Target", host::runOnTarget, host::hasScriptContent),
                 new Item("Import", host::importDialog),
                 new Item("Copy JSON", host::copyJson),
                 new Item("Paste JSON", host::pasteJson),
