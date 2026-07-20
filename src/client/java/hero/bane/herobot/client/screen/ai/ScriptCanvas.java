@@ -153,10 +153,6 @@ public final class ScriptCanvas {
     private int sx(double worldX) { return (int) Math.round(worldX * zoom + panX); }
     private int sy(double worldY) { return (int) Math.round(worldY * zoom + panY); }
 
-    public double[] centerWorld() {
-        return new double[]{wx((left + right) / 2.0), wy((top + bottom) / 2.0)};
-    }
-
     public double[] screenToWorld(double screenX, double screenY) {
         return new double[]{wx(screenX), wy(screenY)};
     }
@@ -279,7 +275,7 @@ public final class ScriptCanvas {
             if (end == null) continue;
             BlockRenderer.Layout ls = layout(b);
             BlockRenderer.Layout le = layout(end);
-            drawThickWire(g, ls.x + 5, ls.y + ls.h, le.x + 5, le.y, PAIR_WIRE_COLOR);
+            drawThickWire(g, ls.x + 5, ls.y + ls.h, le.x + 5, le.y);
         }
 
         dropReason = null;
@@ -470,7 +466,7 @@ public final class ScriptCanvas {
                 if (wireFromPort < lf.outPorts.size()) {
                     int[] p = lf.outPorts.get(wireFromPort);
                     if (wireFromPort == lf.sideOutPort) {
-                        drawWireH(g, sx(p[0]), sy(p[1]), (int) wireMx, (int) wireMy, 0xFFFFFF66);
+                        drawWireH(g, sx(p[0]), sy(p[1]), (int) wireMx, (int) wireMy);
                     } else {
                         drawWire(g, sx(p[0]), sy(p[1]), (int) wireMx, (int) wireMy, 0xFFFFFF66);
                     }
@@ -482,7 +478,7 @@ public final class ScriptCanvas {
             if (to != null) {
                 BlockRenderer.Layout lt = layout(to);
                 if (lt.sideInput) {
-                    drawWireH(g, (int) wireMx, (int) wireMy, sx(lt.inX), sy(lt.inY), 0xFFFFFF66);
+                    drawWireH(g, (int) wireMx, (int) wireMy, sx(lt.inX), sy(lt.inY));
                 } else {
                     drawWire(g, (int) wireMx, (int) wireMy, sx(lt.inX), sy(lt.inY), 0xFFFFFF66);
                 }
@@ -531,8 +527,9 @@ public final class ScriptCanvas {
         fillV(g, x2, midY, y2, color);
     }
 
-    private void drawWireH(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+    private void drawWireH(GuiGraphics g, int x1, int y1, int x2, int y2) {
         int midX = (x1 + x2) / 2;
+        int color = 0xFFFFFF66;
         fillH(g, x1, midX, y1, color);
         fillV(g, midX, y1, y2, color);
         fillH(g, midX, x2, y2, color);
@@ -597,11 +594,11 @@ public final class ScriptCanvas {
         g.fill(L.x + L.w + 1, L.y - 1, L.x + L.w + 2, L.y + L.h + 1, c);
     }
 
-    private void drawThickWire(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+    private void drawThickWire(GuiGraphics g, int x1, int y1, int x2, int y2) {
         int midY = (y1 + y2) / 2;
-        fillThickV(g, x1, y1, midY, color);
-        fillThickH(g, x1, x2, midY, color);
-        fillThickV(g, x2, midY, y2, color);
+        fillThickV(g, x1, y1, midY, PAIR_WIRE_COLOR);
+        fillThickH(g, x1, x2, midY, PAIR_WIRE_COLOR);
+        fillThickV(g, x2, midY, y2, PAIR_WIRE_COLOR);
     }
 
     private void drawThickWireH(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
@@ -1303,10 +1300,12 @@ public final class ScriptCanvas {
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && stars.blackHoleGrabbed(mx, my)) {
             double[] pos = stars.blackHolePos();
-            holeDrag = true;
-            holeGrabDx = mx - pos[0];
-            holeGrabDy = my - pos[1];
-            return true;
+            if (pos != null) {
+                holeDrag = true;
+                holeGrabDx = mx - pos[0];
+                holeGrabDy = my - pos[1];
+                return true;
+            }
         }
 
         if (deleteWireNear(worldX, worldY)) return true;
@@ -1882,7 +1881,10 @@ public final class ScriptCanvas {
         script().addWire(w.fromBlockId(), w.outPort(), b.id(), 0);
         boolean exists = false;
         for (Wire x : script().wires()) {
-            if (x.fromBlockId() == p.exitId() && x.outPort() == 0 && x.toBlockId() == w.toBlockId()) exists = true;
+            if (x.fromBlockId() == p.exitId() && x.outPort() == 0 && x.toBlockId() == w.toBlockId()) {
+                exists = true;
+                break;
+            }
         }
         if (!exists) script().addWire(p.exitId(), 0, w.toBlockId(), w.toPort());
         return true;
@@ -2062,7 +2064,6 @@ public final class ScriptCanvas {
 
     private int caretFromWorld(Comment c, double worldX, double worldY) {
         measure(c);
-        String t = c.text();
         List<int[]> lines = wrapLines(c);
         int li = (int) Math.floor((worldY - (cY(c) + COMMENT_PAD)) / font.lineHeight);
         li = Math.clamp(li, 0, lines.size() - 1);

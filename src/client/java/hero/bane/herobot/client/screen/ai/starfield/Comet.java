@@ -181,7 +181,7 @@ final class Comet {
         int base = warped ? 1 : 0;
         if (warped) {
             if (nosePt == null) nosePt = new double[2];
-            double len = Math.min(NOSE_LEN * stretch, Math.max(0, holeDist - 1));
+            double len = Math.clamp(holeDist - 1, 0, NOSE_LEN * stretch);
             nosePt[0] = x + hnx * len;
             nosePt[1] = y + hny * len;
             pts[0] = nosePt;

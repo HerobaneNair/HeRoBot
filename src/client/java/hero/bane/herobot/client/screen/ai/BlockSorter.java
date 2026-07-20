@@ -209,7 +209,7 @@ public final class BlockSorter {
         }
 
         if (spineChild != null) {
-            bottom = Math.max(bottom, slot(block, spineChild, spinePort, visited));
+            bottom = Math.max(bottom, slot(spineChild, spinePort, visited));
         }
 
         double ay = bottom + V_GAP;
@@ -329,10 +329,10 @@ public final class BlockSorter {
     }
 
     private static int[] bodyPort(BlockRenderer.Layout L) {
-        return BODY_PORT < L.outPorts.size() ? L.outPorts.get(BODY_PORT) : null;
+        return !L.outPorts.isEmpty() ? L.outPorts.get(BODY_PORT) : null;
     }
 
-    private double slot(BlockInstance parent, BlockInstance child, int[] outPort, Set<Integer> visited) {
+    private double slot(BlockInstance child, int[] outPort, Set<Integer> visited) {
         return slotAt(child, outPort, outPort[1] + BlockRenderer.PORT_H + 2, visited);
     }
 

@@ -90,18 +90,16 @@ public final class ControlExecutor {
             if (name != null && !name.isBlank()) {
                 ServerPlayer player = r.player();
                 MinecraftServer server = player.level().getServer();
-                if (server != null) {
-                    // Not just IOException: BlockType/VarType.valueOf and the JSON parser all throw
-                    // unchecked, and a script from a newer version would otherwise kill the branch.
-                    try {
-                        AiScript next = AiScriptRegistry.load(server, name);
-                        if (next != null) {
-                            AiScriptRegistry.assign(player, name, next);
-                            AiScriptRegistry.fireStart(player);
-                        }
-                    } catch (Exception e) {
-                        HeroBot.LOGGER.warn("Failed to load AI script {}: {}", name, e.toString());
+                // Not just IOException: BlockType/VarType.valueOf and the JSON parser all throw
+                // unchecked, and a script from a newer version would otherwise kill the branch.
+                try {
+                    AiScript next = AiScriptRegistry.load(server, name);
+                    if (next != null) {
+                        AiScriptRegistry.assign(player, name, next);
+                        AiScriptRegistry.fireStart(player);
                     }
+                } catch (Exception e) {
+                    HeroBot.LOGGER.warn("Failed to load AI script {}: {}", name, e.toString());
                 }
             }
             return StepResult.end();
@@ -198,8 +196,7 @@ public final class ControlExecutor {
             }
             case WHILE -> {
                 BlockInstance start = r.script().block(js.startBlockId());
-                boolean cond = start != null && ParamEval.evalBool(start, "condition", r, br);
-                repeat = cond;
+                repeat = start != null && ParamEval.evalBool(start, "condition", r, br);
             }
             default -> repeat = false;
         }

@@ -313,14 +313,14 @@ public final class VariablePanel {
     }
 
     public boolean mouseReleased(double mx, double my) {
-        if (pressFunc >= 0) return releaseFunction(mx, my);
+        if (pressFunc >= 0) { releaseFunction(mx, my); return true; }
         if (pressVar < 0) return false;
         int vi = pressVar;
         boolean wasDragging = dragging;
         pressVar = -1;
         dragging = false;
         List<VarDecl> vars = script().variables();
-        if (vi < 0 || vi >= vars.size()) return true;
+        if (vi >= vars.size()) return true;
 
         if (wasDragging) {
             if (!inside(mx, my)) {
@@ -357,18 +357,18 @@ public final class VariablePanel {
         return true;
     }
 
-    private boolean releaseFunction(double mx, double my) {
+    private void releaseFunction(double mx, double my) {
         int fi = pressFunc;
         boolean wasDragging = dragging;
         pressFunc = -1;
         dragging = false;
         List<FuncDecl> funcs = script().functions();
-        if (fi < 0 || fi >= funcs.size()) return true;
+        if (fi < 0 || fi >= funcs.size()) return;
 
         if (wasDragging) {
             if (!inside(mx, my)) {
                 host.dropFunctionBlock(funcs.get(fi).qualifiedName(), mx, my);
-                return true;
+                return;
             }
             String target = folderTargetAt(mx, my);
             if (target != null && !target.equals(funcs.get(fi).folder())) {
@@ -382,7 +382,6 @@ public final class VariablePanel {
         } else {
             renameFunction(fi);
         }
-        return true;
     }
 
     private String folderTargetAt(double mx, double my) {
@@ -547,15 +546,15 @@ public final class VariablePanel {
         List<String> lines = new ArrayList<>();
         StringBuilder line = new StringBuilder();
         for (String word : text.split(" ")) {
-            String trial = line.length() == 0 ? word : line + " " + word;
-            if (font.width(trial) > maxW && line.length() > 0) {
+            String trial = line.isEmpty() ? word : line + " " + word;
+            if (font.width(trial) > maxW && !line.isEmpty()) {
                 lines.add(line.toString());
                 line = new StringBuilder(word);
             } else {
                 line = new StringBuilder(trial);
             }
         }
-        if (line.length() > 0) lines.add(line.toString());
+        if (!line.isEmpty()) lines.add(line.toString());
         return lines;
     }
 

@@ -14,7 +14,6 @@ import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.config.BotNameSuggestions;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
-import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.minecraft.commands.arguments.GameModeArgument;
@@ -53,7 +52,7 @@ public class PlayerSpawnCommand {
     private static final DynamicCommandExceptionType ERROR_INVALID_CARDINAL =
             new DynamicCommandExceptionType(dir -> Component.literal("Unknown direction '" + dir + "'"));
 
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext ctx) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 literal("playerspawn")
                         .requires(s -> !s.isPlayer() || s.getServer().getPlayerList().isOp(Objects.requireNonNull(s.getPlayer()).nameAndId()))

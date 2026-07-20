@@ -6,7 +6,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.function.ToDoubleFunction;
 
 public final class ExprEval {
     private ExprEval() {}
@@ -29,10 +28,6 @@ public final class ExprEval {
     private static final Expr ZERO = vars -> 0;
     private static final int CACHE_LIMIT = 256;
     private static final Map<String, Expr> CACHE = new ConcurrentHashMap<>();
-
-    public static double eval(String expression, ToDoubleFunction<String> vars) {
-        return eval(expression, (name, index) -> vars.applyAsDouble(name));
-    }
 
     public static double eval(String expression, IndexedVars vars) {
         return compile(expression).eval(vars);
@@ -109,10 +104,6 @@ public final class ExprEval {
         private final boolean strict;
         private final Function<String, ParamType> types;
         private int pos;
-
-        Parser(String input) {
-            this(input, false, null);
-        }
 
         Parser(String input, boolean strict, Function<String, ParamType> types) {
             this.input = input;

@@ -366,23 +366,6 @@ public final class BoolEval {
             return new Operand(vars -> val, ParamType.STRING);
         }
 
-        private Operand number() {
-            int start = pos;
-            if (peek() == '-') pos++;
-            while (pos < input.length()) {
-                char ch = input.charAt(pos);
-                if (Character.isDigit(ch) || ch == '.') pos++;
-                else break;
-            }
-            double val;
-            try {
-                val = Double.parseDouble(input.substring(start, pos));
-            } catch (NumberFormatException ex) {
-                throw new RuntimeException("bad number");
-            }
-            return new Operand(vars -> val, ParamType.DOUBLE);
-        }
-
         private Operand identifier() {
             int start = pos;
             while (pos < input.length()) {

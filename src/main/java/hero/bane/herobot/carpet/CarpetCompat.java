@@ -4,7 +4,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.spongepowered.asm.mixin.MixinEnvironment;
+import org.spongepowered.asm.mixin.Mixins;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfig;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import org.spongepowered.asm.mixin.transformer.Config;
@@ -46,7 +46,10 @@ public final class CarpetCompat implements PreLaunchEntrypoint {
         if (!FabricLoader.getInstance().isModLoaded("carpet")) return;
 
         try {
-            Config carpetConfig = Config.create(CARPET_CONFIG, MixinEnvironment.getDefaultEnvironment());
+            Config carpetConfig = Mixins.getConfigs().stream()
+                    .filter(config -> config.getName().equals(CARPET_CONFIG))
+                    .findFirst()
+                    .orElse(null);
             if (carpetConfig == null) {
                 LOGGER.warn("carpet is loaded but {} could not be resolved; HeroBot could not disable "
                         + "Carpet's duplicate mixins", CARPET_CONFIG);

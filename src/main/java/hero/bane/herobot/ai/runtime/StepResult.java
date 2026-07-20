@@ -40,16 +40,8 @@ public final class StepResult {
         return new StepResult(Kind.CONTINUE, port, 0, 0, false, false, -1, null);
     }
 
-    public static StepResult enterBody(int port) {
-        return new StepResult(Kind.CONTINUE, port, 0, 0, true, false, -1, null);
-    }
-
     public static StepResult enterBody(int port, int activationId) {
         return new StepResult(Kind.CONTINUE, port, 0, 0, true, false, activationId, null);
-    }
-
-    public static StepResult enterBody(int port, int activationId, Map<String, Object> data) {
-        return new StepResult(Kind.CONTINUE, port, 0, 0, true, false, activationId, data);
     }
 
     public static StepResult exitBody(int port) {

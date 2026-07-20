@@ -69,7 +69,7 @@ public class HeroBot implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, env) ->
         {
             PlayerCommand.register(dispatcher, registryAccess);
-            PlayerSpawnCommand.register(dispatcher, registryAccess);
+            PlayerSpawnCommand.register(dispatcher);
             DistanceCommand.register(dispatcher, registryAccess);
             HeroBotCommand.register(dispatcher, registryAccess);
             DelayedCommand.register(dispatcher, registryAccess);
@@ -106,7 +106,6 @@ public class HeroBot implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(AiUploadPayload.TYPE, (payload, context) -> {
             ServerPlayer player = context.player();
             MinecraftServer server = player.level().getServer();
-            if (server == null) return;
             server.execute(() -> {
                 if (!server.getPlayerList().isOp(player.nameAndId())) {
                     player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
@@ -138,7 +137,6 @@ public class HeroBot implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(AiDownloadRequestPayload.TYPE, (payload, context) -> {
             ServerPlayer player = context.player();
             MinecraftServer server = player.level().getServer();
-            if (server == null) return;
             server.execute(() -> {
                 if (!validScriptName(payload.name())) return;
                 try {
@@ -160,7 +158,6 @@ public class HeroBot implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(AiListRequestPayload.TYPE, (payload, context) -> {
             ServerPlayer player = context.player();
             MinecraftServer server = player.level().getServer();
-            if (server == null) return;
             server.execute(() ->
                     ServerPlayNetworking.send(player, new AiListPayload(AiScriptRegistry.list(server))));
         });
@@ -168,7 +165,6 @@ public class HeroBot implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(AiDeleteRequestPayload.TYPE, (payload, context) -> {
             ServerPlayer player = context.player();
             MinecraftServer server = player.level().getServer();
-            if (server == null) return;
             server.execute(() -> {
                 if (!server.getPlayerList().isOp(player.nameAndId())) {
                     player.sendSystemMessage(net.minecraft.network.chat.Component.literal(

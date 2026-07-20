@@ -11,7 +11,6 @@ import hero.bane.herobot.ai.runtime.executors.LookExecutor;
 import hero.bane.herobot.ai.runtime.executors.MotionExecutor;
 import hero.bane.herobot.ai.runtime.executors.OperatorExecutor;
 import hero.bane.herobot.ai.runtime.executors.PathExecutor;
-import hero.bane.herobot.ai.runtime.executors.SelectorExecutor;
 import hero.bane.herobot.ai.runtime.executors.SensorExecutor;
 
 import java.util.EnumMap;

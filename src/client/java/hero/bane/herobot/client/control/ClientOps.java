@@ -100,12 +100,12 @@ public final class ClientOps {
 
     Float pathViewYaw(float partialTick) {
         ClientPathing p = path;
-        return p == null ? null : p.viewYaw(partialTick);
+        return p == null ? null : p.viewYaw();
     }
 
     Float pathViewPitch(float partialTick) {
         ClientPathing p = path;
-        return p == null ? null : p.viewPitch(partialTick);
+        return p == null ? null : p.viewPitch();
     }
 
     public void stopPath(boolean silent) {

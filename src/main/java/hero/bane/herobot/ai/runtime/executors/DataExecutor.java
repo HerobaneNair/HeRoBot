@@ -12,7 +12,6 @@ import hero.bane.herobot.ai.runtime.StepResult;
 import com.mojang.brigadier.StringReader;
 import net.minecraft.commands.arguments.item.ItemInput;
 import net.minecraft.commands.arguments.item.ItemParser;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -77,20 +76,36 @@ public final class DataExecutor {
     }
 
     public static String stringify(Object v, ScriptRunner r) {
-        if (v == null) return "";
-        if (v instanceof ItemStack st) return st.getHoverName().getString();
-        if (v instanceof Vec3 p) return p.x + " " + p.y + " " + p.z;
-        if (v instanceof float[] rot && rot.length >= 2) return rot[0] + " " + rot[1];
-        if (v instanceof Entity e) return e.getDisplayName().getString();
-        if (v instanceof UUID u) return entityName(u, r);
-        String s = ParamEval.asString(v);
-        // isUuid trims before validating, so fromString has to see the same trimmed text.
-        if (SelectorValidation.isUuid(s)) return entityName(UUID.fromString(s.trim()), r);
-        return s;
+        switch (v) {
+            case null -> {
+                return "";
+            }
+            case ItemStack st -> {
+                return st.getHoverName().getString();
+            }
+            case Vec3 p -> {
+                return p.x + " " + p.y + " " + p.z;
+            }
+            case float[] rot when rot.length >= 2 -> {
+                return rot[0] + " " + rot[1];
+            }
+            case Entity e -> {
+                return e.getDisplayName().getString();
+            }
+            case UUID u -> {
+                return entityName(u, r);
+            }
+            default -> {
+                String s = ParamEval.asString(v);
+                // isUuid trims before validating, so fromString has to see the same trimmed text.
+                if (SelectorValidation.isUuid(s)) return entityName(UUID.fromString(s.trim()), r);
+                return s;
+            }
+        }
     }
 
     private static String entityName(UUID id, ScriptRunner r) {
-        Entity e = ((ServerLevel) r.player().level()).getEntity(id);
+        Entity e = r.player().level().getEntity(id);
         return e != null ? e.getDisplayName().getString() : id.toString();
     }
 

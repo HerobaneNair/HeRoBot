@@ -1,6 +1,7 @@
 package hero.bane.herobot.client.screen.ai;
 
 import hero.bane.herobot.ai.AiScript;
+import hero.bane.herobot.ai.VarType;
 import hero.bane.herobot.ai.block.*;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -303,7 +304,9 @@ public final class BlockRenderer {
             int botY = topY + CHIP_H + 2;
             int cx = ox + L.w;
             for (int i = 0; i < arity; i++) {
-                String tlabel = decl.paramType(i).chipLabel();
+                VarType pt = decl.paramType(i);
+                if (pt == null) continue;
+                String tlabel = pt.chipLabel();
                 String chip = (fname.isEmpty() ? "?" : fname) + ":" + (i + 1);
                 int tw = font.width(tlabel) + 8;
                 int dw = font.width(chip) + 8;

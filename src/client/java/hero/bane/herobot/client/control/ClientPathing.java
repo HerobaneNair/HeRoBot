@@ -109,13 +109,6 @@ public class ClientPathing {
                 target, settings, p, 50000, new PathStats());
     }
 
-    public void recalcPath() {
-        if (done) return;
-        Vec3 currentTarget = targetEntity != null ? targetEntity.position() : target;
-        if (spliceFailedLast) requestFullRecalc();
-        else requestSpliceRecalc(currentTarget);
-    }
-
     private boolean canRequestPath() {
         return !done && pendingPath == null && recalcBackoffTicks <= 0;
     }
@@ -620,7 +613,6 @@ public class ClientPathing {
         return isSwimmableBlock(feetX, feetY, feetZ);
     }
 
-    @SuppressWarnings("resource")
     private static boolean isSwimmableBlock(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, y, z);
         Level level = level();
@@ -677,11 +669,11 @@ public class ClientPathing {
         return Mth.clamp(lookStartPitch + (lookTargetPitch - lookStartPitch) * approach(), -90.0f, 90.0f);
     }
 
-    public Float viewYaw(float partialTick) {
+    public Float viewYaw() {
         return lookInit ? currentViewYaw() : null;
     }
 
-    public Float viewPitch(float partialTick) {
+    public Float viewPitch() {
         return lookInit ? currentViewPitch() : null;
     }
 
@@ -852,10 +844,6 @@ public class ClientPathing {
 
     public boolean isDone() {
         return done;
-    }
-
-    public Entity getTargetEntity() {
-        return targetEntity;
     }
 
     public Vec3 getTarget() {

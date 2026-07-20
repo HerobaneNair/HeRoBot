@@ -58,14 +58,14 @@ public final class ClientPlayerController implements PlayerController {
     @Override
     public PlayerController setAutoJump(boolean v) {
         Options o = mc().options;
-        if (o != null) o.autoJump().set(v);
+        o.autoJump().set(v);
         return this;
     }
 
     @Override
     public void attemptAutoJump() {
         Options o = mc().options;
-        if (o == null || o.autoJump().get()) return;
+        if (o.autoJump().get()) return;
         o.autoJump().set(true);
         autoJumpPulse = PULSE_TICKS;
     }
@@ -82,7 +82,6 @@ public final class ClientPlayerController implements PlayerController {
 
     private void updateMovementKeys() {
         Options o = mc().options;
-        if (o == null) return;
         o.keyUp.setDown(forward > 0);
         o.keyDown.setDown(forward < 0);
         o.keyLeft.setDown(strafe > 0);
@@ -141,7 +140,6 @@ public final class ClientPlayerController implements PlayerController {
 
     private static KeyMapping keyFor(ActionType type) {
         Options o = mc().options;
-        if (o == null) return null;
         return switch (type) {
             case ATTACK -> o.keyAttack;
             case USE -> o.keyUse;
@@ -197,7 +195,7 @@ public final class ClientPlayerController implements PlayerController {
     private void releasePulses() {
         if (autoJumpPulse > 0 && --autoJumpPulse == 0) {
             Options o = mc().options;
-            if (o != null) o.autoJump().set(false);
+            o.autoJump().set(false);
         }
         if (pulses.isEmpty()) return;
         var it = pulses.entrySet().iterator();

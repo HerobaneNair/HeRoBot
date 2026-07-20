@@ -71,7 +71,7 @@ public final class EffectiveSlots {
     public static int calcInputCount(BlockInstance block) {
         Object v = block.getParam("inputs");
         int n = v instanceof Number num ? num.intValue() : 0;
-        return Math.max(0, Math.min(n, MAX_CALC_INPUTS));
+        return Math.clamp(n, 0, MAX_CALC_INPUTS);
     }
 
     public static final int MAX_CALC_INPUTS = 9;
@@ -208,8 +208,7 @@ public final class EffectiveSlots {
         }
         BlockInstance b = block.getReporter("falseValue");
         if (b != null) {
-            ParamType t = reporterOutputType(b, script);
-            if (t != null) return t;
+            return reporterOutputType(b, script);
         }
         return null;
     }

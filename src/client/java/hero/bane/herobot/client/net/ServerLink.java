@@ -18,10 +18,6 @@ public final class ServerLink {
         handshooked = false;
     }
 
-    public static boolean handshooked() {
-        return handshooked;
-    }
-
     public static boolean canSend(CustomPacketPayload.Type<?> type) {
         return ClientPlayNetworking.canSend(type) || handshooked;
     }

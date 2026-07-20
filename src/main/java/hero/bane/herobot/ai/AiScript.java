@@ -5,6 +5,7 @@ import hero.bane.herobot.ai.block.BlockType;
 import hero.bane.herobot.ai.block.Wire;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -112,24 +113,13 @@ public final class AiScript {
         return r;
     }
 
-    public int incomingCount(int blockId, int toPort) {
-        int n = 0;
-        for (Wire w : wires) {
-            if (w.toBlockId() == blockId && w.toPort() == toPort) n++;
-        }
-        return n;
-    }
-
     public List<BlockInstance> hatBlocks(BlockType hatType) {
         List<BlockInstance> r = new ArrayList<>();
         for (BlockInstance b : blocks.values()) {
             if (b.type() == hatType) r.add(b);
         }
         // blocks is a HashMap, so sort into canvas order: left to right, then top to bottom.
-        r.sort((a, b) -> {
-            int cmp = Double.compare(a.x(), b.x());
-            return cmp != 0 ? cmp : Double.compare(a.y(), b.y());
-        });
+        r.sort(Comparator.comparingDouble(BlockInstance::x).thenComparingDouble(BlockInstance::y));
         return r;
     }
 
