@@ -9,6 +9,8 @@ public final class BlockDescriptions {
     static {
         DESCRIPTIONS.put(BlockType.START, "When the ai is ran, this will automatically run the connected block tree");
         DESCRIPTIONS.put(BlockType.ON_TOGGLE, "Whenever the boolean value in this is set to true, it will run the connected block tree");
+        DESCRIPTIONS.put(BlockType.ON_MESSAGE, "Runs the connected block tree whenever a chat message reaches the bot. Drag the message chip to read the message that was sent");
+        DESCRIPTIONS.put(BlockType.MSG_TEXT, "The chat message that triggered this On Message block");
 
         DESCRIPTIONS.put(BlockType.MOVE, "Walk forwards or backwards; or stop walking f/b");
         DESCRIPTIONS.put(BlockType.STRAFE, "Strafe left or right; or stop strafing l/r");
@@ -108,13 +110,14 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.AND, "True only if both boolean inputs are true");
         DESCRIPTIONS.put(BlockType.OR, "True if either boolean input is true");
         DESCRIPTIONS.put(BlockType.NOT, "True if boolean value is false");
+        DESCRIPTIONS.put(BlockType.CONTAINS, "True if the first string contains the second. Set check case to true for a case-sensitive match");
         DESCRIPTIONS.put(BlockType.RANDOM_INT, "Returns a random whole number between two bounds");
         DESCRIPTIONS.put(BlockType.RANDOM_DOUBLE, "Returns a random decimal number between two bounds");
         DESCRIPTIONS.put(BlockType.VEC3, "Build a position from x, y and z values");
         DESCRIPTIONS.put(BlockType.ROT, "Build a rotation from yaw and pitch values");
         DESCRIPTIONS.put(BlockType.TO_STRING, "Convert a value into text");
 
-        DESCRIPTIONS.put(BlockType.FUNC_DEFINE, "Define a function; add typed inputs with ⁺ and drag the chip under an input to use it in the body. Only one define block per function");
+        DESCRIPTIONS.put(BlockType.FUNC_DEFINE, "Define a function; add typed inputs with ⁺ and drag the chip under an input to use it in the body. Only one define block per function per script");
         DESCRIPTIONS.put(BlockType.FUNC_CALL, "Run a function, passing a value for each of its inputs");
         DESCRIPTIONS.put(BlockType.FUNC_PARAM, "The value passed into a function input for this call");
     }

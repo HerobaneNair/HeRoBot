@@ -288,8 +288,6 @@ final class BlackHole {
             life = Math.min(MAX_LIFE, life + add);
             growLeft -= add;
         }
-        // Growth is applied on a GROW_STEP cadence, so a hole with growth still queued must survive
-        // long enough to receive it - otherwise a late top-up is culled before it ever lands.
         return life > 0 || age < MIN_LIFE || growLeft > 0 || growBucket > 0;
     }
 

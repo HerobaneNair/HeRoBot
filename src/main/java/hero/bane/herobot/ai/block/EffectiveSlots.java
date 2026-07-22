@@ -51,6 +51,10 @@ public final class EffectiveSlots {
         return type == BlockType.SEND_MESSAGE;
     }
 
+    public static boolean isVarBlock(BlockType type) {
+        return type == BlockType.SET_VAR || type == BlockType.CHANGE_VAR || type == BlockType.READ_VAR;
+    }
+
     public static boolean isOpShown(BlockInstance block) {
         return block.getParam("op") != null || block.getReporter("op") != null;
     }
@@ -132,7 +136,7 @@ public final class EffectiveSlots {
         out.add(ParamSlot.ofEnum("name", functionNames(script), funcName(block)));
         FuncDecl decl = script == null ? null : script.function(funcName(block));
         if (decl == null) return out;
-        for (int i = 0; i < decl.arity(); i++) {
+        for (int i = 0; i < decl.numParams(); i++) {
             VarType t = decl.paramType(i);
             out.add(new ParamSlot("Arg" + (i + 1), paramTypeOf(t), defaultForVar(t)));
         }
@@ -393,11 +397,11 @@ public final class EffectiveSlots {
         return switch (reporter.type()) {
             case VEC3, POSITION, POS_CALC -> ParamType.POSITION;
             case ROT, DIR_CALC -> ParamType.ROTATION;
-            case TO_STRING, STRING_CALC -> ParamType.STRING;
+            case TO_STRING, STRING_CALC, MSG_TEXT -> ParamType.STRING;
             case NUM_CALC, RANDOM_DOUBLE, HEALTH, YAW, DISTANCE_TO, TIME_OF_DAY, SCOREBOARD, COMMAND_RESULT -> ParamType.DOUBLE;
             case ITEM_IN_SLOT, EQUIPMENT -> ParamType.ITEM;
             case RANDOM_INT, GET_COUNT, MAX_COUNT, INVENTORY_OPEN, CONTAINER_SIZE, LOOP_ITER -> ParamType.INT;
-            case COMPARE, EQUALITY, LOGIC, AND, OR, NOT, IS_TOUCHING_BLOCK, HAS_TAG, IN_PATH, EVERY_X_TICKS, ON_DAMAGE, BOOL_CALC, DOING_ACTION -> ParamType.BOOLEAN;
+            case COMPARE, EQUALITY, LOGIC, AND, OR, NOT, CONTAINS, IS_TOUCHING_BLOCK, HAS_TAG, IN_PATH, EVERY_X_TICKS, ON_DAMAGE, BOOL_CALC, DOING_ACTION -> ParamType.BOOLEAN;
             case READ_VAR -> paramTypeOf(varType(script, asString(reporter.getParam("name"))));
             case FUNC_PARAM -> paramTypeOf(funcParamType(script, reporter));
             case TERNARY -> {

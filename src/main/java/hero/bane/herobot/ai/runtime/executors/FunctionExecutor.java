@@ -21,13 +21,18 @@ public final class FunctionExecutor {
     public static final int MAX_CALLS_PER_TICK = 50;
 
     private static final String KEY_CALL = "fnCall";
-    private static final String KEY_SAVED = "fnSaved";
+    private static final String KEY_FUNC = "fnName";
+    private static final String KEY_SEQ = "fnSeq";
 
     private FunctionExecutor() {}
 
-    /** Reserved prefix; user variable names cannot contain '§', so params can never collide. */
-    public static String paramKey(String func, int index) {
-        return "§fn/" + func + "/" + index;
+    /**
+     * Reserved prefix; user variable names cannot contain '§', so params can never collide.
+     * The call sequence number gives every invocation its own storage slot, so recursive or
+     * concurrently-running calls to the same function don't clobber each other's arguments.
+     */
+    public static String paramKey(String func, int index, long callSeq) {
+        return "§fn/" + func + "/" + index + "/" + callSeq;
     }
 
     public static boolean isCallFrame(ControlFrame f) {
@@ -39,12 +44,26 @@ public final class FunctionExecutor {
         return v instanceof Number n ? n.intValue() : -1;
     }
 
-    @SuppressWarnings("unchecked")
-    public static void restoreParams(ControlFrame f, ScriptRunner r) {
-        Object saved = f.data().get(KEY_SAVED);
-        if (!(saved instanceof Map<?, ?> map)) return;
-        for (Map.Entry<String, RuntimeVariable> e : ((Map<String, RuntimeVariable>) map).entrySet()) {
-            r.defineVariable(e.getKey(), e.getValue());
+    /** Finds the call sequence of the innermost active invocation of {@code func} on this branch's stack. */
+    public static long currentCallSeq(Branch br, String func) {
+        for (ControlFrame f : br.frames()) {
+            if (!isCallFrame(f)) continue;
+            if (!Objects.equals(func, f.data().get(KEY_FUNC))) continue;
+            Object seq = f.data().get(KEY_SEQ);
+            if (seq instanceof Number n) return n.longValue();
+        }
+        return -1;
+    }
+
+    public static void clearParams(ControlFrame f, ScriptRunner r) {
+        Object nameObj = f.data().get(KEY_FUNC);
+        Object seqObj = f.data().get(KEY_SEQ);
+        if (!(nameObj instanceof String name) || !(seqObj instanceof Number seqNum)) return;
+        FuncDecl decl = r.script().function(name);
+        if (decl == null) return;
+        long seq = seqNum.longValue();
+        for (int i = 0; i < decl.numParams(); i++) {
+            r.removeVariable(paramKey(name, i, seq));
         }
     }
 
@@ -56,7 +75,9 @@ public final class FunctionExecutor {
         reporter.put(BlockType.FUNC_PARAM, (b, r, br) -> {
             String func = ParamEval.asString(b.getParam("func"));
             Object idx = b.getParam("index");
-            RuntimeVariable v = r.variable(paramKey(func, idx instanceof Number n ? n.intValue() : -1));
+            long seq = currentCallSeq(br, func);
+            if (seq < 0) return null;
+            RuntimeVariable v = r.variable(paramKey(func, idx instanceof Number n ? n.intValue() : -1, seq));
             return v == null ? null : v.value();
         });
     }
@@ -81,22 +102,21 @@ public final class FunctionExecutor {
         if (br.callsThisTick() >= MAX_CALLS_PER_TICK) return StepResult.wait(1);
 
         // Evaluate every argument before rebinding, so a recursive call can pass its own params along.
-        List<Object> values = new ArrayList<>(decl.arity());
-        for (int i = 0; i < decl.arity(); i++) {
+        List<Object> values = new ArrayList<>(decl.numParams());
+        for (int i = 0; i < decl.numParams(); i++) {
             Object raw = ParamEval.raw(b, "Arg" + (i + 1), r, br);
             values.add(DataExecutor.coerce(Objects.requireNonNull(decl.paramType(i)), raw, r));
         }
 
-        Map<String, RuntimeVariable> saved = new HashMap<>();
-        for (int i = 0; i < decl.arity(); i++) {
-            String key = paramKey(name, i);
-            saved.put(key, r.variable(key));
-            r.defineVariable(key, new RuntimeVariable(decl.paramType(i), values.get(i)));
+        long seq = r.nextCallSeq();
+        for (int i = 0; i < decl.numParams(); i++) {
+            r.defineVariable(paramKey(name, i, seq), new RuntimeVariable(decl.paramType(i), values.get(i)));
         }
 
         Map<String, Object> data = new HashMap<>();
         data.put(KEY_CALL, b.id());
-        data.put(KEY_SAVED, saved);
+        data.put(KEY_FUNC, name);
+        data.put(KEY_SEQ, seq);
 
         br.useCall();
         return StepResult.pushAndJump(body.getFirst().toBlockId(), -1, data);

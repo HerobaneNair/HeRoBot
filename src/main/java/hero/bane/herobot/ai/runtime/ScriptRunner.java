@@ -30,6 +30,7 @@ public final class ScriptRunner {
     private final Map<Integer, JoinState> joins = new HashMap<>();
     private final Map<String, RuntimeVariable> variables = new HashMap<>();
     private int activationSeq;
+    private long callSeq;
 
     private final Map<Long, List<Wire>> outIndex = new HashMap<>();
     private final Map<Integer, List<Wire>> inIndex = new HashMap<>();
@@ -40,6 +41,9 @@ public final class ScriptRunner {
     private volatile boolean damagedThisTick;
     private volatile boolean pathReachedThisTick;
     private volatile boolean pathFailedThisTick;
+
+    private static final int MAX_CHAT_QUEUE = 256;
+    private final java.util.Queue<String> chatQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     public ScriptRunner(ServerPlayer player, AiScript script) {
         this.player = player;
@@ -100,6 +104,7 @@ public final class ScriptRunner {
         for (Branch b : branches) b.kill();
         branches.clear();
         joins.clear();
+        chatQueue.clear();
         paused = false;
         releaseExternalState();
     }
@@ -181,6 +186,18 @@ public final class ScriptRunner {
         }
     }
 
+    public void enqueueChatMessage(String message) {
+        if (message == null) return;
+        while (chatQueue.size() >= MAX_CHAT_QUEUE) chatQueue.poll();
+        chatQueue.add(message);
+    }
+
+    private void dispatchMessage(String message) {
+        for (BlockInstance b : hats(BlockType.ON_MESSAGE)) {
+            spawnFromEvent(b, message);
+        }
+    }
+
     public void markDamaged() { this.damagedThisTick = true; }
 
     public boolean wasDamaged() { return damagedThisTick; }
@@ -213,9 +230,14 @@ public final class ScriptRunner {
     }
 
     private void spawnFromEvent(BlockInstance event) {
+        spawnFromEvent(event, null);
+    }
+
+    private void spawnFromEvent(BlockInstance event, String payload) {
         for (Wire w : outgoing(event.id(), 0)) {
             Branch br = new Branch(w.toBlockId());
             br.setOriginId(event.id());
+            br.setEventMessage(payload);
             branches.add(br);
         }
     }
@@ -236,6 +258,15 @@ public final class ScriptRunner {
         variables.put(name, v);
     }
 
+    public void removeVariable(String name) {
+        variables.remove(name);
+    }
+
+    /** Fresh id for each function invocation, so its param storage never collides with another active call. */
+    public long nextCallSeq() {
+        return ++callSeq;
+    }
+
     private Comparator<Wire> byTargetCanvasOrder() {
         return (a, b) -> {
             BlockInstance ba = script.block(a.toBlockId());
@@ -250,6 +281,10 @@ public final class ScriptRunner {
         if (current != null) this.player = current;
         if (paused) { damagedThisTick = false; pathReachedThisTick = false; pathFailedThisTick = false; return; }
         fireToggleEvents();
+        String chat;
+        while ((chat = chatQueue.poll()) != null) {
+            dispatchMessage(chat);
+        }
         if (branches.isEmpty()) { damagedThisTick = false; pathReachedThisTick = false; pathFailedThisTick = false; return; }
 
         for (Branch br : branches) {
@@ -367,7 +402,7 @@ public final class ScriptRunner {
         ControlFrame top = br.frames().peek();
         if (!FunctionExecutor.isCallFrame(top)) return false;
         br.frames().pop();
-        FunctionExecutor.restoreParams(top, this);
+        FunctionExecutor.clearParams(top, this);
         int callId = FunctionExecutor.callBlockId(top);
         if (script.block(callId) == null) return false;
         navigate(br, callId, 0);

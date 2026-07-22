@@ -24,6 +24,9 @@ public final class BlockRenderer {
     public static final int MOUTH_H = 26;
     public static final int ARM_H = 12;
 
+    public static final String CYCLE_GLYPH = "§l⟳";
+    // ↺ ↻ ⟲ ⟳ 🔁 🔃 🔄 🗘
+
     private BlockRenderer() {}
 
     public record ChipRect(String name, int x, int y, int w, int h) {
@@ -36,7 +39,6 @@ public final class BlockRenderer {
 
     public record Word(String text, int x) {}
 
-    /** One declared input on a define block: type chip over its draggable reference chip. */
     public record ParamRow(int index, String typeLabel, String chipLabel,
                            int[] typeRect, int[] dragRect) {
         public static boolean hits(int[] r, double px, double py) {
@@ -44,7 +46,6 @@ public final class BlockRenderer {
         }
     }
 
-    /** Height of a define block once it has inputs: two stacked chip rows plus padding. */
     public static final int PARAM_BLOCK_H = CHIP_H * 2 + 12;
 
     public static String iterTag(int iterId) {
@@ -60,6 +61,8 @@ public final class BlockRenderer {
         public int[] expander;
         public boolean expanderMinus;
         public int[] iterChip;
+        public int[] msgChip;
+        public int[] cycleButton;
         public int iterId;
         public String suffix;
         public int suffixX;
@@ -120,10 +123,8 @@ public final class BlockRenderer {
         L.labelY = oy + (L.h - 8) / 2;
 
         int cx;
-        // Right edge of the rightmost drawn content (no trailing gap); the block width pads
-        // this by PAD on the right so the right margin always matches the left margin (PAD).
         int contentRight;
-        boolean infix = isInfix(def.type()) && slots.size() == 2;
+        boolean infix = isInfix(def.type()) && slots.size() >= 2;
         if (infix) {
             cx = ox + PAD;
             cx = placeSlot(L, inst, slots.getFirst(), childLayouts[0], cx, chipY, midY, font);
@@ -131,6 +132,15 @@ public final class BlockRenderer {
             cx += font.width(blockLabel(def, inst)) + 6;
             cx = placeSlot(L, inst, slots.get(1), childLayouts[1], cx, chipY, midY, font);
             contentRight = cx - 4;
+            for (int i = 2; i < slots.size(); i++) {
+                String prefix = slotPrefix(def.type(), slots.get(i).name());
+                if (prefix != null) {
+                    L.words.add(new Word(prefix, cx));
+                    cx += font.width(prefix) + 4;
+                }
+                cx = placeSlot(L, inst, slots.get(i), childLayouts[i], cx, chipY, midY, font);
+                contentRight = cx - 4;
+            }
         } else {
             L.labelX = ox + PAD;
             contentRight = ox + PAD + font.width(blockLabel(def, inst));
@@ -215,6 +225,17 @@ public final class BlockRenderer {
         if (def.type() == BlockType.FUNC_DEFINE) {
             layoutParamColumns(L, inst, font, ox, oy, script);
         }
+        if (def.type() == BlockType.ON_MESSAGE) {
+            String chip = "message";
+            int cw = font.width(chip) + 8;
+            int chipX = ox + L.w - PAD + 4;
+            L.msgChip = new int[]{chipX, chipY, cw, CHIP_H};
+            L.w = (chipX + cw - ox) + PAD;
+        }
+        if (EffectiveSlots.isVarBlock(def.type())) {
+            L.w += 12;
+            L.cycleButton = new int[]{ox + L.w - 12, oy + 3, 9, 9};
+        }
 
         L.inX = ox + L.w / 2;
         L.inY = oy;
@@ -291,14 +312,13 @@ public final class BlockRenderer {
     private static int funcArity(BlockInstance inst, AiScript script) {
         if (script == null) return 0;
         hero.bane.herobot.ai.FuncDecl decl = script.function(EffectiveSlots.funcName(inst));
-        return decl == null ? 0 : decl.arity();
+        return decl == null ? 0 : decl.numParams();
     }
 
-    /** Inputs run left to right, each a column of type chip (with delete) over its draggable reference chip. */
     private static void layoutParamColumns(Layout L, BlockInstance inst, Font font, int ox, int oy, AiScript script) {
         String fname = EffectiveSlots.funcName(inst);
         hero.bane.herobot.ai.FuncDecl decl = script == null ? null : script.function(fname);
-        int arity = decl == null ? 0 : decl.arity();
+        int arity = decl == null ? 0 : decl.numParams();
         if (arity > 0) {
             int topY = oy + (L.h - (CHIP_H * 2 + 2)) / 2;
             int botY = topY + CHIP_H + 2;
@@ -339,7 +359,7 @@ public final class BlockRenderer {
     }
 
     private static final Set<BlockType> INFIX = EnumSet.of(
-            BlockType.AND, BlockType.OR);
+            BlockType.AND, BlockType.OR, BlockType.CONTAINS);
 
     private static boolean isInfix(BlockType type) {
         return INFIX.contains(type);
@@ -357,6 +377,7 @@ public final class BlockRenderer {
             if (slotName.equals("falseValue")) return "else";
         }
         if (type == BlockType.SEND_MESSAGE && slotName.equals("op")) return "op";
+        if (type == BlockType.CONTAINS && slotName.equals("checkCase")) return "case";
         return null;
     }
 
@@ -364,7 +385,6 @@ public final class BlockRenderer {
         return def.type() == BlockType.ELSE_IF ? "else (if" : def.label();
     }
 
-    /** Param references render as their own name, e.g. "myFunc:1", instead of the generic label. */
     public static String blockLabel(BlockDef def, BlockInstance inst) {
         if (def.type() == BlockType.FUNC_PARAM && inst != null) {
             Object f = inst.getParam("func");
@@ -388,6 +408,8 @@ public final class BlockRenderer {
         if (L.plus != null) { L.plus[0] += dx; L.plus[1] += dy; }
         if (L.expander != null) { L.expander[0] += dx; L.expander[1] += dy; }
         if (L.iterChip != null) { L.iterChip[0] += dx; L.iterChip[1] += dy; }
+        if (L.msgChip != null) { L.msgChip[0] += dx; L.msgChip[1] += dy; }
+        if (L.cycleButton != null) { L.cycleButton[0] += dx; L.cycleButton[1] += dy; }
         for (int i = 0; i < L.words.size(); i++) {
             Word w = L.words.get(i);
             L.words.set(i, new Word(w.text(), w.x() + dx));
@@ -503,6 +525,23 @@ public final class BlockRenderer {
             int px = L.iterChip[0], py = L.iterChip[1], pw = L.iterChip[2], ph = L.iterChip[3];
             g.fill(px, py, px + pw, py + ph, darken(base, 0.3f));
             g.drawString(font, iterTag(L.iterId), px + 2, py + 1, labelColor, false);
+        }
+        if (L.msgChip != null) {
+            int px = L.msgChip[0], py = L.msgChip[1], pw = L.msgChip[2], ph = L.msgChip[3];
+            g.fill(px - 1, py - 1, px + pw + 1, py + ph + 1, darken(base, 0.15f));
+            g.fill(px, py, px + pw, py + ph, base);
+            g.drawString(font, "message", px + 4, py + 2, labelColor, false);
+        }
+        if (L.cycleButton != null) {
+            int px = L.cycleButton[0], py = L.cycleButton[1], pw = L.cycleButton[2], ph = L.cycleButton[3];
+            g.fill(px, py, px + pw, py + ph, darken(base, 0.45f));
+            float gw = font.width(CYCLE_GLYPH), gh = font.lineHeight;
+            float s = Math.min((pw - 2f) / gw, (ph - 2f) / gh);
+            g.pose().pushMatrix();
+            g.pose().translate(px + (pw - gw * s) / 2f + 1f, py + (ph - gh * s) / 2f);
+            g.pose().scale(s, s);
+            g.drawString(font, CYCLE_GLYPH, 0, 0, labelColor, false);
+            g.pose().popMatrix();
         }
 
         List<ParamSlot> effective = EffectiveSlots.forBlock(inst, script);

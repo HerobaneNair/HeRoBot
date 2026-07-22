@@ -73,9 +73,15 @@ public final class AiScriptIO {
         return fromJson(json, name);
     }
 
-    public static void saveByName(MinecraftServer server, String name, AiScript script) throws IOException {
+    public static void saveByName(MinecraftServer server, String name, String json) throws IOException {
         Path file = scriptFile(server, name);
-        Files.writeString(file, toJson(script));
+        Files.writeString(file, json);
+    }
+
+    public static String rawJsonByName(MinecraftServer server, String name) throws IOException {
+        Path file = scriptFile(server, name);
+        if (!Files.isRegularFile(file)) return null;
+        return Files.readString(file);
     }
 
     public static void deleteByName(MinecraftServer server, String name) throws IOException {
@@ -84,9 +90,20 @@ public final class AiScriptIO {
     }
 
     public static String toJson(AiScript script) {
+        return toJson(script, false);
+    }
+
+    /**
+     * When omitPositions is true, block x/y are left out of the JSON entirely and a "sorted"
+     * marker is written instead; the caller must only pass true when the current layout is
+     * exactly what BlockSorter.tidy() would already produce, since loading such a file re-derives
+     * positions by running the sorter rather than by reading them back.
+     */
+    public static String toJson(AiScript script, boolean omitPositions) {
         JsonObject root = new JsonObject();
         root.addProperty("version", script.version());
         root.addProperty("name", script.name());
+        if (omitPositions) root.addProperty("sorted", true);
 
         JsonArray vars = new JsonArray();
         for (VarDecl v : script.variables()) {
@@ -117,7 +134,7 @@ public final class AiScriptIO {
 
         JsonArray blocks = new JsonArray();
         for (BlockInstance b : script.blocks().values()) {
-            blocks.add(blockToJson(b));
+            blocks.add(blockToJson(b, omitPositions));
         }
         root.add("blocks", blocks);
 
@@ -157,7 +174,7 @@ public final class AiScriptIO {
         Set<Integer> expanded = new HashSet<>(ids);
         for (int id : ids) {
             BlockInstance b = s.block(id);
-            if (b != null && b.pairedId() >= 0 && !refsOwner(b.type())) {
+            if (b != null && b.pairedId() >= 0 && !b.type().refsOwner()) {
                 expanded.add(b.pairedId());
             }
         }
@@ -227,19 +244,11 @@ public final class AiScriptIO {
             Integer mapped = idMap.get(nb.pairedId());
             if (mapped != null) {
                 nb.setPairedId(mapped);
-            } else if (!refsOwner(nb.type()) || s.block(nb.pairedId()) == null) {
+            } else if (!nb.type().refsOwner() || s.block(nb.pairedId()) == null) {
                 nb.setPairedId(-1);
             }
         }
         return newTop;
-    }
-
-    /**
-     * These types point pairedId at an owning block rather than a matching half, so copying one must
-     * not drag its owner along, and pasting one alone keeps it bound to the original owner.
-     */
-    private static boolean refsOwner(BlockType type) {
-        return type == BlockType.LOOP_ITER || type == BlockType.FUNC_PARAM;
     }
 
     private static BlockInstance cloneWithNewIds(BlockInstance src, AiScript s, double dx, double dy,
@@ -382,11 +391,17 @@ public final class AiScriptIO {
     }
 
     private static JsonObject blockToJson(BlockInstance b) {
+        return blockToJson(b, false);
+    }
+
+    private static JsonObject blockToJson(BlockInstance b, boolean omitPositions) {
         JsonObject o = new JsonObject();
         o.addProperty("id", b.id());
         o.addProperty("type", b.type().name());
-        o.addProperty("x", b.x());
-        o.addProperty("y", b.y());
+        if (!omitPositions) {
+            o.addProperty("x", b.x());
+            o.addProperty("y", b.y());
+        }
         if (b.pairedId() >= 0) o.addProperty("pairedId", b.pairedId());
         JsonObject params = new JsonObject();
         for (Map.Entry<String, Object> e : b.params().entrySet()) {
@@ -396,11 +411,20 @@ public final class AiScriptIO {
         if (!b.reporterParams().isEmpty()) {
             JsonObject reps = new JsonObject();
             for (Map.Entry<String, BlockInstance> e : b.reporterParams().entrySet()) {
-                reps.add(e.getKey(), blockToJson(e.getValue()));
+                reps.add(e.getKey(), blockToJson(e.getValue(), omitPositions));
             }
             o.add("reporters", reps);
         }
         return o;
+    }
+
+    public static boolean wasSorted(String json) {
+        try {
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            return root.has("sorted") && root.get("sorted").getAsBoolean();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static BlockInstance blockFromJson(JsonObject o) {
@@ -469,6 +493,12 @@ public final class AiScriptIO {
             Object mx = b.getParam("max");
             boolean isMax = mx instanceof Boolean bb ? bb : Boolean.parseBoolean(String.valueOf(mx));
             b.setParam("mode", isMax ? "max" : "single");
+        }
+        if (type == BlockType.CONTAINS && b.getParam("checkCase") == null && b.getParam("ci") != null) {
+            Object ci = b.getParam("ci");
+            boolean insensitive = ci instanceof Boolean bb ? bb : Boolean.parseBoolean(String.valueOf(ci));
+            b.setParam("checkCase", !insensitive);
+            b.params().remove("ci");
         }
         if (o.has("reporters")) {
             for (Map.Entry<String, JsonElement> e : o.getAsJsonObject("reporters").entrySet()) {

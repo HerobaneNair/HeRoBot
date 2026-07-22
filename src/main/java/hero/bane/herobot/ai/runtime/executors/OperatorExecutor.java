@@ -91,23 +91,33 @@ public final class OperatorExecutor {
             return "≠".equals(ParamEval.evalString(b, "op", r, br)) != eq;
         });
         reporter.put(BlockType.LOGIC, (b, r, br) -> {
+            String op = ParamEval.evalString(b, "op", r, br);
             boolean a = ParamEval.evalBool(b, "a", r, br);
-            boolean bv = ParamEval.evalBool(b, "b", r, br);
-            return switch (ParamEval.evalString(b, "op", r, br)) {
-                case "or" -> a || bv;
-                case "xor" -> a ^ bv;
-                default -> a && bv;
+            return switch (op) {
+                case "or" -> a || ParamEval.evalBool(b, "b", r, br);
+                case "xor" -> a ^ ParamEval.evalBool(b, "b", r, br);
+                default -> a && ParamEval.evalBool(b, "b", r, br);
             };
         });
         reporter.put(BlockType.AND,(b, r, br) -> ParamEval.evalBool(b, "a", r, br) && ParamEval.evalBool(b, "b", r, br));
         reporter.put(BlockType.OR, (b, r, br) -> ParamEval.evalBool(b, "a", r, br) || ParamEval.evalBool(b, "b", r, br));
         reporter.put(BlockType.NOT,(b, r, br) -> !ParamEval.evalBool(b, "a", r, br));
+        reporter.put(BlockType.CONTAINS, (b, r, br) -> {
+            String a = ParamEval.evalString(b, "a", r, br);
+            String needle = ParamEval.evalString(b, "b", r, br);
+            if (a == null) a = "";
+            if (needle == null) needle = "";
+            if (!ParamEval.evalBool(b, "checkCase", r, br)) {
+                a = a.toLowerCase(java.util.Locale.ROOT);
+                needle = needle.toLowerCase(java.util.Locale.ROOT);
+            }
+            return a.contains(needle);
+        });
 
         reporter.put(BlockType.RANDOM_INT, (b, r, br) -> {
             int lo = ParamEval.evalInt(b, "min", r, br);
             int hi = ParamEval.evalInt(b, "max", r, br);
             if (hi < lo) { int t = lo; lo = hi; hi = t; }
-            // Widened: hi + 1 overflows to MIN_VALUE when max is Integer.MAX_VALUE.
             return (int) ThreadLocalRandom.current().nextLong(lo, (long) hi + 1);
         });
         reporter.put(BlockType.RANDOM_DOUBLE, (b, r, br) -> {

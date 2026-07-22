@@ -82,8 +82,8 @@ public final class VariablePanel {
 
     private List<Row> buildRows() {
         List<Row> rows = new ArrayList<>();
-        rows.add(new Row(K_ADD_VAR, -1, ""));
         rows.add(new Row(K_ADD_FOLDER, -1, ""));
+        rows.add(new Row(K_ADD_VAR, -1, ""));
         rows.add(new Row(K_ADD_FUNC, -1, ""));
         List<VarDecl> vars = script().variables();
         List<FuncDecl> funcs = script().functions();
@@ -190,7 +190,7 @@ public final class VariablePanel {
                 int indent = row.folder().isEmpty() ? 0 : 8;
                 if (hover) g.fill(x + 1, ry, x + w - 1, ry + ROW_H, 0x22FFFFFF);
                 if (indent > 0) g.fill(x + 3, ry, x + 4, ry + ROW_H, 0x339B6BEF);
-                String label = f.name() + "(" + f.arity() + ")";
+                String label = f.name() + " (" + f.numParams() + ")";
                 g.drawString(font, trim(label, w - 24 - indent), x + 4 + indent, ry + 3, FUNC_TEXT, false);
                 g.drawString(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
             }
@@ -485,7 +485,7 @@ public final class VariablePanel {
     private void addVariable() {
         List<VarDecl> vars = script().variables();
         String name = uniqueName("var" + (vars.size() + 1), "", -1);
-        vars.add(new VarDecl(name, VarType.BOOL, false));
+        vars.add(new VarDecl(name, VarType.INT, defaultFor(VarType.INT)));
     }
 
     private static String cleanVarName(String raw) {

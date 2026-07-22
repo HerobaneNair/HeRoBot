@@ -27,7 +27,7 @@ public final class BlockPalette {
     }
 
     private static final Set<BlockType> HIDDEN =
-            EnumSet.of(BlockType.AND, BlockType.OR, BlockType.LOOP_ITER, BlockType.FUNC_PARAM);
+            EnumSet.of(BlockType.AND, BlockType.OR);
 
     private static final double DRAG_SLOP = 6;
 
@@ -75,7 +75,8 @@ public final class BlockPalette {
         for (BlockCategory cat : order) {
             rows.add(new Row(null, cat.display(), cat.color(), cat));
             for (BlockDef def : BlockDefRegistry.all()) {
-                if (def.category() == cat && def.type() != BlockType.BLOCK_END && !HIDDEN.contains(def.type())) {
+                if (def.category() == cat && def.type() != BlockType.BLOCK_END
+                        && !HIDDEN.contains(def.type()) && !def.type().refsOwner()) {
                     rows.add(new Row(def.type(), paletteLabel(def), cat.color(), cat));
                 }
             }

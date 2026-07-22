@@ -21,9 +21,9 @@ public final class ScriptTransfer {
         if (active == screen) active = null;
     }
 
-    public static void upload(String name, AiScript script) {
+    public static void upload(String name, AiScript script, boolean omitPositions) {
         if (!ServerLink.canSend(AiUploadPayload.TYPE)) return;
-        byte[] data = ScriptCompression.compress(AiScriptIO.toJson(script));
+        byte[] data = ScriptCompression.compress(AiScriptIO.toJson(script, omitPositions));
         List<byte[]> chunks = ScriptCompression.chunk(data);
         int count = chunks.size();
         for (int i = 0; i < count; i++) {

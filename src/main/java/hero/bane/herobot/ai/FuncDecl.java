@@ -17,7 +17,7 @@ public record FuncDecl(String name, List<VarType> params, String folder) {
         return folder.isEmpty() ? name : folder + "/" + name;
     }
 
-    public int arity() {
+    public int numParams() {
         return params.size();
     }
 

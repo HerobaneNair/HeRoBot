@@ -31,16 +31,8 @@ public final class AiScriptRegistry {
         CACHE.put(name, script);
     }
 
-    public static synchronized AiScript getCached(String name) {
-        return CACHE.get(name);
-    }
-
     public static synchronized void invalidate(String name) {
         CACHE.remove(name);
-    }
-
-    public static synchronized void invalidateAll() {
-        CACHE.clear();
     }
 
     public static List<String> list(MinecraftServer server) {
@@ -110,14 +102,14 @@ public final class AiScriptRegistry {
         if (r != null) r.fireStart();
     }
 
-    public static void fireEvent(ServerPlayer player, hero.bane.herobot.ai.block.BlockType type) {
-        ScriptRunner r = RUNNERS.get(player.getUUID());
-        if (r != null) r.fireEvent(type);
-    }
-
     public static void markDamaged(ServerPlayer player) {
         ScriptRunner r = RUNNERS.get(player.getUUID());
         if (r != null) r.markDamaged();
+    }
+
+    public static void onChatMessage(ServerPlayer player, String message) {
+        ScriptRunner r = RUNNERS.get(player.getUUID());
+        if (r != null) r.enqueueChatMessage(message);
     }
 
     public static void markPathReached(ServerPlayer player) {

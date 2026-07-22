@@ -1,8 +1,13 @@
 package hero.bane.herobot.ai.block;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 public enum BlockType {
     START,
     ON_TOGGLE,
+    ON_MESSAGE,
+    MSG_TEXT,
 
     MOVE,
     STRAFE,
@@ -94,6 +99,7 @@ public enum BlockType {
     AND,
     OR,
     NOT,
+    CONTAINS,
     RANDOM_INT,
     RANDOM_DOUBLE,
 
@@ -112,5 +118,12 @@ public enum BlockType {
 
     FUNC_DEFINE,
     FUNC_CALL,
-    FUNC_PARAM
+    FUNC_PARAM;
+
+    private static final Set<BlockType> OWNER_REFS =
+            EnumSet.of(LOOP_ITER, FUNC_PARAM, MSG_TEXT);
+
+    public boolean refsOwner() {
+        return OWNER_REFS.contains(this);
+    }
 }

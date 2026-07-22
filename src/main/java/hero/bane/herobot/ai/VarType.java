@@ -1,9 +1,9 @@
 package hero.bane.herobot.ai;
 
 public enum VarType {
-    BOOL,
     INT,
     DOUBLE,
+    BOOL,
     POSITION,
     ROTATION,
     STRING,

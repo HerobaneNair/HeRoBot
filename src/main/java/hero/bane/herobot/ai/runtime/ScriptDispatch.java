@@ -21,7 +21,7 @@ public final class ScriptDispatch {
     private static final Map<BlockType, Reporter> REPORTER = new EnumMap<>(BlockType.class);
 
     static {
-        EventExecutor.register(FLOW);
+        EventExecutor.register(FLOW, REPORTER);
         MotionExecutor.register(FLOW);
         ActionExecutor.register(FLOW);
         LookExecutor.register(FLOW);

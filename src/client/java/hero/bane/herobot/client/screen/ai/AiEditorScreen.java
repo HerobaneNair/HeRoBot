@@ -52,6 +52,8 @@ public final class AiEditorScreen extends Screen {
     private String loadFailedName;
     private int autosaveTicks;
     private String lastSavedJson;
+    private boolean positionsSorted;
+    private boolean pendingTidyOnInit;
     private static final String TUTORIAL_URL = "https://www.youtube.com/playlist?list=PLPbpz2d-OZK8";
 
     private BlockType paletteDragType;
@@ -114,6 +116,8 @@ public final class AiEditorScreen extends Screen {
         if (draft != null) {
             try {
                 this.script = AiScriptIO.fromJson(draft, "untitled");
+                positionsSorted = AiScriptIO.wasSorted(draft);
+                pendingTidyOnInit = positionsSorted;
             } catch (RuntimeException ignored) {
             }
         }
@@ -122,7 +126,7 @@ public final class AiEditorScreen extends Screen {
 
     private String snapshotJson() {
         try {
-            return AiScriptIO.toJson(script);
+            return AiScriptIO.toJson(script, positionsSorted);
         } catch (RuntimeException e) {
             return null;
         }
@@ -196,6 +200,11 @@ public final class AiEditorScreen extends Screen {
         rightRegion.mode = EditorPrefs.rightPanelMode();
         leftCollapsed = leftRegion.collapsed();
         rightCollapsed = rightRegion.collapsed();
+
+        if (pendingTidyOnInit) {
+            BlockSorter.tidy(script, font);
+            pendingTidyOnInit = false;
+        }
 
         relayout();
     }
@@ -329,6 +338,7 @@ public final class AiEditorScreen extends Screen {
     }
 
     public void pushUndo() {
+        positionsSorted = false;
         undoStack.push(AiScriptIO.toJson(script));
         while (undoStack.size() > HISTORY_CAP) undoStack.removeLast();
         redoStack.clear();
@@ -429,7 +439,6 @@ public final class AiEditorScreen extends Screen {
         }
     }
 
-    /** Drops a call block, or a define block when the function has no definition yet. */
     public void dropFunctionBlock(String qualifiedName, double screenX, double screenY) {
         if (!canvas.inside(screenX, screenY)) return;
         if (script.function(qualifiedName) == null) return;
@@ -478,7 +487,7 @@ public final class AiEditorScreen extends Screen {
 
     public void saveScript() {
         if (isUnnamed()) { saveScriptAs(); return; }
-        ScriptTransfer.upload(script.name(), script);
+        ScriptTransfer.upload(script.name(), script, positionsSorted);
         toolbar.flashFile();
         autosaveTicks = 0;
         lastSavedJson = snapshotJson();
@@ -494,7 +503,7 @@ public final class AiEditorScreen extends Screen {
                 return;
             }
             script.setName(cleaned);
-            ScriptTransfer.upload(script.name(), script);
+            ScriptTransfer.upload(script.name(), script, positionsSorted);
             toolbar.flashFile();
             autosaveTicks = 0;
             lastSavedJson = snapshotJson();
@@ -512,7 +521,7 @@ public final class AiEditorScreen extends Screen {
             return;
         }
         persistDraft();
-        ScriptTransfer.upload(script.name(), script);
+        ScriptTransfer.upload(script.name(), script, positionsSorted);
         toolbar.flashFile();
         setStatus("Autosaved '" + script.name() + "'", 80, 20);
     }
@@ -681,12 +690,12 @@ public final class AiEditorScreen extends Screen {
             {"Ctrl+Click", "Add/remove from selection"},
             {"Double-Click comment", "Edit comment text"},
             {"Left Drag port", "Connect two ports together"},
-            {"Double-Click port", "Auto-connect that port to the nearest valid one"},
-            {"Sidebar Toggle", "Cycle expanded/collapsed sidebar"},
-            {"Shift+Sidebar Toggle", "Show sidebar on hover mode"},
+            {"Double-Click port/block", "Auto-connect that port/all of that block's ports to the nearest valid one"},
+            {"Sidebar Toggle", "Expand/Collapse sidebar"},
+            {"Shift+Sidebar Toggle", "Switch to showing sidebar only on hover"},
             {"Right Click", "Open context [right click] menu"},
-            {"Shift+Right Click", "Spawn a comet randomly"},
-            {"Shift+Right Drag", "Spawn a stream of comets"},
+            {"Shift+Right Click", "Randomly spot a comet"},
+            {"Shift+Right Drag", "Witness a meteor shower"},
             {"Scroll", "Zoom"},
     };
 
@@ -738,7 +747,7 @@ public final class AiEditorScreen extends Screen {
             if (target == null || target.isBlank()) return;
             runTarget = target.trim();
             if (isUnnamed()) { saveScriptAs(); return; }
-            ScriptTransfer.upload(script.name(), script);
+            ScriptTransfer.upload(script.name(), script, positionsSorted);
             var connection = Minecraft.getInstance().getConnection();
             if (connection != null) {
                 connection.sendCommand("player " + runTarget + " ai set " + script.name());
@@ -749,6 +758,7 @@ public final class AiEditorScreen extends Screen {
 
     public void sortBlocks() {
         BlockSorter.tidy(script, font);
+        positionsSorted = true;
         select(-1);
         canvas.fitView();
         toolbar.flashSort();
@@ -864,6 +874,80 @@ public final class AiEditorScreen extends Screen {
         BlockInstance iter = script.addBlock(BlockType.LOOP_ITER, worldX, worldY);
         iter.setPairedId(loop.id());
         return iter;
+    }
+
+    public BlockInstance spawnMessageRef(BlockInstance hat, double worldX, double worldY) {
+        if (hat.type() != BlockType.ON_MESSAGE) return null;
+        pushUndo();
+        BlockInstance ref = script.addBlock(BlockType.MSG_TEXT, worldX, worldY);
+        ref.setPairedId(hat.id());
+        return ref;
+    }
+
+    public void cycleVarBlock(BlockInstance b) {
+        BlockType next = switch (b.type()) {
+            case SET_VAR -> BlockType.CHANGE_VAR;
+            case CHANGE_VAR -> BlockType.READ_VAR;
+            case READ_VAR -> BlockType.SET_VAR;
+            default -> null;
+        };
+        if (next == null) return;
+        pushUndo();
+        replaceVarBlock(b, next);
+    }
+
+    private void replaceVarBlock(BlockInstance old, BlockType next) {
+        boolean topLevel = script.blocks().containsKey(old.id());
+        ejectReporters(old);
+        double x = old.x(), y = old.y();
+        if (!topLevel) {
+            BlockInstance parent = detachFromParent(old);
+            if (parent != null) { x = parent.x() + 24; y = parent.y() + 40; }
+        }
+        BlockInstance nb = new BlockInstance(old.id(), next, x, y);
+        Object name = old.getParam("name");
+        if (name != null) nb.setParam("name", name);
+        for (ParamSlot s : EffectiveSlots.forBlock(nb, script)) {
+            if (!s.name().equals("name")) nb.setParam(s.name(), s.defaultValue());
+        }
+        script.blocks().put(nb.id(), nb);
+        if (BlockDefRegistry.get(next).isReporter()) {
+            script.wires().removeIf(w -> w.fromBlockId() == nb.id() || w.toBlockId() == nb.id());
+        }
+        select(nb.id());
+    }
+
+    private void ejectReporters(BlockInstance b) {
+        int step = 0;
+        for (BlockInstance child : new ArrayList<>(b.reporterParams().values())) {
+            step += 24;
+            child.setPos(b.x() + step, b.y() + step);
+            script.putBlock(child);
+        }
+        b.reporterParams().clear();
+    }
+
+    private BlockInstance detachFromParent(BlockInstance target) {
+        for (BlockInstance top : new ArrayList<>(script.blocks().values())) {
+            BlockInstance parent = detachFrom(top, target);
+            if (parent != null) return parent;
+        }
+        return null;
+    }
+
+    private BlockInstance detachFrom(BlockInstance host, BlockInstance target) {
+        for (String slot : new ArrayList<>(host.reporterParams().keySet())) {
+            BlockInstance child = host.getReporter(slot);
+            if (child == target) {
+                host.reporterParams().remove(slot);
+                return host;
+            }
+            if (child != null) {
+                BlockInstance p = detachFrom(child, target);
+                if (p != null) return p;
+            }
+        }
+        return null;
     }
 
     public void addCalcInput(BlockInstance b) {
@@ -1079,7 +1163,6 @@ public final class AiEditorScreen extends Screen {
         return script.function(EffectiveSlots.funcName(b));
     }
 
-    /** First declared function with no define block yet, or "" when every function is already defined. */
     private String freeFunctionName(int exceptBlockId) {
         Set<String> taken = new HashSet<>();
         for (BlockInstance b : script.blocks().values()) {
@@ -1101,7 +1184,6 @@ public final class AiEditorScreen extends Screen {
         return false;
     }
 
-    /** Re-run naming over every define block; call after the function list changes. */
     public void normalizeAllDefineNames() {
         List<Integer> ids = new ArrayList<>();
         for (BlockInstance b : script.blocks().values()) {
@@ -1110,7 +1192,6 @@ public final class AiEditorScreen extends Screen {
         normalizeDefineNames(ids);
     }
 
-    /** A function may only have one define block, so pasted or unnamed ones claim a free name instead. */
     public void normalizeDefineNames(List<Integer> ids) {
         for (int id : ids) {
             BlockInstance b = script.block(id);
@@ -1124,23 +1205,22 @@ public final class AiEditorScreen extends Screen {
 
     public void addFuncParam(BlockInstance b) {
         FuncDecl decl = declFor(b);
-        if (decl == null || decl.arity() >= EffectiveSlots.MAX_FUNC_PARAMS) return;
+        if (decl == null || decl.numParams() >= EffectiveSlots.MAX_FUNC_PARAMS) return;
         pushUndo();
         setFunction(decl, decl.withParamAdded(VarType.INT));
     }
 
     public void removeLastFuncParam(BlockInstance b) {
         FuncDecl decl = declFor(b);
-        if (decl == null || decl.arity() == 0) return;
+        if (decl == null || decl.numParams() == 0) return;
         pushUndo();
-        int last = decl.arity() - 1;
+        int last = decl.numParams() - 1;
         setFunction(decl, decl.withParamRemoved(last));
         dropFuncParamRefs(decl.qualifiedName(), last);
         dropArgValues(decl.qualifiedName(), last);
         refitAllReporters();
     }
 
-    /** Remove every reference chip for inputs that no longer exist. */
     private void dropFuncParamRefs(String func, int fromIndex) {
         List<Integer> gone = new ArrayList<>();
         for (BlockInstance b : script.blocks().values()) {
@@ -1163,23 +1243,22 @@ public final class AiEditorScreen extends Screen {
         }
     }
 
-    /** Deleting a define block takes its reference chips with it. */
-    private void dropFuncParams(int defineId) {
+    private void dropOwnedRefs(int ownerId) {
         List<Integer> gone = new ArrayList<>();
         for (BlockInstance b : script.blocks().values()) {
-            if (b.type() == BlockType.FUNC_PARAM && b.pairedId() == defineId) gone.add(b.id());
-            else pruneNestedParams(b, defineId);
+            if (b.type().refsOwner() && b.pairedId() == ownerId) gone.add(b.id());
+            else pruneNestedOwnedRefs(b, ownerId);
         }
         for (int id : gone) deleteBlock(id);
     }
 
-    private void pruneNestedParams(BlockInstance host, int defineId) {
+    private void pruneNestedOwnedRefs(BlockInstance host, int ownerId) {
         host.reporterParams().entrySet().removeIf(e -> {
             BlockInstance child = e.getValue();
-            return child != null && child.type() == BlockType.FUNC_PARAM && child.pairedId() == defineId;
+            return child != null && child.type().refsOwner() && child.pairedId() == ownerId;
         });
         for (BlockInstance child : host.reporterParams().values()) {
-            if (child != null) pruneNestedParams(child, defineId);
+            if (child != null) pruneNestedOwnedRefs(child, ownerId);
         }
     }
 
@@ -1196,7 +1275,6 @@ public final class AiEditorScreen extends Screen {
         if (i >= 0) script.functions().set(i, next);
     }
 
-    /** Drop stored call arguments past the new arity; refitAllReporters pops any nested blocks out. */
     private void dropArgValues(String func, int newArity) {
         for (BlockInstance b : script.blocks().values()) {
             if (b.type() != BlockType.FUNC_CALL || !func.equals(b.getParam("name"))) continue;
@@ -1212,7 +1290,7 @@ public final class AiEditorScreen extends Screen {
 
     public BlockInstance spawnFuncParam(BlockInstance define, int index, double worldX, double worldY) {
         FuncDecl decl = declFor(define);
-        if (decl == null || index < 0 || index >= decl.arity()) return null;
+        if (decl == null || index < 0 || index >= decl.numParams()) return null;
         pushUndo();
         BlockInstance nb = createBlockAt(BlockType.FUNC_PARAM, worldX, worldY);
         nb.setParam("func", decl.qualifiedName());
@@ -1433,11 +1511,8 @@ public final class AiEditorScreen extends Screen {
 
     public void deleteBlock(int id) {
         BlockInstance b = script.block(id);
-        // LOOP_ITER and FUNC_PARAM point pairedId at their owner, so they must not cascade into it.
-        int paired = b != null && b.type() != BlockType.LOOP_ITER && b.type() != BlockType.FUNC_PARAM
-                ? b.pairedId() : -1;
-        if (b != null && EffectiveSlots.isLoopBlock(b.type())) dropLoopIterators(id);
-        if (b != null && b.type() == BlockType.FUNC_DEFINE) dropFuncParams(id);
+        int paired = b != null && !b.type().refsOwner() ? b.pairedId() : -1;
+        if (b != null) dropOwnedRefs(id);
         script.comments().removeIf(c -> c.attachedTo() == id);
         script.wires().removeIf(w -> w.fromBlockId() == id || w.toBlockId() == id);
         script.removeBlock(id);
@@ -1447,25 +1522,6 @@ public final class AiEditorScreen extends Screen {
             BlockInstance pb = script.block(paired);
             pb.setPairedId(-1);
             deleteBlock(paired);
-        }
-    }
-
-    private void dropLoopIterators(int loopId) {
-        List<Integer> orphans = new ArrayList<>();
-        for (BlockInstance b : script.blocks().values()) {
-            if (b.type() == BlockType.LOOP_ITER && b.pairedId() == loopId) orphans.add(b.id());
-            else pruneNestedIterators(b, loopId);
-        }
-        for (int id : orphans) deleteBlock(id);
-    }
-
-    private void pruneNestedIterators(BlockInstance host, int loopId) {
-        host.reporterParams().entrySet().removeIf(e -> {
-            BlockInstance child = e.getValue();
-            return child != null && child.type() == BlockType.LOOP_ITER && child.pairedId() == loopId;
-        });
-        for (BlockInstance child : host.reporterParams().values()) {
-            if (child != null) pruneNestedIterators(child, loopId);
         }
     }
 
@@ -1489,6 +1545,8 @@ public final class AiEditorScreen extends Screen {
                 selectMany(ids, false);
             } else {
                 this.script = AiScriptIO.fromJson(json, name);
+                positionsSorted = AiScriptIO.wasSorted(json);
+                if (positionsSorted) BlockSorter.tidy(script, font);
                 select(-1);
                 lastSavedJson = snapshotJson();
             }
@@ -1907,7 +1965,7 @@ public final class AiEditorScreen extends Screen {
             EditorDraft.clear();
         } else {
             try {
-                EditorDraft.save(AiScriptIO.toJson(script));
+                EditorDraft.save(AiScriptIO.toJson(script, positionsSorted));
             } catch (RuntimeException ignored) {
             }
         }

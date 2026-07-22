@@ -10,7 +10,7 @@ public final class StrEval {
     public static final String OPS_LEGEND =
             "\"text\"  +  {var}  Input1";
     public static final String OPS_LEGEND_2 =
-            "[start:stop:step]  [::-1]  \\{ escapes";
+            "[start:stop:step]  [::-1]  .strip()  \\{ escapes";
 
     @FunctionalInterface
     public interface Expr {
@@ -133,13 +133,34 @@ public final class StrEval {
             Expr v = atom();
             while (true) {
                 skipWs();
-                if (peek() == '[') {
+                char c = peek();
+                if (c == '[') {
                     v = sliceOf(v);
+                } else if (c == '.') {
+                    v = methodOf(v);
                 } else {
                     break;
                 }
             }
             return v;
+        }
+
+        Expr methodOf(Expr base) {
+            pos++;
+            int start = pos;
+            while (pos < input.length() && Character.isLetter(input.charAt(pos))) pos++;
+            String name = input.substring(start, pos);
+            skipWs();
+            if (peek() == '(') pos++;
+            else if (strict) throw new RuntimeException("expected ( after ." + name);
+            skipWs();
+            if (peek() == ')') pos++;
+            else if (strict) throw new RuntimeException("expected ) after ." + name + "(");
+            if (name.equals("strip")) {
+                return vars -> base.eval(vars).strip();
+            }
+            if (strict) throw new RuntimeException("unknown method: " + name);
+            return base;
         }
 
         Expr atom() {

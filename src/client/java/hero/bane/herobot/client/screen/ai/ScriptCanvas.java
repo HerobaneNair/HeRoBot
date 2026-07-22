@@ -667,6 +667,7 @@ public final class ScriptCanvas {
             if (t.id() == fromId) continue;
             BlockRenderer.Layout tl = layout(t);
             if (!tl.hasInput) continue;
+            if (t.type() == BlockType.ELSE_IF && inputHasWire(t.id())) continue;
             if (!facing(side, p[0], p[1], tl.inX, tl.inY)) continue;
             if (!wireAllowed(fromId, port, t.id())) continue;
             double d = Math.hypot(tl.inX - p[0], tl.inY - p[1]);
@@ -682,6 +683,7 @@ public final class ScriptCanvas {
         if (to == null) return false;
         BlockRenderer.Layout tl = layout(to);
         if (!tl.hasInput) return false;
+        if (to.type() == BlockType.ELSE_IF && inputHasWire(toId)) return false;
 
         int bestId = -1;
         int bestPort = -1;
@@ -707,6 +709,10 @@ public final class ScriptCanvas {
         if (L.hasInput && !inputHasWire(b.id())) connectNearestFromInput(b.id());
         for (int i = 0; i < L.outPorts.size(); i++) {
             if (!outPortHasWire(b.id(), i)) connectNearestFromOutput(b.id(), i);
+        }
+        if (AiEditorScreen.isContainer(b.type()) && b.pairedId() >= 0) {
+            BlockInstance end = script().block(b.pairedId());
+            if (end != null) connectNearestAllPorts(end);
         }
     }
 
@@ -758,6 +764,11 @@ public final class ScriptCanvas {
         while (!stack.isEmpty()) {
             int id = stack.pop();
             if (id == end.id() || !seen.add(id)) continue;
+            BlockInstance cur = script().block(id);
+            if (cur != null && AiEditorScreen.isContainer(cur.type()) && cur.pairedId() >= 0) {
+                if (cur.pairedId() == fromId) return true;
+                stack.push(cur.pairedId());
+            }
             for (Wire w : script().wires()) {
                 if (w.fromBlockId() != id) continue;
                 if (w.toBlockId() == fromId) return true;
@@ -916,17 +927,10 @@ public final class ScriptCanvas {
         ParamType slotType = slotType(host, slotName);
         BlockShape shape = BlockDefRegistry.get(reporter.type()).shape();
 
-        if (reporter.type() == BlockType.FUNC_PARAM && reporter.pairedId() >= 0) {
+        if (reporter.type().refsOwner() && reporter.pairedId() >= 0) {
             BlockInstance owner = topLevelOwner(host);
-            if (owner == null || !inFunctionBody(reporter.pairedId(), owner.id())) {
-                return "inputs only work inside their own function";
-            }
-        }
-
-        if (reporter.type() == BlockType.LOOP_ITER && reporter.pairedId() >= 0) {
-            BlockInstance owner = topLevelOwner(host);
-            if (owner == null || !inLoopBody(reporter.pairedId(), owner.id())) {
-                return "iterators only work inside their own loop";
+            if (owner == null || !inOwnerScope(reporter.pairedId(), owner.id())) {
+                return ownerRefError(reporter.type());
             }
         }
 
@@ -1019,13 +1023,30 @@ public final class ScriptCanvas {
         return false;
     }
 
-    /** Every block downstream of a define block's ports is that function's body. */
-    private boolean inFunctionBody(int defineId, int blockId) {
-        if (script().block(defineId) == null) return false;
+    /** An owner-ref chip is in scope when its host sits within the owner's body. */
+    private boolean inOwnerScope(int ownerId, int blockId) {
+        BlockInstance owner = script().block(ownerId);
+        if (owner != null && EffectiveSlots.isLoopBlock(owner.type())) {
+            return inLoopBody(ownerId, blockId);
+        }
+        return isDownstreamOf(ownerId, blockId);
+    }
+
+    private static String ownerRefError(BlockType type) {
+        return switch (type) {
+            case LOOP_ITER -> "iterators only work inside their own loop";
+            case FUNC_PARAM -> "inputs only work inside their own function";
+            case MSG_TEXT -> "message only works inside its On message block";
+            default -> "reference only works inside its owner";
+        };
+    }
+
+    private boolean isDownstreamOf(int fromId, int blockId) {
+        if (script().block(fromId) == null) return false;
         Set<Integer> seen = new HashSet<>();
         ArrayDeque<Integer> pending = new ArrayDeque<>();
-        seen.add(defineId);
-        pending.add(defineId);
+        seen.add(fromId);
+        pending.add(fromId);
         while (!pending.isEmpty()) {
             int cur = pending.poll();
             for (Wire w : script().wires()) {
@@ -1262,6 +1283,23 @@ public final class ScriptCanvas {
                 }
                 return true;
             }
+            int[] msgChip = hit.layout().msgChip;
+            if (msgChip != null && worldX >= msgChip[0] && worldX <= msgChip[0] + msgChip[2]
+                    && worldY >= msgChip[1] && worldY <= msgChip[1] + msgChip[3]) {
+                BlockInstance ref = host.spawnMessageRef(b, worldX, b.y() + hit.layout().h);
+                if (ref != null) {
+                    host.select(ref.id());
+                    beginBlockDrag(ref, worldX, worldY);
+                    dragDidSnapshot = true;
+                }
+                return true;
+            }
+            int[] cycle = hit.layout().cycleButton;
+            if (cycle != null && worldX >= cycle[0] && worldX <= cycle[0] + cycle[2]
+                    && worldY >= cycle[1] && worldY <= cycle[1] + cycle[3]) {
+                host.cycleVarBlock(b);
+                return true;
+            }
             for (BlockRenderer.ChipRect c : hit.layout().chips) {
                 if (c.contains(worldX, worldY)) {
                     ParamType pt = slotType(b, c.name());
@@ -1324,32 +1362,23 @@ public final class ScriptCanvas {
         snapshotGroup();
         dragGroup.putIfAbsent(grabbed.id(), new double[]{grabbed.x(), grabbed.y()});
         addPairedEnds();
-        snapIteratorsIntoBounds();
+        snapOwnedRefsIntoBounds();
     }
 
-    private void snapIteratorsIntoBounds() {
+    private void snapOwnedRefsIntoBounds() {
         for (Map.Entry<Integer, double[]> e : dragGroup.entrySet()) {
             BlockInstance b = script().block(e.getKey());
-            if (b == null) continue;
-            if (b.type() == BlockType.FUNC_PARAM) {
-                BlockInstance def = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
-                if (def == null || dragGroup.containsKey(def.id())) continue;
-                double minY = def.y() + layout(def).h;
-                if (b.y() >= minY) continue;
-                if (!dragDidSnapshot) { host.pushUndo(); dragDidSnapshot = true; }
-                b.setPos(b.x(), minY);
-                e.setValue(new double[]{b.x(), minY});
-                continue;
-            }
-            if (b.type() != BlockType.LOOP_ITER) continue;
-            BlockInstance loop = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
-            if (loop == null || dragGroup.containsKey(loop.id())) continue;
-            double minY = loop.y() + layout(loop).h;
+            if (b == null || !b.type().refsOwner()) continue;
+            BlockInstance owner = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
+            if (owner == null || dragGroup.containsKey(owner.id())) continue;
+            double minY = owner.y() + layout(owner).h;
             double y = Math.max(b.y(), minY);
-            BlockInstance end = endOfLoop(loop);
-            if (end != null && !dragGroup.containsKey(end.id())) {
-                double maxY = end.y() - layout(b).h;
-                y = maxY > minY ? Math.min(y, maxY) : minY;
+            if (EffectiveSlots.isLoopBlock(owner.type())) {
+                BlockInstance end = endOfLoop(owner);
+                if (end != null && !dragGroup.containsKey(end.id())) {
+                    double maxY = end.y() - layout(b).h;
+                    y = maxY > minY ? Math.min(y, maxY) : minY;
+                }
             }
             if (y == b.y()) continue;
             if (!dragDidSnapshot) { host.pushUndo(); dragDidSnapshot = true; }
@@ -1545,19 +1574,15 @@ public final class ScriptCanvas {
             BlockRenderer.Layout L = layout(b);
             double oy = e.getValue()[1];
             double inOff = L.inY - b.y();
-            if (b.type() == BlockType.FUNC_PARAM) {
-                BlockInstance def = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
-                if (def != null && !dragGroup.containsKey(def.id())) {
-                    lower = Math.max(lower, (def.y() + layout(def).h) - oy);
-                }
-            }
-            if (b.type() == BlockType.LOOP_ITER) {
-                BlockInstance loop = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
-                if (loop != null && !dragGroup.containsKey(loop.id())) {
-                    lower = Math.max(lower, (loop.y() + layout(loop).h) - oy);
-                    BlockInstance end = endOfLoop(loop);
-                    if (end != null && !dragGroup.containsKey(end.id())) {
-                        upper = Math.min(upper, (end.y() - L.h) - oy);
+            if (b.type().refsOwner()) {
+                BlockInstance owner = b.pairedId() >= 0 ? script().block(b.pairedId()) : null;
+                if (owner != null && !dragGroup.containsKey(owner.id())) {
+                    lower = Math.max(lower, (owner.y() + layout(owner).h) - oy);
+                    if (EffectiveSlots.isLoopBlock(owner.type())) {
+                        BlockInstance end = endOfLoop(owner);
+                        if (end != null && !dragGroup.containsKey(end.id())) {
+                            upper = Math.min(upper, (end.y() - L.h) - oy);
+                        }
                     }
                 }
             }
@@ -1674,8 +1699,7 @@ public final class ScriptCanvas {
                     handled = true;
                 }
             }
-            // A parameter reference only means anything plugged into a block; loose ones are discarded.
-            if (!nested && dragBlock.type() == BlockType.FUNC_PARAM) {
+            if (!nested && dragBlock.type().refsOwner()) {
                 host.deleteBlock(dragBlock.id());
                 handled = true;
             }

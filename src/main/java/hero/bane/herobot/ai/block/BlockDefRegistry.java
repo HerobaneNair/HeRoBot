@@ -48,6 +48,9 @@ public final class BlockDefRegistry {
 
         register(new BlockDef(BlockType.ON_TOGGLE, BlockCategory.EVENT, BlockShape.HAT, "when toggled true",
                 1, List.of(ParamSlot.ofBool("condition", false))));
+        register(new BlockDef(BlockType.ON_MESSAGE, BlockCategory.EVENT, BlockShape.HAT, "on message",
+                1, List.of()));
+        reporter(BlockType.MSG_TEXT, BlockCategory.EVENT, "message");
 
         stmt(BlockType.MOVE, BlockCategory.MOTION, "walk",
                 ParamSlot.ofEnum("direction", MOVE_DIRS, "forward"));
@@ -186,13 +189,13 @@ public final class BlockDefRegistry {
         register(new BlockDef(BlockType.SET_SCRIPT, BlockCategory.EVENT, BlockShape.STATEMENT, "run script",
                 0, List.of(ParamSlot.ofString("script", ""))));
 
-        stmt(BlockType.SET_VAR, BlockCategory.DATA, "set",
+        stmt(BlockType.SET_VAR, BlockCategory.VARIABLE, "set",
                 ParamSlot.ofVarRef("name", ""),
                 ParamSlot.ofDouble("value", 0.0));
-        stmt(BlockType.CHANGE_VAR, BlockCategory.DATA, "change",
+        stmt(BlockType.CHANGE_VAR, BlockCategory.VARIABLE, "change",
                 ParamSlot.ofVarRef("name", ""),
                 ParamSlot.ofDouble("delta", 1.0));
-        reporter(BlockType.READ_VAR, BlockCategory.DATA, "var",
+        reporter(BlockType.READ_VAR, BlockCategory.VARIABLE, "var",
                 ParamSlot.ofVarRef("name", ""));
 
         reporter(BlockType.SCOREBOARD, BlockCategory.SENSOR, "scoreboard",
@@ -259,6 +262,9 @@ public final class BlockDefRegistry {
                 ParamSlot.ofBool("b", false));
         bool(BlockType.NOT, BlockCategory.OPERATOR, "not",
                 ParamSlot.ofBool("a", false));
+        bool(BlockType.CONTAINS, BlockCategory.OPERATOR, "contains",
+                ParamSlot.ofString("a", ""), ParamSlot.ofString("b", ""),
+                ParamSlot.ofBool("checkCase", false));
         bool(BlockType.AND, BlockCategory.OPERATOR, "and",
                 ParamSlot.ofBool("a", false), ParamSlot.ofBool("b", false));
         bool(BlockType.OR, BlockCategory.OPERATOR, "or",

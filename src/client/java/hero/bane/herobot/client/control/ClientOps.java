@@ -129,8 +129,6 @@ public final class ClientOps {
             path.stop();
             path = null;
         }
-        // Back to defaults so the server's RemotePathSettings mirror, cleared on the same
-        // disconnect, keeps matching what this client actually has.
         pathSettings = new PathSettings();
     }
 

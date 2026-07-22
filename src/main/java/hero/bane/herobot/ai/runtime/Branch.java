@@ -13,6 +13,7 @@ public final class Branch {
 
     private int originId = -1;
     private int pathWaitFor = -1;
+    private String eventMessage;
     private final Deque<ControlFrame> frames = new ArrayDeque<>();
 
     public Branch(int startBlockId) {
@@ -47,6 +48,9 @@ public final class Branch {
     public int originId() { return originId; }
     public void setOriginId(int id) { this.originId = id; }
 
+    public String eventMessage() { return eventMessage; }
+    public void setEventMessage(String msg) { this.eventMessage = msg; }
+
     public int pathWaitFor() { return pathWaitFor; }
     public void setPathWaitFor(int id) { this.pathWaitFor = id; }
 
@@ -56,6 +60,7 @@ public final class Branch {
         Branch copy = new Branch(blockId);
         copy.originId = this.originId;
         copy.pathWaitFor = this.pathWaitFor;
+        copy.eventMessage = this.eventMessage;
         copy.turns = this.turns;
         copy.callsThisTick = this.callsThisTick;
         for (ControlFrame f : this.frames) {

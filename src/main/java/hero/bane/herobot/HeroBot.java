@@ -119,7 +119,7 @@ public class HeroBot implements ModInitializer {
                 try {
                     String json = ScriptCompression.decompress(full);
                     AiScript script = AiScriptIO.fromJson(json, payload.name());
-                    AiScriptIO.saveByName(server, payload.name(), script);
+                    AiScriptIO.saveByName(server, payload.name(), json);
                     AiScriptRegistry.put(payload.name(), script);
                     if (ANNOUNCED_SAVES.add(key)) {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
@@ -142,7 +142,9 @@ public class HeroBot implements ModInitializer {
                 try {
                     AiScript script = AiScriptRegistry.load(server, payload.name());
                     if (script == null) return;
-                    byte[] data = ScriptCompression.compress(AiScriptIO.toJson(script));
+                    String json = AiScriptIO.rawJsonByName(server, payload.name());
+                    if (json == null) return;
+                    byte[] data = ScriptCompression.compress(json);
                     java.util.List<byte[]> chunks = ScriptCompression.chunk(data);
                     int count = chunks.size();
                     for (int i = 0; i < count; i++) {

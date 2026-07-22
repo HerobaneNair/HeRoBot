@@ -29,6 +29,7 @@
     "ProjectileMixin",
     "RideCommandMixin",
     "ServerCommonPacketListenerImplAccessor",
+    "ServerCommonPacketListenerImplMixin",
     "ServerExplosionMixin",
     "ServerPlayerAccessor",
     "ServerPlayerMixin",

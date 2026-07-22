@@ -17,7 +17,7 @@ public final class VecEval {
     public static final String OPS_LEGEND =
             "pos(x,y,z)  dir(y,p)  +  -  *  /  %  ^";
     public static final String OPS_LEGEND_2 =
-            "climb(pos)  fall(pos)  floor(vector)  {var}  Input1  ~rel";
+            "climb(pos)  fall(pos)  floor(vector)  {var}  Input1  ~rel  ^local";
 
     public interface World {
         boolean isAir(int x, int y, int z);
@@ -96,6 +96,35 @@ public final class VecEval {
         if (v instanceof Number n) return new double[]{n.doubleValue()};
         if (v instanceof Boolean b) return new double[]{b ? 1 : 0};
         return new double[]{0};
+    }
+
+    /** Local (^left ^up ^forwards) offset relative to a yaw/pitch facing, matching vanilla carrot coordinates. */
+    static double[] localOffset(double yawDeg, double pitchDeg, double left, double up, double forwards) {
+        double f = Math.cos(Math.toRadians(yawDeg + 90.0));
+        double g = Math.sin(Math.toRadians(yawDeg + 90.0));
+        double h = Math.cos(Math.toRadians(-pitchDeg));
+        double i = Math.sin(Math.toRadians(-pitchDeg));
+        double j = Math.cos(Math.toRadians(-pitchDeg + 90.0));
+        double k = Math.sin(Math.toRadians(-pitchDeg + 90.0));
+        double[] fwdBasis = {f * h, i, g * h};
+        double[] upBasis = {f * j, k, g * j};
+        double[] leftBasis = cross(fwdBasis, upBasis);
+        leftBasis[0] = -leftBasis[0];
+        leftBasis[1] = -leftBasis[1];
+        leftBasis[2] = -leftBasis[2];
+        return new double[]{
+                fwdBasis[0] * forwards + upBasis[0] * up + leftBasis[0] * left,
+                fwdBasis[1] * forwards + upBasis[1] * up + leftBasis[1] * left,
+                fwdBasis[2] * forwards + upBasis[2] * up + leftBasis[2] * left
+        };
+    }
+
+    private static double[] cross(double[] a, double[] b) {
+        return new double[]{
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+        };
     }
 
     static double[] applyOp(double[] a, double[] b, DoubleBinaryOperator op) {
@@ -364,13 +393,14 @@ public final class VecEval {
             pos++; // consume '('
             List<Expr> parts = new ArrayList<>();
             List<Double> offsets = new ArrayList<>(); // null entry = plain expression argument
+            List<Double> carrots = new ArrayList<>(); // non-null entry = ^ local-space offset
             skipWs();
             if (peek() != ')') {
-                parseRelArg(parts, offsets);
+                parseRelArg(parts, offsets, carrots);
                 skipWs();
                 while (peek() == ',') {
                     pos++;
-                    parseRelArg(parts, offsets);
+                    parseRelArg(parts, offsets, carrots);
                     skipWs();
                 }
             }
@@ -379,25 +409,65 @@ public final class VecEval {
             if (strict && parts.size() != n) {
                 throw new RuntimeException((n == 3 ? "pos" : "dir") + " needs " + n + " numbers");
             }
+            int carrotCount = 0;
+            for (Double c : carrots) if (c != null) carrotCount++;
+            if (carrotCount > 0) {
+                if (strict && n != 3) throw new RuntimeException("^ local coordinates only work in pos calc");
+                if (strict && carrotCount != n) throw new RuntimeException("cannot mix ^ with ~ or absolute coordinates");
+            }
             Expr[] fns = parts.toArray(new Expr[0]);
             Double[] offs = offsets.toArray(new Double[0]);
+            Double[] cars = carrots.toArray(new Double[0]);
+            boolean usecarrot = carrotCount == n && n == 3;
             return new Node((vars, world) -> {
                 double[] out = new double[n];
+                if (usecarrot) {
+                    double left = cars.length > 0 && cars[0] != null ? cars[0] : 0;
+                    double up = cars.length > 1 && cars[1] != null ? cars[1] : 0;
+                    double forwards = cars.length > 2 && cars[2] != null ? cars[2] : 0;
+                    if (world == null) return new double[]{left, up, forwards};
+                    double yaw = world.base(0, true);
+                    double pitch = world.base(1, true);
+                    double[] local = localOffset(yaw, pitch, left, up, forwards);
+                    out[0] = world.base(0, false) + local[0];
+                    out[1] = world.base(1, false) + local[1];
+                    out[2] = world.base(2, false) + local[2];
+                    return out;
+                }
                 for (int i = 0; i < n && i < fns.length; i++) {
                     if (offs[i] != null) {
                         double basis = world == null ? 0 : world.base(i, rotation);
                         out[i] = basis + offs[i];
-                    } else {
+                    } else if (fns[i] != null) {
                         out[i] = fns[i].eval(vars, world)[0];
+                    } else {
+                        out[i] = 0;
                     }
                 }
                 return out;
             }, n);
         }
 
-        private void parseRelArg(List<Expr> parts, List<Double> offsets) {
+        private void parseRelArg(List<Expr> parts, List<Double> offsets, List<Double> carrots) {
             skipWs();
-            if (peek() == '~') {
+            if (peek() == '^') {
+                pos++;
+                double offset = 0;
+                char c = peek();
+                if (c == '-' || c == '+' || c == '.' || Character.isDigit(c)) {
+                    int start = pos;
+                    if (c == '-' || c == '+') pos++;
+                    while (pos < input.length() && (Character.isDigit(input.charAt(pos)) || input.charAt(pos) == '.')) pos++;
+                    try {
+                        offset = Double.parseDouble(input.substring(start, pos));
+                    } catch (NumberFormatException e) {
+                        if (strict) throw new RuntimeException("bad ^ offset");
+                    }
+                }
+                parts.add(null);
+                offsets.add(null);
+                carrots.add(offset);
+            } else if (peek() == '~') {
                 pos++;
                 double offset = 0;
                 char c = peek();
@@ -413,11 +483,13 @@ public final class VecEval {
                 }
                 parts.add(null);
                 offsets.add(offset);
+                carrots.add(null);
             } else {
                 Node arg = expr();
                 if (strict && arg.arity() > 1) throw new RuntimeException("arguments must be numbers");
                 parts.add(arg.fn());
                 offsets.add(null);
+                carrots.add(null);
             }
         }
 
