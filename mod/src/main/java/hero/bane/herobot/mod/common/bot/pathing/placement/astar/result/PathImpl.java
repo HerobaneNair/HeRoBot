@@ -1,0 +1,53 @@
+package hero.bane.herobot.mod.common.bot.pathing.placement.astar.result;
+
+import hero.bane.herobot.mod.common.bot.pathing.placement.astar.api.pathing.result.Path;
+import hero.bane.herobot.mod.common.bot.pathing.placement.astar.api.wrapper.PathPosition;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.function.Consumer;
+
+public class PathImpl implements Path {
+  private final Collection<PathPosition> positions;
+  private final PathPosition start;
+  private final PathPosition end;
+
+  private final int length;
+
+  public PathImpl(PathPosition start, PathPosition end, Collection<PathPosition> positions) {
+    this.start = start;
+    this.end = end;
+    this.positions = positions;
+    this.length = positions.size();
+  }
+
+  @Override
+  public PathPosition getStart() {
+    return start;
+  }
+
+  @Override
+  public PathPosition getEnd() {
+    return end;
+  }
+
+  @Override
+  public Iterator<PathPosition> iterator() {
+    return positions.iterator();
+  }
+
+  @Override
+  public void forEach(Consumer<? super PathPosition> action) {
+    positions.forEach(action);
+  }
+
+  @Override
+  public int length() {
+    return length;
+  }
+
+  @Override
+  public Collection<PathPosition> collect() {
+    return new ArrayList<>(positions);
+  }
+}
