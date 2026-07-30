@@ -17,4 +17,4 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 rootProject.name = "HeroBot"
 
-include(":common", ":mod", ":plugin")
+include(":herobot-common", ":herobot-mod", ":herobot-plugin")

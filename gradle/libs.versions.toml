@@ -12,6 +12,9 @@ carpet = "1.4.194"
 paper = "1.21.11-R0.1-SNAPSHOT"
 paperweight = "2.0.0-beta.21"
 
+# Shared libraries
+pathetic = "5.5.2"
+
 jetbrains-annotations = "26.0.2-1"
 
 # Build plugins resolved through build-logic
@@ -26,6 +29,9 @@ fabric-api = { group = "net.fabricmc.fabric-api", name = "fabric-api", version.r
 carpet = { group = "maven.modrinth", name = "carpet", version.ref = "carpet" }
 
 paper-api = { group = "io.papermc.paper", name = "paper-api", version.ref = "paper" }
+
+pathetic-api = { group = "de.bsommerfeld.pathetic", name = "api", version.ref = "pathetic" }
+pathetic-engine = { group = "de.bsommerfeld.pathetic", name = "engine", version.ref = "pathetic" }
 
 jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrains-annotations" }
 

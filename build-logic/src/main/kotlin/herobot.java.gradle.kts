@@ -22,8 +22,6 @@ java {
 
 tasks {
     withType<JavaCompile>().configureEach {
-        // Keep encoding pinned regardless of the platform default; without it some
-        // special characters in sources are mangled.
         options.encoding = Charsets.UTF_8.name()
         options.release = javaVersion
     }
