@@ -9,6 +9,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hero.bane.herobot.HeroBotSettings;
+import hero.bane.herobot.ai.block.BlockDefRegistry;
 import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
@@ -16,6 +17,8 @@ import hero.bane.herobot.command.helper.*;
 import hero.bane.herobot.control.PlayerController;
 import hero.bane.herobot.control.PlayerControllers;
 import hero.bane.herobot.mixin.ServerCommonPacketListenerImplAccessor;
+import hero.bane.herobot.util.BlockBreakTasks;
+import hero.bane.herobot.util.BlockBreaker;
 import hero.bane.herobot.util.BlockPlacer;
 import hero.bane.herobot.util.ItemCooldown;
 import net.minecraft.commands.CommandBuildContext;
@@ -49,9 +52,17 @@ public class PlayerCommand {
                                 .suggests((c, b) -> mergedTargetSuggestions(targetsArg, c, b))
 
                                 .then(Commands.literal("stop")
-                                        .executes(CommandHelper.control(PlayerController::stopAll)))
+                                        .executes(c -> {
+                                            AiSubtree.stopQuietly(c);
+                                            for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
+                                                BlockBreakTasks.cancel(p);
+                                            }
+                                            return CommandHelper.control(c, PlayerController::stopAll);
+                                        }))
 
-                                .then(makeActionCommand("use", ActionType.USE))
+                                .then(makeActionCommand("use", ActionType.USE)
+                                        .then(Commands.literal("twice")
+                                                .executes(CommandHelper.control(ap -> ap.start(ActionType.USE, Action.once(2))))))
                                 .then(makeActionCommand("swing", ActionType.SWING))
                                 .then(makeActionCommand("jump", ActionType.JUMP))
                                 .then(makeActionCommand("attack", ActionType.ATTACK)
@@ -61,6 +72,7 @@ public class PlayerCommand {
                                 .then(makeActionCommand("dropStack", ActionType.DROP_STACK))
                                 .then(makeActionCommand("swapHands", ActionType.SWAP_HANDS))
                                 .then(makePlaceCommand())
+                                .then(makeBreakCommand())
 
                                 .then(Commands.literal("itemCd")
                                         .executes(ItemCooldown::itemCdClearAll)
@@ -177,24 +189,41 @@ public class PlayerCommand {
                 (entity, names) -> Suggestions.merge(context.getInput(), List.of(entity, names)));
     }
 
-    private static final String[] PLACE_FACES = {"north", "south", "east", "west", "up", "down", "any"};
-
     private static LiteralArgumentBuilder<CommandSourceStack> makePlaceCommand() {
         var pos = Commands.argument("position", Vec3Argument.vec3())
-                .executes(c -> doPlace(c, "any"));
-        for (String face : PLACE_FACES) {
-            pos.then(Commands.literal(face).executes(c -> doPlace(c, face)));
+                .executes(c -> doPlace(c, "any", false))
+                .then(Commands.literal("force").executes(c -> doPlace(c, "any", true)));
+        for (String face : BlockDefRegistry.FACES) {
+            pos.then(Commands.literal(face)
+                    .executes(c -> doPlace(c, face, false))
+                    .then(Commands.literal("force").executes(c -> doPlace(c, face, true))));
         }
         return Commands.literal("place").then(pos);
     }
 
-    private static int doPlace(CommandContext<CommandSourceStack> c, String face) throws CommandSyntaxException {
+    private static int doPlace(CommandContext<CommandSourceStack> c, String face, boolean force) throws CommandSyntaxException {
         Vec3 pos = Vec3Argument.getVec3(c, "position");
         int placed = 0;
         for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
-            if (BlockPlacer.place(p, pos, face)) placed++;
+            if (BlockPlacer.place(p, pos, face, force)) placed++;
         }
         return placed;
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> makeBreakCommand() {
+        var pos = Commands.argument("position", Vec3Argument.vec3())
+                .executes(c -> doBreak(c, false))
+                .then(Commands.literal("force").executes(c -> doBreak(c, true)));
+        return Commands.literal("break").then(pos);
+    }
+
+    private static int doBreak(CommandContext<CommandSourceStack> c, boolean force) throws CommandSyntaxException {
+        Vec3 pos = Vec3Argument.getVec3(c, "position");
+        int started = 0;
+        for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
+            if (BlockBreaker.start(p, pos, force)) started++;
+        }
+        return started;
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> makeActionCommand(String name, ActionType type) {

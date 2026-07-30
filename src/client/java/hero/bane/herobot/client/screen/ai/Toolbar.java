@@ -33,6 +33,7 @@ public final class Toolbar {
     }
 
     private static final int FLASH_TICKS = 8;
+    private static final int SORT_FLASH = 0xFFFF7F27;
 
     private final Font font;
     private final AiEditorScreen host;
@@ -59,7 +60,7 @@ public final class Toolbar {
                 new Item("Paste JSON", host::pasteJson),
                 new Item("Delete", host::deleteDialog)));
         entries.add(fileEntry);
-        sortEntry = new Entry("Sort", 0xFFD8842C, host::sortBlocks, null);
+        sortEntry = new Entry("Sort", 0xFFD8842C, host::sortPressed, null);
         entries.add(sortEntry);
         entries.add(new Entry("Record", 0xFFD84C4C, host::startRecording, null));
         entries.add(new Entry("Shortcuts", 0xFF9B54C6, host::openShortcuts, null));
@@ -112,12 +113,15 @@ public final class Toolbar {
             if (e == fileEntry && fileFlash > 0) {
                 base = blend(e.color, 0xFFFFD24A, fileFlash / (float) FLASH_TICKS);
             } else if (e == sortEntry && sortFlash > 0) {
-                base = blend(e.color, 0xFFFF7F27, sortFlash / (float) FLASH_TICKS);
+                base = blend(e.color, SORT_FLASH, sortFlash / (float) FLASH_TICKS);
             }
             int fill = hover ? brighten(base) : base;
+            int label = e == sortEntry
+                    ? blend(0xFFFFFFFF, SORT_FLASH, host.sortHoldProgress())
+                    : 0xFFFFFFFF;
             g.fill(e.x, 2, e.x + e.w, 20, fill);
             g.fill(e.x, 2, e.x + e.w, 3, brighten(fill));
-            g.drawString(font, e.label, e.x + 6, 7, 0xFFFFFFFF, false);
+            g.drawString(font, e.label, e.x + 6, 7, label, false);
         }
 
         String status = "Script: " + host.script().name();

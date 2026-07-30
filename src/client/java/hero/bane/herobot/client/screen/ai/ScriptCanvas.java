@@ -12,6 +12,7 @@ import hero.bane.herobot.ai.block.EffectiveSlots;
 import hero.bane.herobot.ai.block.ParamSlot;
 import hero.bane.herobot.ai.block.ParamType;
 import hero.bane.herobot.ai.block.Wire;
+import hero.bane.herobot.client.screen.ai.starfield.PixelBatch;
 import hero.bane.herobot.client.screen.ai.starfield.StarField;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -33,6 +34,12 @@ import java.util.Set;
 public final class ScriptCanvas {
     private final AiEditorScreen host;
     private final Font font;
+
+    private static final double MIN_ZOOM = 0.15;
+    private static final double MAX_ZOOM = 2.0;
+    private static final double ZOOM_STEP = 1.15;
+
+    private final PixelBatch gridBatch = new PixelBatch();
 
     private int left, top, right, bottom;
     private double panX = 60, panY = 60, zoom = 1.0;
@@ -118,7 +125,7 @@ public final class ScriptCanvas {
         minX -= pad; minY -= pad; maxX += pad; maxY += pad;
         double contentW = Math.max(1, maxX - minX), contentH = Math.max(1, maxY - minY);
         double z = Math.min((right - left) / contentW, (bottom - top) / contentH);
-        zoom = Math.clamp(z, 0.4, 2.0);
+        zoom = Math.clamp(z, MIN_ZOOM, MAX_ZOOM);
         double cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
         panX = (left + right) / 2.0 - cx * zoom;
         panY = (top + bottom) / 2.0 - cy * zoom;
@@ -175,6 +182,10 @@ public final class ScriptCanvas {
 
     public boolean isDraggingBlackHole() {
         return holeDrag;
+    }
+
+    public boolean isDraggingWire() {
+        return wireFromId >= 0;
     }
 
     public void deleteBlackHole() {
@@ -490,31 +501,55 @@ public final class ScriptCanvas {
 
     private static final double GRID_WARP_REACH = 6.0;
     private static final double GRID_WARP_STRENGTH = 5.0;
+    private static final int GRID_DOT_ALPHA = 0x20;
 
     private void drawGrid(GuiGraphics g) {
+        int alpha = (int) Math.round(GRID_DOT_ALPHA * StarField.gridVisibility(zoom));
+        if (alpha <= 0) return;
+        int argb = (alpha << 24) | 0xFFFFFF;
+
         int step = (int) Math.max(8, 40 * zoom);
         int startX = (int) (panX + Math.ceil((left - panX) / step) * step);
         int startY = (int) (panY + Math.ceil((top - panY) / step) * step);
+
         double[] bh = stars.blackHoleWarp();
+        boolean warp = bh != null && bh[2] > 0.5;
+        double cx = 0, cy = 0, hr = 0, reach = 0, hr2 = 0, reach2 = 0;
+        double wx0 = 0, wx1 = 0, wy0 = 0, wy1 = 0;
+        if (warp) {
+            cx = bh[0];
+            cy = bh[1];
+            hr = bh[2];
+            reach = hr * GRID_WARP_REACH;
+            hr2 = hr * hr;
+            reach2 = reach * reach;
+            wx0 = cx - reach;
+            wx1 = cx + reach;
+            wy0 = cy - reach;
+            wy1 = cy + reach;
+        }
+
+        gridBatch.begin(g, left, top, right, bottom);
         for (int x = startX; x < right; x += step) {
+            boolean colWarp = warp && x >= wx0 && x <= wx1;
             for (int y = startY; y < bottom; y += step) {
-                int px = x, py = y;
-                if (bh != null && bh[2] > 0.5) {
-                    double cx = bh[0], cy = bh[1], hr = bh[2];
+                if (colWarp && y >= wy0 && y <= wy1) {
                     double ddx = cx - x, ddy = cy - y;
-                    double dist = Math.hypot(ddx, ddy);
-                    double reach = hr * GRID_WARP_REACH;
-                    if (dist <= hr) continue;
-                    if (dist < reach) {
+                    double d2 = ddx * ddx + ddy * ddy;
+                    if (d2 <= hr2) continue;
+                    if (d2 < reach2) {
+                        double dist = Math.sqrt(d2);
                         double t = 1.0 - dist / reach;
                         double disp = Math.min(dist - hr, hr * GRID_WARP_STRENGTH * t * t);
-                        px = (int) Math.round(x + ddx / dist * disp);
-                        py = (int) Math.round(y + ddy / dist * disp);
+                        gridBatch.pixel((int) Math.round(x + ddx / dist * disp),
+                                (int) Math.round(y + ddy / dist * disp), argb);
+                        continue;
                     }
                 }
-                g.fill(px, py, px + 1, py + 1, 0x20FFFFFF);
+                gridBatch.pixel(x, y, argb);
             }
         }
+        gridBatch.submit(g);
     }
 
     private void drawWire(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
@@ -1188,6 +1223,15 @@ public final class ScriptCanvas {
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) { rightPressed = true; rightDownX = mx; rightDownY = my; return true; }
 
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && shift && doubled) {
+            Hit bypass = deepHit(worldX, worldY);
+            if (bypass != null && bypass.parent() == null) {
+                host.bypassBlock(bypass.block().id());
+                host.select(bypass.block().id());
+                return true;
+            }
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE
                 || (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && shift)) { panning = true; return true; }
 
@@ -1494,6 +1538,11 @@ public final class ScriptCanvas {
 
     public boolean mouseDragged(double mx, double my) {
         if (shiftRightSpawn) { shiftRightDragged = true; spawnMx = mx; spawnMy = my; return true; }
+        if (rightPressed && !panning
+                && Math.hypot(mx - rightDownX, my - rightDownY) >= RIGHT_CLICK_SLOP) {
+            panning = true;
+            lastMx = mx; lastMy = my;
+        }
         if (holeDrag) {
             stars.moveBlackHole(mx - holeGrabDx, my - holeGrabDy);
             return true;
@@ -2007,7 +2056,7 @@ public final class ScriptCanvas {
         if (menu.open) { menu.scroll(amount); return true; }
         if (!inside(mx, my)) return false;
         double oldZoom = zoom;
-        zoom = Math.clamp(zoom + amount * 0.1, 0.4, 2.0);
+        zoom = Math.clamp(zoom * Math.pow(ZOOM_STEP, amount), MIN_ZOOM, MAX_ZOOM);
 
         panX = mx - (mx - panX) * (zoom / oldZoom);
         panY = my - (my - panY) * (zoom / oldZoom);
@@ -2045,29 +2094,39 @@ public final class ScriptCanvas {
         double maxW = COMMENT_W - COMMENT_PAD * 2;
         List<int[]> lines = new ArrayList<>();
         int n = t.length();
-        if (n == 0) { lines.add(new int[]{0, 0}); return lines; }
-        int start = 0;
-        while (start < n) {
-            double w = 0;
-            int lastSpace = -1;
-            int i = start;
-            for (; i < n; i++) {
-                double cw = CommentText.charWidth(font, c, i);
-                if (w + cw > maxW && i > start) break;
-                w += cw;
-                if (t.charAt(i) == ' ') lastSpace = i;
+        int segStart = 0;
+        while (true) {
+            int hard = t.indexOf('\n', segStart);
+            int segEnd = hard < 0 ? n : hard;
+            int next = hard < 0 ? segEnd + 1 : hard + 1;
+            int start = segStart;
+            while (true) {
+                double w = 0;
+                int lastSpace = -1;
+                int i = start;
+                for (; i < segEnd; i++) {
+                    double cw = CommentText.charWidth(font, c, i);
+                    if (w + cw > maxW && i > start) break;
+                    w += cw;
+                    if (t.charAt(i) == ' ') lastSpace = i;
+                }
+                if (i >= segEnd) {
+                    lines.add(new int[]{start, segEnd, next});
+                    break;
+                }
+                int breakAt = (lastSpace >= start) ? lastSpace + 1 : i;
+                lines.add(new int[]{start, breakAt, breakAt});
+                start = breakAt;
             }
-            if (i >= n) { lines.add(new int[]{start, n}); return lines; }
-            int breakAt = (lastSpace >= start) ? lastSpace + 1 : i;
-            lines.add(new int[]{start, breakAt});
-            start = breakAt;
+            if (hard < 0) break;
+            segStart = hard + 1;
         }
         return lines;
     }
 
     private int[] caretLineCol(List<int[]> lines, int caret) {
         for (int k = 0; k < lines.size(); k++) {
-            if (caret < lines.get(k)[1]) return new int[]{k, lines.get(k)[0]};
+            if (caret < lines.get(k)[2]) return new int[]{k, lines.get(k)[0]};
         }
         return new int[]{lines.size() - 1, lines.getLast()[0]};
     }
@@ -2189,20 +2248,16 @@ public final class ScriptCanvas {
 
     public boolean commentCharTyped(int codepoint) {
         if (editing == null || codepoint < 32) return false;
-        commentEditSnapshot();
-        if (hasSelection()) deleteSelection();
-        caret = Math.clamp(caret, 0, editing.text().length());
-        editing.insert(caret, String.valueOf((char) codepoint), activeStyle);
-        caret++;
-        selAnchor = caret;
+        insertText(String.valueOf((char) codepoint), activeStyle);
         return true;
     }
 
     public boolean commentKeyPressed(int key, boolean ctrl, boolean shift) {
         if (editing == null) return false;
+        String t = editing.text();
         if (ctrl) {
             switch (key) {
-                case GLFW.GLFW_KEY_A -> { selAnchor = 0; caret = editing.text().length(); }
+                case GLFW.GLFW_KEY_A -> { selAnchor = 0; caret = t.length(); }
                 case GLFW.GLFW_KEY_C -> copySelectionToClipboard();
                 case GLFW.GLFW_KEY_X -> {
                     if (hasSelection()) { copySelectionToClipboard(); commentEditSnapshot(); deleteSelection(); }
@@ -2212,41 +2267,112 @@ public final class ScriptCanvas {
                 case GLFW.GLFW_KEY_I -> toggleStyle(Comment.ITALIC);
                 case GLFW.GLFW_KEY_U -> toggleStyle(Comment.UNDERLINE);
                 case GLFW.GLFW_KEY_S -> { if (shift) toggleStyle(Comment.STRIKE); }
+                case GLFW.GLFW_KEY_LEFT -> moveCaret(wordStart(t, caret), shift);
+                case GLFW.GLFW_KEY_RIGHT -> moveCaret(wordEnd(t, caret), shift);
+                case GLFW.GLFW_KEY_HOME -> moveCaret(0, shift);
+                case GLFW.GLFW_KEY_END -> moveCaret(t.length(), shift);
+                case GLFW.GLFW_KEY_BACKSPACE -> deleteTo(wordStart(t, caret));
+                case GLFW.GLFW_KEY_DELETE -> deleteTo(wordEnd(t, caret));
                 default -> { }
             }
             return true;
         }
-        String t = editing.text();
         switch (key) {
-            case GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> stopEditingComment();
-            case GLFW.GLFW_KEY_BACKSPACE -> {
-                if (hasSelection()) { commentEditSnapshot(); deleteSelection(); }
-                else if (caret > 0) {
-                    commentEditSnapshot();
-                    editing.delete(caret - 1, caret);
-                    caret--; selAnchor = caret;
-                }
+            case GLFW.GLFW_KEY_ESCAPE -> stopEditingComment();
+            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                if (shift) insertText("\n", activeStyle);
+                else stopEditingComment();
             }
-            case GLFW.GLFW_KEY_DELETE -> {
-                if (hasSelection()) { commentEditSnapshot(); deleteSelection(); }
-                else if (caret < t.length()) {
-                    commentEditSnapshot();
-                    editing.delete(caret, caret + 1);
-                }
-            }
+            case GLFW.GLFW_KEY_BACKSPACE -> deleteTo(Math.max(0, caret - 1));
+            case GLFW.GLFW_KEY_DELETE -> deleteTo(Math.min(t.length(), caret + 1));
             case GLFW.GLFW_KEY_LEFT -> {
-                caret = (!shift && hasSelection()) ? selStart() : Math.max(0, caret - 1);
-                if (!shift) selAnchor = caret;
+                if (!shift && hasSelection()) moveCaret(selStart(), false);
+                else moveCaret(Math.max(0, caret - 1), shift);
             }
             case GLFW.GLFW_KEY_RIGHT -> {
-                caret = (!shift && hasSelection()) ? selEnd() : Math.min(t.length(), caret + 1);
-                if (!shift) selAnchor = caret;
+                if (!shift && hasSelection()) moveCaret(selEnd(), false);
+                else moveCaret(Math.min(t.length(), caret + 1), shift);
             }
-            case GLFW.GLFW_KEY_HOME -> { caret = 0; if (!shift) selAnchor = caret; }
-            case GLFW.GLFW_KEY_END -> { caret = t.length(); if (!shift) selAnchor = caret; }
+            case GLFW.GLFW_KEY_UP -> moveCaretLine(-1, shift);
+            case GLFW.GLFW_KEY_DOWN -> moveCaretLine(1, shift);
+            case GLFW.GLFW_KEY_HOME -> moveCaret(caretLine()[0], shift);
+            case GLFW.GLFW_KEY_END -> moveCaret(caretLine()[1], shift);
             default -> {  }
         }
         return true;
+    }
+
+    private static boolean isWordSep(char ch) { return ch == ' ' || ch == '\n'; }
+
+    private static int wordStart(String t, int from) {
+        int p = Math.clamp(from, 0, t.length());
+        while (p > 0 && isWordSep(t.charAt(p - 1))) p--;
+        while (p > 0 && !isWordSep(t.charAt(p - 1))) p--;
+        return p;
+    }
+
+    private static int wordEnd(String t, int from) {
+        int n = t.length();
+        int p = Math.clamp(from, 0, n);
+        while (p < n && isWordSep(t.charAt(p))) p++;
+        while (p < n && !isWordSep(t.charAt(p))) p++;
+        return p;
+    }
+
+    private void moveCaret(int pos, boolean keepAnchor) {
+        caret = Math.clamp(pos, 0, editing.text().length());
+        if (!keepAnchor) selAnchor = caret;
+    }
+
+    private void deleteTo(int pos) {
+        if (hasSelection()) { commentEditSnapshot(); deleteSelection(); return; }
+        int p = Math.clamp(pos, 0, editing.text().length());
+        if (p == caret) return;
+        commentEditSnapshot();
+        int s = Math.min(p, caret), e = Math.max(p, caret);
+        editing.delete(s, e);
+        caret = s;
+        selAnchor = s;
+    }
+
+    private void insertText(String s, int style) {
+        if (s.isEmpty()) return;
+        commentEditSnapshot();
+        if (hasSelection()) deleteSelection();
+        caret = Math.clamp(caret, 0, editing.text().length());
+        editing.insert(caret, s, style);
+        caret += s.length();
+        selAnchor = caret;
+    }
+
+    private int[] caretLine() {
+        List<int[]> lines = wrapLines(editing);
+        int[] lc = caretLineCol(lines, Math.clamp(caret, 0, editing.text().length()));
+        int[] line = lines.get(lc[0]);
+        return new int[]{line[0], line[1]};
+    }
+
+    private void moveCaretLine(int dir, boolean keepAnchor) {
+        List<int[]> lines = wrapLines(editing);
+        int cc = Math.clamp(caret, 0, editing.text().length());
+        int[] lc = caretLineCol(lines, cc);
+        int target = lc[0] + dir;
+        if (target < 0 || target >= lines.size()) {
+            moveCaret(dir < 0 ? 0 : editing.text().length(), keepAnchor);
+            return;
+        }
+        int goal = CommentText.width(font, editing, lc[1], cc);
+        int s = lines.get(target)[0], e = lines.get(target)[1];
+        int best = e;
+        for (int i = s + 1; i <= e; i++) {
+            int cur = CommentText.width(font, editing, s, i);
+            if (cur >= goal) {
+                int prev = CommentText.width(font, editing, s, i - 1);
+                best = (goal - prev < cur - goal) ? i - 1 : i;
+                break;
+            }
+        }
+        moveCaret(best, keepAnchor);
     }
 
     private boolean hasSelection() { return selAnchor != caret; }
@@ -2280,17 +2406,27 @@ public final class ScriptCanvas {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < clip.length(); i++) {
             char ch = clip.charAt(i);
-            if (ch == '\n' || ch == '\r' || ch == '\t') sb.append(' ');
+            if (ch == '\r') {
+                if (i + 1 < clip.length() && clip.charAt(i + 1) == '\n') continue;
+                sb.append('\n');
+            } else if (ch == '\n') sb.append('\n');
+            else if (ch == '\t') sb.append(' ');
             else if (ch >= 32) sb.append(ch);
         }
-        String ins = sb.toString();
-        if (ins.isEmpty()) return;
-        commentEditSnapshot();
-        if (hasSelection()) deleteSelection();
-        caret = Math.clamp(caret, 0, editing.text().length());
-        editing.insert(caret, ins, 0);
-        caret += ins.length();
-        selAnchor = caret;
+        insertText(sb.toString(), 0);
+    }
+
+    public double[] scriptWorldBounds() {
+        double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY, maxY = Double.NEGATIVE_INFINITY;
+        boolean any = false;
+        for (BlockInstance b : script().blocks().values()) {
+            BlockRenderer.Layout L = layout(b);
+            minX = Math.min(minX, L.x); minY = Math.min(minY, L.y);
+            maxX = Math.max(maxX, L.x + L.w); maxY = Math.max(maxY, L.y + L.h);
+            any = true;
+        }
+        return any ? new double[]{minX, minY, maxX, maxY} : null;
     }
 
     public double[] selectionWorldBounds() {

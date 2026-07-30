@@ -115,6 +115,8 @@ public class HeroBotClient implements ClientModInitializer {
             if (client.screen instanceof AiEditorScreen editor) editor.persistDraft();
         });
 
+        ClientTickEvents.START_CLIENT_TICK.register(client -> MovementRecorder.INSTANCE.sampleTick());
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openAiEditorKey.consumeClick()) {
                 if (MovementRecorder.INSTANCE.isRecording()) {

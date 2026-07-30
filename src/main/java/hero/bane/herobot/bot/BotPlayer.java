@@ -1,19 +1,13 @@
 package hero.bane.herobot.bot;
 
-import hero.bane.herobot.bot.pathing.traversal.BotPathing;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
-import com.mojang.authlib.properties.PropertyMap;
+import hero.bane.herobot.HeroBot;
 import hero.bane.herobot.HeroBotSettings;
 import hero.bane.herobot.bot.connection.BotClientConnection;
 import hero.bane.herobot.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.bot.pathing.PathSettings;
+import hero.bane.herobot.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.mixin.LivingEntityAccessor;
-import hero.bane.herobot.mixin.PlayerAccessor;
 import hero.bane.herobot.mixin.ServerPlayerAccessor;
 import it.unimi.dsi.fastutil.doubles.DoubleDoubleImmutablePair;
 import net.minecraft.advancements.CriteriaTriggers;
@@ -23,8 +17,6 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
@@ -37,7 +29,9 @@ import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.OldUsersConverter;
+import net.minecraft.server.players.PlayerList;
 import net.minecraft.stats.Stats;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.EntityTypeTags;
@@ -66,17 +60,21 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.NonNull;
 
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressWarnings("EntityConstructor")
 public class BotPlayer extends ServerPlayer {
     private static final Set<String> spawning = ConcurrentHashMap.newKeySet();
+
+    private static final AtomicInteger SPAWN_THREAD_COUNTER = new AtomicInteger();
+    private static final ExecutorService SPAWN_EXECUTOR = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "HeroBot Player Spawner #" + SPAWN_THREAD_COUNTER.incrementAndGet());
+        thread.setDaemon(true);
+        thread.setPriority(Thread.NORM_PRIORITY - 1);
+        return thread;
+    });
 
     public int ping = 0;
 
@@ -172,73 +170,112 @@ public class BotPlayer extends ServerPlayer {
         return null;
     }
 
-    public static int createFake(String username, MinecraftServer server, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying) {
+    public static int createFake(String username, MinecraftServer server, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying, boolean bypassWhitelist) {
         ServerLevel worldIn = server.getLevel(dimensionId);
-        server.services().nameToIdCache().resolveOfflineUsers(false);
-        GameProfile gameprofile;
-
-        UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
-        if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
-            server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
-            uuid = UUIDUtil.createOfflinePlayerUUID(username);
-        }
-        if (uuid == null) {
+        if (worldIn == null) {
             return 0;
         }
-        gameprofile = new GameProfile(uuid, username);
+        if (!spawning.add(username)) {
+            return 0;
+        }
 
-        String name = gameprofile.name();
-        spawning.add(name);
+        try {
+            SPAWN_EXECUTOR.execute(() -> resolveAndPlace(username, server, worldIn, pos, yaw, pitch, dimensionId, gamemode, flying, bypassWhitelist));
+        } catch (RejectedExecutionException e) {
+            spawning.remove(username);
+            return 0;
+        }
+        return 1;
+    }
 
-        fetchGameProfile(server, gameprofile.id()).whenCompleteAsync((p, t) -> {
-            spawning.remove(name);
-            if (t != null) {
+    private static void resolveAndPlace(String username, MinecraftServer server, ServerLevel worldIn, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying, boolean bypassWhitelist) {
+        boolean scheduled = false;
+        try {
+            server.services().nameToIdCache().resolveOfflineUsers(false);
+
+            UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
+            if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
+                server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
+                uuid = UUIDUtil.createOfflinePlayerUUID(username);
+            }
+            if (uuid == null) {
                 return;
             }
 
-            GameProfile current;
-            if (p.name().isEmpty()) {
-                current = gameprofile;
-            } else {
-                current = p;
+            GameProfile fallback = new GameProfile(uuid, username);
+            fetchGameProfile(server, uuid).whenCompleteAsync((p, t) -> {
+                try {
+                    if (t != null) {
+                        HeroBot.LOGGER.error("Failed to fetch profile for bot '{}'", username, t);
+                        return;
+                    }
+                    GameProfile current = p.name().isEmpty() ? fallback : p;
+                    placeBot(server, worldIn, current, pos, yaw, pitch, dimensionId, gamemode, flying, bypassWhitelist);
+                } catch (Throwable e) {
+                    HeroBot.LOGGER.error("Failed to spawn bot '{}'", username, e);
+                } finally {
+                    spawning.remove(username);
+                }
+            }, server);
+            scheduled = true;
+        } catch (Throwable t) {
+            HeroBot.LOGGER.error("Failed to resolve profile for bot '{}'", username, t);
+        } finally {
+            if (!scheduled) {
+                spawning.remove(username);
             }
+        }
+    }
 
-            BotPlayer instance = new BotPlayer(server, worldIn, current, ClientInformation.createDefault(), false);
-            instance.fixStartingPosition = () -> instance.snapTo(pos.x, pos.y, pos.z, (float) yaw, (float) pitch);
-            server.getPlayerList().placeNewPlayer(new BotClientConnection(PacketFlow.SERVERBOUND), instance, new CommonListenerCookie(current, 0, instance.clientInformation(), false));
-            loadPlayerData(instance);
-            instance.stopRiding();
-            assert worldIn != null;
-            instance.teleportTo(worldIn, pos.x, pos.y, pos.z, Set.of(), (float) yaw, (float) pitch, true);
-            instance.setHealth(20.0F);
-            instance.unsetRemoved();
-            Objects.requireNonNull(instance.getAttribute(Attributes.STEP_HEIGHT)).setBaseValue(0.6F);
-            instance.gameMode.changeGameModeForPlayer(gamemode);
-            instance.spawnPos = pos;
-            instance.setRespawnPosition(
-                    new ServerPlayer.RespawnConfig(
-                            LevelData.RespawnData.of(
-                                    dimensionId,
-                                    BlockPos.containing(pos),
-                                    (float) yaw,
-                                    (float) pitch
-                            ),
-                            true
-                    ),
-                    false
-            );
-            instance.ping = 0;
-            instance.spawnYaw = yaw;
-            instance.setYRot((float) yaw);
-            instance.setXRot((float) pitch);
-            instance.setYHeadRot((float) yaw);
-            instance.yRotO = (float) yaw;
-            server.getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(instance, (byte) (instance.yHeadRot * 256 / 360)), dimensionId);
-            server.getPlayerList().broadcastAll(ClientboundEntityPositionSyncPacket.of(instance), dimensionId);
-            instance.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) 0x7f);
-            instance.getAbilities().flying = flying;
-        }, server);
-        return 1;
+    private static void placeBot(MinecraftServer server, ServerLevel worldIn, GameProfile profile, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying, boolean bypassWhitelist) {
+        PlayerList playerList = server.getPlayerList();
+        if (playerList.getPlayerByName(profile.name()) != null) {
+            return;
+        }
+
+        NameAndId nameAndId = server.services().nameToIdCache().get(profile.id()).orElse(null);
+        if (nameAndId != null) {
+            if (playerList.getBans().isBanned(nameAndId)) {
+                return;
+            }
+            if (!bypassWhitelist && playerList.isUsingWhitelist() && !playerList.isWhiteListed(nameAndId)) {
+                return;
+            }
+        }
+
+        BotPlayer instance = new BotPlayer(server, worldIn, profile, ClientInformation.createDefault(), false);
+        instance.fixStartingPosition = () -> instance.snapTo(pos.x, pos.y, pos.z, (float) yaw, (float) pitch);
+        playerList.placeNewPlayer(new BotClientConnection(PacketFlow.SERVERBOUND), instance, new CommonListenerCookie(profile, 0, instance.clientInformation(), false));
+        loadPlayerData(instance);
+        instance.stopRiding();
+        instance.teleportTo(worldIn, pos.x, pos.y, pos.z, Set.of(), (float) yaw, (float) pitch, true);
+        instance.setHealth(20.0F);
+        instance.unsetRemoved();
+        Objects.requireNonNull(instance.getAttribute(Attributes.STEP_HEIGHT)).setBaseValue(0.6F);
+        instance.gameMode.changeGameModeForPlayer(gamemode);
+        instance.spawnPos = pos;
+        instance.setRespawnPosition(
+                new ServerPlayer.RespawnConfig(
+                        LevelData.RespawnData.of(
+                                dimensionId,
+                                BlockPos.containing(pos),
+                                (float) yaw,
+                                (float) pitch
+                        ),
+                        true
+                ),
+                false
+        );
+        instance.ping = 0;
+        instance.spawnYaw = yaw;
+        instance.setYRot((float) yaw);
+        instance.setXRot((float) pitch);
+        instance.setYHeadRot((float) yaw);
+        instance.yRotO = (float) yaw;
+        playerList.broadcastAll(new ClientboundRotateHeadPacket(instance, (byte) (instance.yHeadRot * 256 / 360)), dimensionId);
+        playerList.broadcastAll(ClientboundEntityPositionSyncPacket.of(instance), dimensionId);
+        instance.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) 0x7f);
+        instance.getAbilities().flying = flying;
     }
 
     private static CompletableFuture<GameProfile> fetchGameProfile(MinecraftServer server, final UUID name) {
@@ -512,7 +549,9 @@ public class BotPlayer extends ServerPlayer {
         }
         Vec3 dir = new Vec3(x, 0.0, z).normalize().scale(d * horizontalScale);
         Vec3 vel = this.getDeltaMovement();
-        this.setDeltaMovement(vel.x / 2.0 - dir.x, this.onGround() ? Math.min(0.4, vel.y / 2.0 + d) : vel.y, vel.z / 2.0 - dir.z);
+        double verticalVel = HeroBotSettings.kbScaling ? vel.y : 0.0;
+        boolean grounded = this.onGround() || !HeroBotSettings.kbScaling;
+        this.setDeltaMovement(vel.x / 2.0 - dir.x, grounded ? Math.min(0.4, verticalVel / 2.0 + d) : verticalVel, vel.z / 2.0 - dir.z);
     }
 
     public int delayTicks(int p2tMultiplier) {
@@ -592,7 +631,7 @@ public class BotPlayer extends ServerPlayer {
             }
 
             boolean cleanHit = true;
-            if ((float) this.invulnerableTime > 10.0F && !damageSource.is(DamageTypeTags.BYPASSES_COOLDOWN)) {
+            if ((float) this.invulnerableTime > (float) HeroBotSettings.damageTicks && !damageSource.is(DamageTypeTags.BYPASSES_COOLDOWN)) {
                 if (finalDamage <= this.lastHurt) {
                     return false;
                 }
@@ -602,10 +641,10 @@ public class BotPlayer extends ServerPlayer {
                 cleanHit = false;
             } else {
                 this.lastHurt = finalDamage;
-                this.invulnerableTime = 20;
+                this.invulnerableTime = HeroBotSettings.damageInvulnerableTicks();
                 this.actuallyHurt(serverLevel, damageSource, finalDamage);
                 if (!blocked) {
-                    this.hurtDuration = 10;
+                    this.hurtDuration = HeroBotSettings.damageTicks;
                     this.hurtTime = this.hurtDuration;
                 }
             }

@@ -1,5 +1,6 @@
 package hero.bane.herobot.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -14,6 +15,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -68,7 +70,7 @@ public abstract class LivingEntityMixin extends Entity {
     )
     private void modifyKnockback(Entity entity, DamageSource damageSource, CallbackInfoReturnable<Float> cir) {
         LivingEntity self = (LivingEntity) (Object) this;
-        if (entity instanceof LivingEntity target && target.invulnerableTime < 20) {
+        if (entity instanceof LivingEntity target && target.invulnerableTime < HeroBotSettings.damageInvulnerableTicks()) {
             cir.setReturnValue(0.0F);
             return;
         }
@@ -88,6 +90,38 @@ public abstract class LivingEntityMixin extends Entity {
         } else {
             cir.setReturnValue(baseKnockback / 2.0F);
         }
+    }
+
+    @ModifyConstant(method = "hurtServer", constant = @Constant(intValue = 10))
+    private int hurtAnimationLength(int original) {
+        return HeroBotSettings.damageTicks;
+    }
+
+    @ModifyConstant(method = "hurtServer", constant = @Constant(intValue = 20))
+    private int hurtInvulnerableLength(int original) {
+        return HeroBotSettings.damageInvulnerableTicks();
+    }
+
+    @ModifyConstant(method = "hurtServer", constant = @Constant(floatValue = 10.0F))
+    private float hurtCooldownThreshold(float original) {
+        return HeroBotSettings.damageTicks;
+    }
+
+    @ModifyExpressionValue(
+            method = "knockback(DDD)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;getDeltaMovement()Lnet/minecraft/world/phys/Vec3;")
+    )
+    private Vec3 knockbackIgnoreVerticalVelocity(Vec3 original) {
+        if (HeroBotSettings.kbScaling) return original;
+        return new Vec3(original.x, 0.0, original.z);
+    }
+
+    @ModifyExpressionValue(
+            method = "knockback(DDD)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;onGround()Z")
+    )
+    private boolean knockbackAlwaysGrounded(boolean original) {
+        return original || !HeroBotSettings.kbScaling;
     }
 
     /**

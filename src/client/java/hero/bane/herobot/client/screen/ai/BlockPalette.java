@@ -111,6 +111,10 @@ public final class BlockPalette {
         return searchFocused;
     }
 
+    public boolean hasSearchText() {
+        return searchBox != null && !searchBox.getValue().isBlank();
+    }
+
     private int rowsTop() {
         return y + SEARCH_H + 2;
     }

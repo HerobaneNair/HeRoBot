@@ -21,6 +21,8 @@ public final class StarField {
     private static final double SPEED_MAX = 165.0;
 
     private static final double GRID_PULL = 45.0;
+    public static final double GRID_FADE_LO = 0.3;
+    public static final double GRID_FADE_HI = 0.4;
     private static final double MOUSE_R = 75.0;
     private static final double MOUSE_FORCE = 1500.0;
     private static final double MARGIN = 3.0;
@@ -37,6 +39,8 @@ public final class StarField {
     private static final int LIFE_FULL_COUNT = 20;
 
     private final List<Comet> comets = new ArrayList<>();
+    private final List<Comet> physicsScratch = new ArrayList<>();
+    private final List<Comet> collideScratch = new ArrayList<>();
     private final List<Spark> sparks = new ArrayList<>();
     private final List<Twinkle> twinkles = new ArrayList<>();
     private final PixelBatch batch = new PixelBatch();
@@ -50,6 +54,10 @@ public final class StarField {
     private static final double COLLAPSE_K = 0.05;
     private static final double COLLAPSE_MIN = 0.5;
     private static final double COLLAPSE_MAX = 3.0;
+
+    public static double gridVisibility(double zoom) {
+        return Math.clamp((zoom - GRID_FADE_LO) / (GRID_FADE_HI - GRID_FADE_LO), 0.0, 1.0);
+    }
 
     public void tick(int left, int top, int right, int bottom, double panX, double panY, double zoom) {
         if (!EditorPrefs.cometsEnabled()) return;
@@ -145,15 +153,20 @@ public final class StarField {
         double step = Math.max(8, 40 * zoom);
         double ox = panX % step, oy = panY % step;
         boolean mouseInside = mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom;
+        double gridFade = gridVisibility(zoom);
 
-        for (Comet c : comets)
-            if (!c.straight) applyFieldForces(c, dt, left, top, step, ox, oy, mouseInside, mouseX, mouseY);
+        if (gridFade > 0 || mouseInside) {
+            for (Comet c : comets)
+                if (!c.straight) applyFieldForces(c, dt, left, top, step, ox, oy, gridFade, mouseInside, mouseX, mouseY);
+        }
         List<Comet> clusterComets = comets;
         if (blackHole != null) {
-            clusterComets = new ArrayList<>(comets.size());
-            for (Comet c : comets) if (!blackHole.inRange(c)) clusterComets.add(c);
+            physicsScratch.clear();
+            for (Comet c : comets) if (!blackHole.inRange(c)) physicsScratch.add(c);
+            clusterComets = physicsScratch;
         }
         ClusterPhysics.apply(clusterComets, dt);
+        physicsScratch.clear();
         for (Comet c : comets) c.relock();
         if (mouseInside) for (Comet c : comets) if (c.straight) applyMouseForce(c, dt, mouseX, mouseY);
         for (Comet c : comets) {
@@ -212,12 +225,23 @@ public final class StarField {
         }
 
         List<Comet> collidable = comets;
+        boolean filtered = false;
         if (blackHole != null) {
-            collidable = new ArrayList<>(comets.size());
-            for (Comet c : comets) if (!c.spiraling) collidable.add(c);
+            collideScratch.clear();
+            for (Comet c : comets) if (!blackHole.inRange(c)) collideScratch.add(c);
+            collidable = collideScratch;
+            filtered = true;
+            for (Comet c : collidable) c.consumed = true;
         }
+
         for (ClusterPhysics.Blast b : ClusterPhysics.collide(collidable)) {
             if (!swallowedInstead(b.x(), b.y())) explode(b.x(), b.y(), b.size());
+        }
+
+        if (filtered) {
+            for (Comet c : collidable) c.consumed = false;
+            comets.removeIf(c -> c.consumed);
+            collideScratch.clear();
         }
 
         if (blackHole != null) {
@@ -281,20 +305,22 @@ public final class StarField {
     }
 
     private void applyFieldForces(Comet c, double dt, int left, int top, double step, double ox, double oy,
-                                  boolean mouseInside, double mouseX, double mouseY) {
-        double gx = snap(c.x, left, ox, step) - c.x, gy = snap(c.y, top, oy, step) - c.y;
-        double gd = Math.hypot(gx, gy);
-        if (gd > 0.01 && gd < step) {
-            double pull = GRID_PULL * (1.0 - gd / step);
-            c.vx += gx / gd * pull * dt;
-            c.vy += gy / gd * pull * dt;
+                                  double gridFade, boolean mouseInside, double mouseX, double mouseY) {
+        if (gridFade > 0) {
+            double gx = snap(c.x, left, ox, step) - c.x, gy = snap(c.y, top, oy, step) - c.y;
+            double gd = Math.sqrt(gx * gx + gy * gy);
+            if (gd > 0.01 && gd < step) {
+                double pull = GRID_PULL * gridFade * (1.0 - gd / step);
+                c.vx += gx / gd * pull * dt;
+                c.vy += gy / gd * pull * dt;
+            }
         }
 
         if (mouseInside) applyMouseForce(c, dt, mouseX, mouseY);
     }
 
     private void applyMouseForce(Comet c, double dt, double mouseX, double mouseY) {
-        double mx = c.x - mouseX, my = c.y - mouseY, md = Math.hypot(mx, my);
+        double mx = c.x - mouseX, my = c.y - mouseY, md = Math.sqrt(mx * mx + my * my);
         if (md > 0.01 && md < MOUSE_R) {
             double k = 1.0 - md / MOUSE_R;
             double push = MOUSE_FORCE * k * k;

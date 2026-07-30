@@ -251,7 +251,7 @@ Spawns a bot player with optional position, rotation, gamemode, and dimension.
 - `/playerspawn <name> at <pos>` - spawns at a specific position
 - `/playerspawn <name> at <pos> facing <rotation>` - spawns with specific yaw/pitch
 - `/playerspawn <name> at <pos> facing <cardinal>` - spawns facing a cardinal direction (`north`, `south`, `east`, `west`, `up`, `down`)
-- `/playerspawn <name> ... in <gamemode>` - spawns in a specific gamemode (defaults to creative)
+- `/playerspawn <name> ... in <gamemode>` - spawns in a specific gamemode (defaults to the sender's own gamemode, or survival if the sender is a spectator or not a player)
 - `/playerspawn <name> ... on <dimension>` - spawns in a specific dimension
 
 Prevents duplicate names. Respects whitelist and bans. Spectators spawn flying, survival players spawn grounded.
@@ -272,8 +272,11 @@ Action commands that make the bot perform player actions.
 - `/player <targets> <action> once` - performs the action once
 - `/player <targets> <action> continuous` - performs the action every tick
 - `/player <targets> <action> interval <ticks>` - performs the action every N ticks
+- `/player <targets> <action> twice` - performs the action twice on the same tick (`attack` and `use` only)
 
 `use` without parameters stops using without triggering another use (unlike carpet where it behaved like `use once`).
+
+`use twice` runs the hand scan twice in one tick, so once the main hand item goes on cooldown the second pass falls through to the offhand - e.g. a wind charge in the main hand and an ender pearl in the offhand both fire on the same tick. `attack twice` is meant for shield stunning.
 
 `swing` swings a hand without performing an action and resets the attack cooldown.
 

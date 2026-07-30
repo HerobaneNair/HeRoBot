@@ -1,4 +1,5 @@
 {
   "key.herobot.open_ai_editor": "Open HeroBot Scripter",
-  "key.category.herobot.general": "HeroBot"
+  "key.category.herobot.general": "HeroBot",
+  "argument.entity.selector.allEntitiesExceptSelf": "All entities except self"
 }

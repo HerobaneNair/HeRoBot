@@ -62,6 +62,12 @@ public final class ParamEditor {
         this.active = true;
     }
 
+    public void selectAll() {
+        if (box == null) return;
+        box.moveCursorToEnd(false);
+        box.setHighlightPos(0);
+    }
+
     public void close() {
         active = false;
         box = null;

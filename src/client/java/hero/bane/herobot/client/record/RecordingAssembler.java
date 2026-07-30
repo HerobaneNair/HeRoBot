@@ -15,10 +15,8 @@ import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 
 public final class RecordingAssembler {
-    private static final int LOOK_SAMPLE_TICKS = 3;
-    private static final float LOOK_THRESHOLD_DEG = 1.5f;
-
-    private static final int USE_HOLD_TICKS = 3;
+    private static final int LOOK_SAMPLE_TICKS = 1;
+    private static final float LOOK_THRESHOLD_DEG = 0.5f;
 
     private RecordingAssembler() {}
 
@@ -43,9 +41,9 @@ public final class RecordingAssembler {
         addChannel(channels, axisChannel(all, Frame::strafe, BlockType.STRAFE, "left", "right"));
         addChannel(channels, toggleChannel(all, Frame::sneak, BlockType.SNEAK));
         addChannel(channels, toggleChannel(all, Frame::sprint, BlockType.SPRINT));
-        addChannel(channels, heldActionChannel(all, Frame::jump, BlockType.JUMP, "JUMP"));
-        addChannel(channels, heldActionChannel(all, Frame::attack, BlockType.ATTACK, "ATTACK"));
-        addChannel(channels, useChannel(all));
+        addChannel(channels, heldActionChannel(all, Frame::jump, BlockType.JUMP));
+        addChannel(channels, heldActionChannel(all, Frame::attack, BlockType.ATTACK));
+        addChannel(channels, heldActionChannel(all, Frame::use, BlockType.USE));
         addChannel(channels, hotbarChannel(all));
         addChannel(channels, cameraChannel(all));
         addChannel(channels, inventoryChannel(invActions));
@@ -95,37 +93,16 @@ public final class RecordingAssembler {
         return out;
     }
 
-    private static List<Event> heldActionChannel(List<Frame> frames, Predicate<Frame> get,
-                                                 BlockType type, String actionName) {
+    private static List<Event> heldActionChannel(List<Frame> frames, Predicate<Frame> get, BlockType type) {
         List<Event> out = new ArrayList<>();
-        boolean prev = false;
-        for (int t = 0; t < frames.size(); t++) {
-            boolean v = get.test(frames.get(t));
-            if (v && !prev) {
-                out.add(new Event(t, List.of(Spec.of(type, "mode", "continuous", "interval", 1, "ticks", 0))));
-            } else if (!v && prev) {
-                out.add(new Event(t, List.of(Spec.of(BlockType.STOP_ACTION, "action", actionName))));
-            }
-            prev = v;
-        }
-        return out;
-    }
-
-    private static List<Event> useChannel(List<Frame> frames) {
-        List<Event> out = new ArrayList<>();
-        int t = 0;
         int n = frames.size();
+        int t = 0;
         while (t < n) {
-            if (!frames.get(t).use()) { t++; continue; }
+            if (!get.test(frames.get(t))) { t++; continue; }
             int start = t;
-            while (t < n && frames.get(t).use()) t++;
-            int release = t;
-            if (release - start > USE_HOLD_TICKS) {
-                out.add(new Event(start, List.of(Spec.of(BlockType.USE, "mode", "continuous", "interval", 1, "ticks", 0))));
-                out.add(new Event(release, List.of(Spec.of(BlockType.STOP_ACTION, "action", "USE"))));
-            } else {
-                out.add(new Event(start, List.of(Spec.of(BlockType.USE, "mode", "once"))));
-            }
+            while (t < n && get.test(frames.get(t))) t++;
+            out.add(new Event(start, List.of(
+                    Spec.of(type, "mode", "continuous", "interval", 1, "ticks", t - start))));
         }
         return out;
     }
@@ -141,7 +118,7 @@ public final class RecordingAssembler {
 
     private static List<Event> hotbarChannel(List<Frame> frames) {
         List<Event> out = new ArrayList<>();
-        int prev = frames.getFirst().slot();
+        int prev = -1;
         for (int t = 0; t < frames.size(); t++) {
             int v = frames.get(t).slot();
             if (v != prev) out.add(new Event(t, List.of(Spec.of(BlockType.SELECT_HOTBAR, "slot", v + 1))));
@@ -156,21 +133,20 @@ public final class RecordingAssembler {
 
         out.add(lookEvent(0, first.yaw(), first.pitch(), 0));
 
-        List<Integer> samples = new ArrayList<>();
+        int prev = 0;
         float lastYaw = first.yaw(), lastPitch = first.pitch();
         for (int t = LOOK_SAMPLE_TICKS; t < frames.size(); t += LOOK_SAMPLE_TICKS) {
             Frame f = frames.get(t);
-            if (rotationDelta(f.yaw(), f.pitch(), lastYaw, lastPitch) >= LOOK_THRESHOLD_DEG) {
-                samples.add(t);
-                lastYaw = f.yaw(); lastPitch = f.pitch();
-            }
+            if (rotationDelta(f.yaw(), f.pitch(), lastYaw, lastPitch) < LOOK_THRESHOLD_DEG) continue;
+            out.add(lookEvent(prev, f.yaw(), f.pitch(), t - prev));
+            lastYaw = f.yaw(); lastPitch = f.pitch();
+            prev = t;
         }
 
-        for (int i = 0; i < samples.size(); i++) {
-            int t = samples.get(i);
-            int next = i + 1 < samples.size() ? samples.get(i + 1) : t + LOOK_SAMPLE_TICKS;
-            Frame f = frames.get(t);
-            out.add(lookEvent(t, f.yaw(), f.pitch(), next - t));
+        int last = frames.size() - 1;
+        Frame end = frames.get(last);
+        if (last > prev && rotationDelta(end.yaw(), end.pitch(), lastYaw, lastPitch) > 0) {
+            out.add(lookEvent(prev, end.yaw(), end.pitch(), last - prev));
         }
         return out;
     }

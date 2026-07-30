@@ -142,6 +142,17 @@ public final class AiSubtree {
         return count;
     }
 
+    public static void stopQuietly(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            if (AiScriptRegistry.runner(player) == null) continue;
+            AiScriptRegistry.stopRunning(player);
+            context.getSource().sendSuccess(
+                    () -> Component.literal("Stopped AI script on " + player.getGameProfile().name()
+                            + " (still loaded)"),
+                    false);
+        }
+    }
+
     private static int aiStop(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         int count = 0;
         for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {

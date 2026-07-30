@@ -19,6 +19,7 @@ import hero.bane.herobot.networking.HeroBotSyncPayload;
 import hero.bane.herobot.networking.PathDonePayload;
 import hero.bane.herobot.networking.ScriptCompression;
 import hero.bane.herobot.rule.RuleConfigIO;
+import hero.bane.herobot.util.BlockBreakTasks;
 import hero.bane.herobot.util.delayer.DelayedQueue;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -54,6 +55,7 @@ public class HeroBot implements ModInitializer {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             RemotePathState.clear(handler.player.getUUID());
             RemotePathSettings.clear(handler.player.getUUID());
+            BlockBreakTasks.clear(handler.player.getUUID());
         });
 
         PayloadTypeRegistry.playC2S().register(AiUploadPayload.TYPE, AiUploadPayload.STREAM_CODEC);
@@ -94,6 +96,7 @@ public class HeroBot implements ModInitializer {
         RuleConfigIO.onSettingsChanged = HeroBot::syncSettingsToAllPlayers;
 
         ServerTickEvents.END_SERVER_TICK.register(DelayedQueue::tick);
+        ServerTickEvents.END_SERVER_TICK.register(BlockBreakTasks::tick);
         ServerTickEvents.END_SERVER_TICK.register(AiScriptRegistry::tickAll);
     }
 

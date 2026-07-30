@@ -11,6 +11,7 @@ import hero.bane.herobot.bot.BotPlayer;
 import hero.bane.herobot.bot.BotPlayerActionPack;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.control.PlayerControllers;
+import hero.bane.herobot.util.DistanceCalculator;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,6 +22,7 @@ import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -30,6 +32,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.Scoreboard;
 
+import java.util.Locale;
 import java.util.Map;
 
 public final class SensorExecutor {
@@ -91,6 +94,29 @@ public final class SensorExecutor {
             return e instanceof LivingEntity le && le.hurtTime > 0 && le.hurtTime == le.hurtDuration;
         });
 
+        reporter.put(BlockType.ATTACK_COOLDOWN, (b, r, br) -> {
+            Entity e = subject(b, r, br, "target");
+            boolean ticks = "ticksLeft".equals(ParamEval.evalString(b, "kind", r, br));
+            if (!(e instanceof Player p)) return ticks ? 0.0 : 1.0;
+            if (ticks) {
+                float delay = p.getCurrentItemAttackStrengthDelay();
+                return (double) Math.max(0, (int) Math.ceil(delay * (1.0F - p.getAttackStrengthScale(0.0F))));
+            }
+            return (double) p.getAttackStrengthScale(0.5F);
+        });
+
+        reporter.put(BlockType.HURT_TIME, (b, r, br) -> {
+            Entity e = subject(b, r, br, "target");
+            return e instanceof LivingEntity le ? le.hurtTime : 0;
+        });
+
+        reporter.put(BlockType.PING, (b, r, br) -> {
+            Entity e = subject(b, r, br, "target");
+            if (e instanceof BotPlayer bot) return bot.ping;
+            if (e instanceof ServerPlayer sp && sp.connection != null) return sp.connection.latency();
+            return 0;
+        });
+
         reporter.put(BlockType.IN_PATH, (b, r, br) -> {
             BotPlayer bot = r.bot();
             if (bot != null) return bot.getPathFollower() != null && !bot.getPathFollower().isDone();
@@ -137,7 +163,20 @@ public final class SensorExecutor {
             Object sel = ParamEval.raw(b, "target", r, br);
             Entity e = SelectorExecutor.resolveFirstEntity(sel, r);
             if (e == null) return Double.POSITIVE_INFINITY;
-            return (double) subject(b, r, br, "from").distanceTo(e);
+            Entity from = subject(b, r, br, "from");
+            Vec3[] closest = DistanceCalculator.closestPointsBetween(
+                    distanceShape(from, ParamEval.evalString(b, "fromShape", r, br)),
+                    distanceShape(e, ParamEval.evalString(b, "toShape", r, br)));
+            Vec3 a = closest[0];
+            Vec3 c = closest[1];
+            String mode = ParamEval.evalString(b, "mode", r, br);
+            if (mode == null) mode = "normal";
+            return switch (mode.trim().toLowerCase(Locale.ROOT)) {
+                case "horizontal" -> Math.sqrt(
+                        (a.x - c.x) * (a.x - c.x) + (a.z - c.z) * (a.z - c.z));
+                case "vertical" -> Math.abs(a.y - c.y);
+                default -> a.distanceTo(c);
+            };
         });
 
         reporter.put(BlockType.SCOREBOARD, (b, r, br) -> {
@@ -195,6 +234,12 @@ public final class SensorExecutor {
             server.getCommands().performPrefixedCommand(src, cmd);
             return (double) result[0];
         });
+    }
+
+    private static AABB distanceShape(Entity e, String shape) {
+        if (shape != null && shape.trim().equalsIgnoreCase("hitbox")) return e.getBoundingBox();
+        Vec3 pos = e.position();
+        return new AABB(pos, pos);
     }
 
     private static Entity subject(BlockInstance b, ScriptRunner r, Branch br, String slot) {

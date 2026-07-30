@@ -7,6 +7,8 @@ import net.minecraft.client.gui.Font;
 import java.util.*;
 
 public final class BlockSorter {
+    public static final double SPREAD = 20;
+
     private static final double MARGIN = 20;
     private static final double V_GAP = 10;
     private static final double INDENT = 28;
@@ -19,15 +21,29 @@ public final class BlockSorter {
 
     private final AiScript script;
     private final Font font;
+    private final double spread;
 
-    private BlockSorter(AiScript script, Font font) {
+    private BlockSorter(AiScript script, Font font, double spread) {
         this.script = script;
         this.font = font;
+        this.spread = spread;
     }
 
     public static void tidy(AiScript script, Font font) {
-        new BlockSorter(script, font).run();
+        tidy(script, font, 0);
     }
+
+    /**
+     * Same layout as {@link #tidy(AiScript, Font)}, but every connection is opened up by
+     * {@code spread} extra pixels so wires are visible instead of ports sitting flush.
+     */
+    public static void tidy(AiScript script, Font font, double spread) {
+        new BlockSorter(script, font, spread).run();
+    }
+
+    private double vGap() { return V_GAP + spread; }
+    private double portGap() { return BlockRenderer.PORT_H + 2 + spread; }
+    private double endGap() { return DEFAULT_END_GAP + spread; }
 
     private void run() {
         if (script.blocks().isEmpty()) return;
@@ -79,7 +95,7 @@ public final class BlockSorter {
             if (b.type() != BlockType.BLOCK_END || visited.contains(b.id())) continue;
             BlockInstance start = pairedStart(b);
             if (start == null || !visited.contains(start.id())) continue;
-            place(b, start.x(), start.y() + height(start) + V_GAP, visited);
+            place(b, start.x(), start.y() + height(start) + vGap(), visited);
         }
 
         double oy = MARGIN;
@@ -88,12 +104,12 @@ public final class BlockSorter {
             if (b.type() == BlockType.BLOCK_END && pairedStart(b) != null) continue;
             b.setPos(colX, oy);
             visited.add(b.id());
-            oy += height(b) + V_GAP;
+            oy += height(b) + vGap();
             if (AiEditorScreen.isContainer(b.type()) && b.pairedId() >= 0) {
                 BlockInstance end = script.block(b.pairedId());
                 if (end != null && !visited.contains(end.id())) {
-                    place(end, colX, b.y() + DEFAULT_END_GAP, visited);
-                    oy = Math.max(oy, end.y() + height(end) + V_GAP);
+                    place(end, colX, b.y() + endGap(), visited);
+                    oy = Math.max(oy, end.y() + height(end) + vGap());
                 }
             }
         }
@@ -123,7 +139,7 @@ public final class BlockSorter {
                 BlockInstance b = script.block(id);
                 if (b != null) lowest = Math.max(lowest, b.y() + height(b));
             }
-            double required = Math.max(lowest + BlockRenderer.PORT_H + 2, c.y() + DEFAULT_END_GAP);
+            double required = Math.max(lowest + portGap(), c.y() + endGap());
             double delta = required - end.y();
             if (delta > 0) shiftDown(end, delta);
         }
@@ -199,7 +215,7 @@ public final class BlockSorter {
         }
 
         if (!rowChildren.isEmpty()) {
-            double rowY = bottom + V_GAP;
+            double rowY = bottom + vGap();
             double cursorX = x + INDENT;
             for (BlockInstance child : rowChildren) {
                 double[] box = placeRow(child, cursorX, rowY, visited);
@@ -212,10 +228,10 @@ public final class BlockSorter {
             bottom = Math.max(bottom, slot(spineChild, spinePort, visited));
         }
 
-        double ay = bottom + V_GAP;
+        double ay = bottom + vGap();
         for (BlockInstance child : afterChildren) {
             double cb = place(child, x, ay, visited);
-            ay = cb + V_GAP;
+            ay = cb + vGap();
             bottom = Math.max(bottom, cb);
         }
 
@@ -249,7 +265,7 @@ public final class BlockSorter {
             BlockRenderer.Layout ml = layout(m);
             headerBottom = Math.max(headerBottom, my + ml.h);
             int[] bp = bodyPort(ml);
-            if (bp != null) bodyTop = Math.max(bodyTop, bp[1] + BlockRenderer.PORT_H + 2);
+            if (bp != null) bodyTop = Math.max(bodyTop, bp[1] + portGap());
 
             BlockInstance next = sideChild(m, visited);
             if (next == null) break;
@@ -257,11 +273,11 @@ public final class BlockSorter {
             if (sp == null) break;
             next.setPos(x, my);
             BlockRenderer.Layout nl = layout(next);
-            my = sp[1] - (nl.inY - nl.y);
+            my = sp[1] + spread - (nl.inY - nl.y);
             m = next;
         }
 
-        double bodyY = Math.max(headerBottom + V_GAP, bodyTop);
+        double bodyY = Math.max(headerBottom + vGap(), bodyTop);
         double bottom = headerBottom;
         double colX = x;
 
@@ -333,7 +349,7 @@ public final class BlockSorter {
     }
 
     private double slot(BlockInstance child, int[] outPort, Set<Integer> visited) {
-        return slotAt(child, outPort, outPort[1] + BlockRenderer.PORT_H + 2, visited);
+        return slotAt(child, outPort, outPort[1] + portGap(), visited);
     }
 
     private BlockInstance pairedStart(BlockInstance end) {

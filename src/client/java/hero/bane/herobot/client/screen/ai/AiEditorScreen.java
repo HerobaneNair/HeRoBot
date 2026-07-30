@@ -1,5 +1,6 @@
 package hero.bane.herobot.client.screen.ai;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import hero.bane.herobot.ai.AiScript;
 import hero.bane.herobot.ai.AiScriptIO;
 import hero.bane.herobot.ai.Comment;
@@ -8,6 +9,7 @@ import hero.bane.herobot.ai.VarType;
 import hero.bane.herobot.ai.block.*;
 import hero.bane.herobot.client.EditorDraft;
 import hero.bane.herobot.client.EditorPrefs;
+import hero.bane.herobot.client.record.MovementRecorder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
@@ -53,6 +55,8 @@ public final class AiEditorScreen extends Screen {
     private int autosaveTicks;
     private String lastSavedJson;
     private boolean positionsSorted;
+    private int sortHoldTicks = -1;
+    private boolean sortHoldMouse;
     private boolean pendingTidyOnInit;
     private static final String TUTORIAL_URL = "https://www.youtube.com/playlist?list=PLPbpz2d-OZK8";
 
@@ -66,6 +70,8 @@ public final class AiEditorScreen extends Screen {
     private static final int SIDE_W = 120;
     private static final int VAR_W = 140;
     private static final int ARROW = 9;
+    private static final double IMPORT_GAP = 48;
+    private static final int SORT_HOLD_TICKS = 30;
     private boolean leftCollapsed, rightCollapsed, topCollapsed;
 
     private static final long PEEK_OPEN_MS = 200;
@@ -275,13 +281,13 @@ public final class AiEditorScreen extends Screen {
         long now = System.currentTimeMillis();
         boolean dragging = paletteDragType != null
                 || canvas.draggingBlockId() >= 0 || canvas.isDraggingComments()
-                || canvas.isDraggingBlackHole();
-        updatePeek(leftRegion, inLeftFootprint(mouseX, mouseY), mouseX, mouseY, dragging, now);
-        updatePeek(rightRegion, inRightFootprint(mouseX, mouseY), mouseX, mouseY, dragging, now);
+                || canvas.isDraggingBlackHole() || canvas.isDraggingWire();
+        updatePeek(leftRegion, inLeftFootprint(mouseX, mouseY), mouseX, mouseY, dragging, palette.hasSearchText(), now);
+        updatePeek(rightRegion, inRightFootprint(mouseX, mouseY), mouseX, mouseY, dragging, false, now);
         syncRegions();
     }
 
-    private void updatePeek(Region r, boolean inFootprint, int mouseX, int mouseY, boolean dragging, long now) {
+    private void updatePeek(Region r, boolean inFootprint, int mouseX, int mouseY, boolean dragging, boolean holdOpen, long now) {
         if (r.mode != SidebarMode.HOVER) return;
         if (!r.peekOpen) {
             boolean overNothing = inFootprint && !dragging && !canvas.overBlockOrComment(mouseX, mouseY);
@@ -292,7 +298,7 @@ public final class AiEditorScreen extends Screen {
                 r.openHoverStart = 0;
             }
         } else {
-            if (inFootprint || dragging) {
+            if (inFootprint || dragging || holdOpen) {
                 r.closeStart = 0;
             } else {
                 if (r.closeStart == 0) r.closeStart = now;
@@ -675,22 +681,24 @@ public final class AiEditorScreen extends Screen {
             {"", "Keyboard"},
             {"Ctrl+S", "Save"},
             {"Ctrl+D", "Sort"},
-            {"Ctrl+Z", "Undo"},
+            {"Ctrl+D held for 1.5s", "Sort with spacing [hold Sort button too]"},
+            {"Ctrl+A", "Select all [connected]"},
             {"Ctrl+Y", "Redo"},
+            {"Ctrl+Z", "Undo"},
             {"Ctrl+C", "Copy"},
             {"Ctrl+V", "Paste"},
-            {"Ctrl+A", "Select all [connected]"},
             {"Del/Backspace", "Delete selection"},
             {"Shift+Del", "Smart delete [bridge connections]"},
-            {"Esc", "Close/cancel"},
+            {"Esc", "Close/Cancel"},
             {"", "Mouse"},
             {"Left Click", "Select block/comment, drag to move"},
-            {"Shift+Left or Middle Drag", "Move the canvas"},
+            {"Shift+Left, Middle/Right Drag", "Move the canvas"},
             {"Left Drag", "Box-select [marquee] multiple blocks"},
             {"Ctrl+Click", "Add/remove from selection"},
             {"Double-Click comment", "Edit comment text"},
             {"Left Drag port", "Connect two ports together"},
             {"Double-Click port/block", "Auto-connect that port/all of that block's ports to the nearest valid one"},
+            {"Shift+Double-Click block", "Unwire that block [bridge connections]"},
             {"Sidebar Toggle", "Expand/Collapse sidebar"},
             {"Shift+Sidebar Toggle", "Switch to showing sidebar only on hover"},
             {"Right Click", "Open context [right click] menu"},
@@ -759,17 +767,64 @@ public final class AiEditorScreen extends Screen {
     public void sortBlocks() {
         BlockSorter.tidy(script, font);
         positionsSorted = true;
+        afterSort();
+    }
+
+    private void spreadSort() {
+        if (!positionsSorted || script.blocks().isEmpty()) return;
+        BlockSorter.tidy(script, font, BlockSorter.SPREAD);
+        positionsSorted = false;
+        afterSort();
+        setStatus("Sorted with spacing");
+    }
+
+    private void afterSort() {
         select(-1);
         canvas.fitView();
         toolbar.flashSort();
     }
 
-    public void startRecording() {
-        hero.bane.herobot.client.record.MovementRecorder.INSTANCE.start(this);
+    public void sortPressed() {
+        beginSort(true);
     }
 
-    public void finishRecording(List<hero.bane.herobot.client.record.MovementRecorder.Frame> frames,
-                                List<hero.bane.herobot.client.record.MovementRecorder.InvAction> invActions,
+    private void beginSort(boolean mouse) {
+        if (sortHoldTicks >= 0) return;
+        sortBlocks();
+        sortHoldTicks = 0;
+        sortHoldMouse = mouse;
+    }
+
+    public float sortHoldProgress() {
+        if (sortHoldTicks < 0 || sortHoldTicks >= SORT_HOLD_TICKS) return 0f;
+        return sortHoldTicks / (float) SORT_HOLD_TICKS;
+    }
+
+    private void tickSortHold() {
+        if (sortHoldTicks < 0) return;
+        if (!sortHoldHeld()) {
+            sortHoldTicks = -1;
+        } else if (++sortHoldTicks == SORT_HOLD_TICKS) {
+            spreadSort();
+        }
+    }
+
+    private boolean sortHoldHeld() {
+        var window = Minecraft.getInstance().getWindow();
+        if (sortHoldMouse) {
+            return GLFW.glfwGetMouseButton(window.handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        }
+        return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_D)
+                && (InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_CONTROL)
+                || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_CONTROL));
+    }
+
+    public void startRecording() {
+        MovementRecorder.INSTANCE.start(this);
+    }
+
+    public void finishRecording(List<MovementRecorder.Frame> frames,
+                                List<MovementRecorder.InvAction> invActions,
                                 double px, double py, double pz) {
         hero.bane.herobot.client.record.RecordingAssembler.assemble(script, frames, invActions);
         sortBlocks();
@@ -1097,7 +1152,7 @@ public final class AiEditorScreen extends Screen {
                     expr -> hero.bane.herobot.ai.expr.ExprEval.isValid(expr, calcOperandTypes(b)),
                     hero.bane.herobot.ai.expr.ExprEval.OPS_LEGEND,
                     hero.bane.herobot.ai.expr.ExprEval.OPS_LEGEND_2,
-                    "Variables must be in braces, e.g. 5*{x}*3", commit);
+                    "Variables must be in braces, i.e. 5*{x}*3", commit);
         }
     }
 
@@ -1275,10 +1330,10 @@ public final class AiEditorScreen extends Screen {
         if (i >= 0) script.functions().set(i, next);
     }
 
-    private void dropArgValues(String func, int newArity) {
+    private void dropArgValues(String func, int newNumArgs) {
         for (BlockInstance b : script.blocks().values()) {
             if (b.type() != BlockType.FUNC_CALL || !func.equals(b.getParam("name"))) continue;
-            for (int i = newArity; i < EffectiveSlots.MAX_FUNC_PARAMS; i++) {
+            for (int i = newNumArgs; i < EffectiveSlots.MAX_FUNC_PARAMS; i++) {
                 b.params().remove("Arg" + (i + 1));
             }
         }
@@ -1392,6 +1447,7 @@ public final class AiEditorScreen extends Screen {
                 },
                 "Paste clipboard as blocks",
                 () -> convertClipboardAt(worldX, worldY));
+        paramEditor.selectAll();
     }
 
     private void convertClipboardAt(double worldX, double worldY) {
@@ -1487,6 +1543,27 @@ public final class AiEditorScreen extends Screen {
         selectedId = -1;
     }
 
+    public void bypassBlock(int id) {
+        if (script.block(id) == null) return;
+        boolean any = false;
+        for (Wire w : script.wires()) {
+            if (w.fromBlockId() == id || w.toBlockId() == id) { any = true; break; }
+        }
+        if (!any) return;
+        pushUndo();
+        Wire in = null, out = null;
+        int ins = 0;
+        for (Wire w : script.wires()) {
+            if (w.fromBlockId() == id && w.toBlockId() == id) continue;
+            if (w.toBlockId() == id) { ins++; in = w; }
+            if (w.fromBlockId() == id && (out == null || w.outPort() < out.outPort())) out = w;
+        }
+        script.wires().removeIf(w -> w.fromBlockId() == id || w.toBlockId() == id);
+        if (ins == 1 && out != null && in.fromBlockId() != out.toBlockId()) {
+            script.addWire(in.fromBlockId(), in.outPort(), out.toBlockId(), out.toPort());
+        }
+    }
+
     private void bridgeWires(int id) {
         Wire in = null, out = null;
         int ins = 0, outs = 0;
@@ -1525,6 +1602,14 @@ public final class AiEditorScreen extends Screen {
         }
     }
 
+    private double[] importOffset(String clip) {
+        double[] mn = AiScriptIO.minCorner(clip);
+        if (mn == null || canvas == null) return new double[]{0, 0};
+        double[] b = canvas.scriptWorldBounds();
+        if (b == null) return new double[]{0, 0};
+        return new double[]{b[2] + IMPORT_GAP - mn[0], b[1] - mn[1]};
+    }
+
     public void onScriptList(List<String> names) {
         this.serverScripts = new ArrayList<>(names);
     }
@@ -1538,9 +1623,11 @@ public final class AiEditorScreen extends Screen {
         try {
             if (pendingImport) {
                 AiScript foreign = AiScriptIO.fromJson(json, name);
+                if (AiScriptIO.wasSorted(json)) BlockSorter.tidy(foreign, font);
                 String clip = AiScriptIO.copyBlocks(foreign, new HashSet<>(foreign.blocks().keySet()));
                 pushUndo();
-                List<Integer> ids = AiScriptIO.pasteBlocks(script, clip, 0, 0);
+                double[] off = importOffset(clip);
+                List<Integer> ids = AiScriptIO.pasteBlocks(script, clip, off[0], off[1]);
                 normalizeDefineNames(ids);
                 selectMany(ids, false);
             } else {
@@ -1573,6 +1660,7 @@ public final class AiEditorScreen extends Screen {
         super.tick();
         if (canvas != null) canvas.tickStars();
         if (toolbar != null) toolbar.tick();
+        tickSortHold();
         if (statusTicks > 0 && --statusTicks == 0) statusMessage = null;
         int period = EditorPrefs.autosaveSeconds() * 20;
         if (period > 0 && ++autosaveTicks >= period) { autosaveTicks = 0; autosave(); }
@@ -1856,20 +1944,15 @@ public final class AiEditorScreen extends Screen {
 
         int dragId = canvas.draggingBlockId();
         boolean overDeletePanel = overLeftPanel(event.x(), event.y()) || overRightPanel(event.x(), event.y());
-        if (dragId >= 0 && overDeletePanel) {
+        if (overDeletePanel && (dragId >= 0 || canvas.isDraggingComments())) {
             pushUndo();
             for (int id : canvas.draggedBlockIds()) deleteBlock(id);
+            for (int id : canvas.draggedCommentIds()) script.removeComment(id);
             canvas.cancelDrag();
             return true;
         }
         if (canvas.isDraggingBlackHole() && overDeletePanel) {
             canvas.deleteBlackHole();
-            return true;
-        }
-        if (canvas.isDraggingComments() && overDeletePanel) {
-            pushUndo();
-            for (int id : canvas.draggedCommentIds()) script.removeComment(id);
-            canvas.cancelDrag();
             return true;
         }
         return canvas.mouseReleased(event.x(), event.y(), event.button());
@@ -1909,7 +1992,7 @@ public final class AiEditorScreen extends Screen {
         if (ctrl && key == GLFW.GLFW_KEY_Z) { undo(); return true; }
         if (ctrl && key == GLFW.GLFW_KEY_Y) { redo(); return true; }
         if (ctrl && key == GLFW.GLFW_KEY_S) { saveScript(); return true; }
-        if (ctrl && key == GLFW.GLFW_KEY_D) { sortBlocks(); return true; }
+        if (ctrl && key == GLFW.GLFW_KEY_D) { beginSort(false); return true; }
         if (key == GLFW.GLFW_KEY_ESCAPE) { onClose(); return true; }
         if (key == GLFW.GLFW_KEY_DELETE || key == GLFW.GLFW_KEY_BACKSPACE) {
             boolean shift = (event.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;

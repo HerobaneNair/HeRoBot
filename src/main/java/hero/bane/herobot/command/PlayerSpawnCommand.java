@@ -20,11 +20,9 @@ import net.minecraft.commands.arguments.GameModeArgument;
 import net.minecraft.commands.arguments.coordinates.RotationArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.players.OldUsersConverter;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
@@ -34,7 +32,6 @@ import net.minecraft.world.phys.Vec3;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static net.minecraft.commands.Commands.argument;
@@ -130,21 +127,8 @@ public class PlayerSpawnCommand {
         if (playerList.getPlayerByName(name) != null) return 0;
         if (name.length() > maxNameLength(server)) return 0;
 
-        UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, name);
-        if (uuid == null) {
-            uuid = UUIDUtil.createOfflinePlayerUUID(name);
-        }
-
-        var profile = server.services().nameToIdCache().get(uuid).orElse(null);
-        if (profile != null && playerList.getBans().isBanned(profile)) return 0;
-
-        if (playerList.isUsingWhitelist()
-                && profile != null
-                && !playerList.isWhiteListed(profile)
-                && source.isPlayer()
-                && !playerList.isOp(Objects.requireNonNull(source.getPlayer()).nameAndId())) {
-            return 0;
-        }
+        boolean bypassWhitelist = !source.isPlayer()
+                || playerList.isOp(Objects.requireNonNull(source.getPlayer()).nameAndId());
 
         Vec3 pos = context.getNodes().stream().anyMatch(n -> n.getNode().getName().equals("position"))
                 ? Vec3Argument.getVec3(context, "position")
@@ -161,7 +145,7 @@ public class PlayerSpawnCommand {
 
         GameType mode = context.getNodes().stream().anyMatch(n -> n.getNode().getName().equals("gamemode"))
                 ? GameModeArgument.getGameMode(context, "gamemode")
-                : GameType.CREATIVE;
+                : defaultGameMode(source);
 
         ResourceKey<Level> dim = context.getNodes().stream().anyMatch(n -> n.getNode().getName().equals("dimension"))
                 ? DimensionArgument.getDimension(context, "dimension").dimension()
@@ -186,8 +170,15 @@ public class PlayerSpawnCommand {
                 rot.x,
                 dim,
                 mode,
-                flying
+                flying,
+                bypassWhitelist
         );
+    }
+
+    private static GameType defaultGameMode(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof ServerPlayer p)) return GameType.SURVIVAL;
+        GameType mode = p.gameMode.getGameModeForPlayer();
+        return mode == GameType.SPECTATOR ? GameType.SURVIVAL : mode;
     }
 
     private static int maxNameLength(MinecraftServer server) {

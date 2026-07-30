@@ -5,9 +5,11 @@ import java.util.*;
 public final class BlockDefRegistry {
     private static final Map<BlockType, BlockDef> DEFS = new EnumMap<>(BlockType.class);
     private static final List<String> ACTION_MODES = List.of("once", "continuous", "interval");
-    private static final List<String> ATTACK_MODES = List.of("once", "twice", "continuous", "interval");
+    private static final List<String> TWICE_MODES = List.of("once", "twice", "continuous", "interval");
     private static final List<String> DIRECTIONS = List.of("north", "south", "east", "west", "up", "down");
     private static final List<String> LOOK_AT_MODES = List.of("eyes", "closest", "feet");
+    private static final List<String> DISTANCE_SHAPES = List.of("position", "hitbox");
+    private static final List<String> DISTANCE_MODES = List.of("normal", "horizontal", "vertical");
     private static final List<String> MOVE_TYPES = List.of("WALK", "SPRINT", "SPRINT_JUMP");
     private static final List<String> ACTION_TYPES =
             List.of("USE", "SWING", "JUMP", "ATTACK", "DROP_ITEM", "DROP_STACK", "SWAP_HANDS");
@@ -25,6 +27,7 @@ public final class BlockDefRegistry {
             List.of("offhand", "1", "2", "3", "4", "5", "6", "7", "8", "9");
     private static final List<String> RECIPE_MODES = List.of("single", "max");
     private static final List<String> COUNT_KINDS = List.of("count", "durability");
+    private static final List<String> COOLDOWN_KINDS = List.of("fraction", "ticksLeft");
     private static final List<String> MOVE_DIRS = List.of("forward", "backward", "stop");
     private static final List<String> STRAFE_DIRS = List.of("left", "right", "stop");
     private static final List<String> PATH_SETTINGS = List.of(
@@ -64,11 +67,11 @@ public final class BlockDefRegistry {
         stmt(BlockType.AUTOJUMP, BlockCategory.MOTION, "set auto-jump",
                 ParamSlot.ofBool("value", true));
 
-        actionBlock(BlockType.USE, "use");
+        actionBlock(BlockType.USE, "use", TWICE_MODES);
         actionBlock(BlockType.SWING, "swing");
         actionBlock(BlockType.JUMP, "jump");
         stmt(BlockType.ATTEMPT_AUTOJUMP, BlockCategory.ACTION, "auto jump");
-        actionBlock(BlockType.ATTACK, "attack", ATTACK_MODES);
+        actionBlock(BlockType.ATTACK, "attack", TWICE_MODES);
         register(new BlockDef(BlockType.DROP_ITEM, BlockCategory.ACTION, BlockShape.STATEMENT, "drop", 1,
                 List.of(
                         ParamSlot.ofEnum("amount", DROP_AMOUNTS, "1"),
@@ -86,7 +89,11 @@ public final class BlockDefRegistry {
         stmt(BlockType.STOP_ALL, BlockCategory.ACTION, "stop all actions");
         stmt(BlockType.PLACE_BLOCK, BlockCategory.ACTION, "place",
                 ParamSlot.ofPos("position"),
-                ParamSlot.ofEnum("face", FACES, "any"));
+                ParamSlot.ofEnum("face", FACES, "any"),
+                ParamSlot.ofBool("force", false));
+        stmt(BlockType.BREAK_BLOCK, BlockCategory.ACTION, "break",
+                ParamSlot.ofPos("position"),
+                ParamSlot.ofBool("force", false));
         bool(BlockType.DOING_ACTION, BlockCategory.ACTION, "doing action",
                 ParamSlot.ofEnum("action", DOING_ACTIONS, "walking"));
 
@@ -212,13 +219,20 @@ public final class BlockDefRegistry {
                 ParamSlot.ofPos("position"));
         bool(BlockType.IS_TOUCHING_BLOCK, BlockCategory.SENSOR, "is touching block",
                 ParamSlot.ofString("block", "minecraft:water"));
-        reporter(BlockType.DISTANCE_TO, BlockCategory.SENSOR, "distance to",
-                ParamSlot.ofUuid("target"));
+        reporter(BlockType.DISTANCE_TO, BlockCategory.SENSOR, "distance from",
+                ParamSlot.ofEnum("fromShape", DISTANCE_SHAPES, "position"),
+                ParamSlot.ofEnum("toShape", DISTANCE_SHAPES, "position"),
+                ParamSlot.ofUuid("target"),
+                ParamSlot.ofEnum("mode", DISTANCE_MODES, "normal"));
         reporter(BlockType.TIME_OF_DAY, BlockCategory.SENSOR, "time of day");
 
         bool(BlockType.EVERY_X_TICKS, BlockCategory.SENSOR, "every",
                 ParamSlot.ofInt("ticks", 1));
         bool(BlockType.ON_DAMAGE, BlockCategory.SENSOR, "on damage");
+        reporter(BlockType.ATTACK_COOLDOWN, BlockCategory.SENSOR, "attack cooldown",
+                ParamSlot.ofEnum("kind", COOLDOWN_KINDS, "fraction"));
+        reporter(BlockType.HURT_TIME, BlockCategory.SENSOR, "hurt time");
+        reporter(BlockType.PING, BlockCategory.SENSOR, "ping");
 
         reporter(BlockType.ITEM_IN_SLOT, BlockCategory.INVENTORY, "inventorySlot",
                 ParamSlot.ofInt("slot", 0));

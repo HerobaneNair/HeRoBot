@@ -15,9 +15,9 @@ public final class VecEval {
     private VecEval() {}
 
     public static final String OPS_LEGEND =
-            "pos(x,y,z)  dir(y,p)  +  -  *  /  %  ^";
+            "pos(x,y,z)  dir(y,p)  +  -  *  /  %";
     public static final String OPS_LEGEND_2 =
-            "climb(pos)  fall(pos)  floor(vector)  {var}  Input1  ~rel  ^local";
+            "climb(pos)  fall(pos)  floor(vector)  {var}  Input1  ~  ^";
 
     public interface World {
         boolean isAir(int x, int y, int z);
@@ -43,7 +43,7 @@ public final class VecEval {
     private static final int CACHE_LIMIT = 256;
     private static final Map<String, Expr> CACHE = new ConcurrentHashMap<>();
 
-    public static double[] eval(String expression, int requiredArity,
+    public static double[] eval(String expression, int requiredNumArgs,
                                 Function<String, Object> vars, World world) {
         double[] v;
         try {
@@ -51,18 +51,18 @@ public final class VecEval {
         } catch (RuntimeException ex) {
             v = null;
         }
-        return v != null && v.length == requiredArity ? v : new double[requiredArity];
+        return v != null && v.length == requiredNumArgs ? v : new double[requiredNumArgs];
     }
 
-    public static boolean isValid(String expression, int requiredArity,
+    public static boolean isValid(String expression, int requiredNumArgs,
                                   Function<String, ParamType> types) {
         if (expression == null || expression.isBlank()) return true;
         try {
-            Parser p = new Parser(expression, true, requiredArity, types);
+            Parser p = new Parser(expression, true, requiredNumArgs, types);
             Node n = p.expr();
             p.skipWs();
             if (!p.atEnd()) return false;
-            return n.arity() == 0 || n.arity() == requiredArity;
+            return n.numArgs() == 0 || n.numArgs() == requiredNumArgs;
         } catch (RuntimeException ex) {
             return false;
         }
@@ -146,19 +146,19 @@ public final class VecEval {
         throw MISMATCH;
     }
 
-    private record Node(Expr fn, int arity) {}
+    private record Node(Expr fn, int numArgs) {}
 
     private static final class Parser {
         private final String input;
         private final boolean strict;
-        private final int requiredArity;
+        private final int requiredNumArgs;
         private final Function<String, ParamType> types;
         private int pos;
 
-        Parser(String input, boolean strict, int requiredArity, Function<String, ParamType> types) {
+        Parser(String input, boolean strict, int requiredNumArgs, Function<String, ParamType> types) {
             this.input = input;
             this.strict = strict;
-            this.requiredArity = requiredArity;
+            this.requiredNumArgs = requiredNumArgs;
             this.types = types;
         }
 
@@ -193,34 +193,24 @@ public final class VecEval {
         }
 
         Node term() {
-            Node v = power();
+            Node v = unary();
             while (true) {
                 skipWs();
                 char c = peek();
                 if (c == '*') {
                     pos++;
-                    v = bin(v, power(), (x, y) -> x * y);
+                    v = bin(v, unary(), (x, y) -> x * y);
                 } else if (c == '/') {
                     pos++;
-                    v = bin(v, power(), (x, y) -> y == 0 ? 0 : x / y);
+                    v = bin(v, unary(), (x, y) -> y == 0 ? 0 : x / y);
                 } else if (c == '%') {
                     pos++;
-                    v = bin(v, power(), (x, y) -> y == 0 ? 0 : x % y);
+                    v = bin(v, unary(), (x, y) -> y == 0 ? 0 : x % y);
                 } else {
                     break;
                 }
             }
             return v;
-        }
-
-        Node power() {
-            Node base = unary();
-            skipWs();
-            if (peek() == '^') {
-                pos++;
-                return bin(base, power(), Math::pow);
-            }
-            return base;
         }
 
         Node unary() {
@@ -264,15 +254,15 @@ public final class VecEval {
         }
 
         private Node ref(String name) {
-            int arity = 0;
+            int numArgs = 0;
             if (types != null) {
                 ParamType t = types.apply(name);
-                if (t == ParamType.POSITION) arity = 3;
-                else if (t == ParamType.ROTATION) arity = 2;
-                else if (t == ParamType.INT || t == ParamType.DOUBLE) arity = 1;
+                if (t == ParamType.POSITION) numArgs = 3;
+                else if (t == ParamType.ROTATION) numArgs = 2;
+                else if (t == ParamType.INT || t == ParamType.DOUBLE) numArgs = 1;
                 else if (t != null) throw new RuntimeException(name + " is not a number, position, or direction");
             }
-            return new Node((vars, world) -> coerce(vars.apply(name)), arity);
+            return new Node((vars, world) -> coerce(vars.apply(name)), numArgs);
         }
 
         Node number() {
@@ -332,7 +322,11 @@ public final class VecEval {
                 case "pow" -> {
                     if (strict && a.size() != 2) throw new RuntimeException("pow needs 2 arguments");
                     if (a.isEmpty()) yield new Node(ZERO, 1);
-                    yield a.size() >= 2 ? bin(a.getFirst(), a.get(1), Math::pow) : a.getFirst();
+                    if (a.size() < 2) yield a.getFirst();
+                    if (strict && (a.getFirst().numArgs() > 1 || a.get(1).numArgs() > 1)) {
+                        throw new RuntimeException("pow arguments must be numbers");
+                    }
+                    yield bin(a.getFirst(), a.get(1), Math::pow);
                 }
                 case "climb" -> terrain(a, true);
                 case "fall" -> terrain(a, false);
@@ -364,12 +358,12 @@ public final class VecEval {
         }
 
         private Node bin(Node l, Node r, DoubleBinaryOperator op) {
-            int arity = combineArity(l.arity(), r.arity());
+            int numArgs = combineNumArgs(l.numArgs(), r.numArgs());
             Expr a = l.fn(), b = r.fn();
-            return new Node((vars, world) -> applyOp(a.eval(vars, world), b.eval(vars, world), op), arity);
+            return new Node((vars, world) -> applyOp(a.eval(vars, world), b.eval(vars, world), op), numArgs);
         }
 
-        private int combineArity(int a, int b) {
+        private int combineNumArgs(int a, int b) {
             if (a == b) return a;
             if (a == 0) return b == 1 ? 0 : b;
             if (b == 0) return a == 1 ? 0 : a;
@@ -385,7 +379,7 @@ public final class VecEval {
                 double[] out = new double[v.length];
                 for (int i = 0; i < v.length; i++) out[i] = op.applyAsDouble(v[i]);
                 return out;
-            }, n.arity());
+            }, n.numArgs());
         }
 
         private Node relConstruct(int n) {
@@ -486,7 +480,7 @@ public final class VecEval {
                 carrots.add(null);
             } else {
                 Node arg = expr();
-                if (strict && arg.arity() > 1) throw new RuntimeException("arguments must be numbers");
+                if (strict && arg.numArgs() > 1) throw new RuntimeException("arguments must be numbers");
                 parts.add(arg.fn());
                 offsets.add(null);
                 carrots.add(null);
@@ -501,10 +495,10 @@ public final class VecEval {
 
         private Node terrain(List<Node> a, boolean up) {
             if (strict) {
-                if (requiredArity != 3) throw new RuntimeException((up ? "climb" : "fall") + " only works in pos calc");
+                if (requiredNumArgs != 3) throw new RuntimeException((up ? "climb" : "fall") + " only works in pos calc");
                 if (a.size() != 1) throw new RuntimeException("needs 1 argument");
-                int arity = a.getFirst().arity();
-                if (arity != 0 && arity != 3) throw new RuntimeException("argument must be a position");
+                int numArgs = a.getFirst().numArgs();
+                if (numArgs != 0 && numArgs != 3) throw new RuntimeException("argument must be a position");
             }
             if (a.isEmpty()) return new Node(ZERO, 1);
             Expr f = a.getFirst().fn();

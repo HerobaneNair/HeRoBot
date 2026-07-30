@@ -11,13 +11,13 @@ import hero.bane.herobot.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.control.PlayerController;
 import hero.bane.herobot.control.PlayerControllers;
+import hero.bane.herobot.util.BlockBreakTasks;
+import hero.bane.herobot.util.BlockBreaker;
 import hero.bane.herobot.util.BlockPlacer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.network.chat.ChatType;
 import net.minecraft.network.chat.PlayerChatMessage;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.permissions.LevelBasedPermissionSet;
-import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -56,12 +56,24 @@ public final class ActionExecutor {
             } catch (IllegalArgumentException ignored) {}
             return StepResult.continueVia(0);
         });
-        flow.put(BlockType.STOP_ALL, (b, r, br) -> { ap(r).stopAll(); return StepResult.continueVia(0); });
+        flow.put(BlockType.STOP_ALL, (b, r, br) -> {
+            BlockBreakTasks.cancel(r.player());
+            ap(r).stopAll();
+            return StepResult.continueVia(0);
+        });
 
         flow.put(BlockType.PLACE_BLOCK, (b, r, br) -> {
             Vec3 pos = ParamEval.evalVec3(b, "position", r, br);
             String face = ParamEval.evalString(b, "face", r, br);
-            BlockPlacer.place(r.player(), pos, face);
+            boolean force = ParamEval.evalBool(b, "force", r, br);
+            BlockPlacer.place(r.player(), pos, face, force);
+            return StepResult.continueVia(0);
+        });
+
+        flow.put(BlockType.BREAK_BLOCK, (b, r, br) -> {
+            Vec3 pos = ParamEval.evalVec3(b, "position", r, br);
+            boolean force = ParamEval.evalBool(b, "force", r, br);
+            BlockBreaker.start(r.player(), pos, force);
             return StepResult.continueVia(0);
         });
 
@@ -72,9 +84,10 @@ public final class ActionExecutor {
                 MinecraftServer server = player.level().getServer();
                 if (message.startsWith("/")) {
                     boolean op = ParamEval.evalBool(b, "op", r, br);
-                    var source = player.createCommandSourceStack()
-                            .withPermission(op ? PermissionSet.ALL_PERMISSIONS
-                                    : LevelBasedPermissionSet.forLevel(PermissionLevel.ALL));
+                    var source = player.createCommandSourceStack();
+                    if (op) {
+                        source = source.withPermission(PermissionSet.ALL_PERMISSIONS);
+                    }
                     server.getCommands().performPrefixedCommand(source, message);
                 } else {
                     PlayerChatMessage chat = PlayerChatMessage.unsigned(player.getUUID(), message);

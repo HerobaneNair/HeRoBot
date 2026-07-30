@@ -19,7 +19,7 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.SPRINT, "Toggle sprinting (must also walk forwards to sprint forwards)");
         DESCRIPTIONS.put(BlockType.AUTOJUMP, "Toggle auto-jumping on/off (will automatically jump when necessary)");
 
-        DESCRIPTIONS.put(BlockType.USE, "Simulate a right click (can be held or put in interval)");
+        DESCRIPTIONS.put(BlockType.USE, "Simulate a right click (can be held or put in interval); twice fires both hands on the same tick");
         DESCRIPTIONS.put(BlockType.ATTACK, "Simulate a left click (can be held or put in interval); twice is meant for shield stunning");
         DESCRIPTIONS.put(BlockType.SWING, "Fake swing the arm (can be held or put in interval)");
         DESCRIPTIONS.put(BlockType.JUMP, "Jump... (can be held or put in interval)");
@@ -87,15 +87,18 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.YAW, "Returns the bot's current yaw (horizontal look angle) or pitch (vertical); click the box to switch axis");
         DESCRIPTIONS.put(BlockType.BLOCK_AT, "Returns the block id at a position");
         DESCRIPTIONS.put(BlockType.IS_TOUCHING_BLOCK, "True if the bot's hitbox is touching the given block");
-        DESCRIPTIONS.put(BlockType.DISTANCE_TO, "Returns the distance from the bot to a target");
+        DESCRIPTIONS.put(BlockType.DISTANCE_TO, "Returns the distance from the bot to a target, measuring each side by its position or its hitbox, in 3D, horizontal only, or vertical only");
         DESCRIPTIONS.put(BlockType.TIME_OF_DAY, "Returns the world time of day (0-24000)");
         DESCRIPTIONS.put(BlockType.EVERY_X_TICKS, "Returns once every x ticks");
         DESCRIPTIONS.put(BlockType.ON_DAMAGE, "True on the tick the bot takes damage");
+        DESCRIPTIONS.put(BlockType.ATTACK_COOLDOWN, "Returns the attack cooldown charge as a fraction from 0 to 1, or the ticks left until it is charged. 1 (or 0 ticks) means not on cooldown");
+        DESCRIPTIONS.put(BlockType.HURT_TIME, "Returns how many ticks are left in the current damage tick (0 when not hurt) [same as data get entity @s HurtTime]");
+        DESCRIPTIONS.put(BlockType.PING, "Returns the ping in ms: a bot's stored ping value (set by /player <targets> ping <value>), or a real player's measured latency to the server");
         DESCRIPTIONS.put(BlockType.ITEM_IN_SLOT, "Returns the item in one of the bot's own slots by index 0-41 (0-8 hotbar, 9-35 inventory, 36-37 main/off hand, 38-41 armor head to feet)");
         DESCRIPTIONS.put(BlockType.EQUIPMENT, "Returns the item worn/held by any entity in a slot (main hand, off hand, or armor)");
         DESCRIPTIONS.put(BlockType.GET_COUNT, "Get the count or durability (remaining, 0 if none) of an item; index 0-41 (0-8 hotbar, 9-35 inventory, 36-37 main/off hand, 38-41 armor head to feet)");
         DESCRIPTIONS.put(BlockType.MAX_COUNT, "Get the max stack size or max durability (0 if the item has none) of an item type");
-        DESCRIPTIONS.put(BlockType.COMMAND_RESULT, "Run a command as the bot and return its result as a decimal (e.g. data get entity @s Health)");
+        DESCRIPTIONS.put(BlockType.COMMAND_RESULT, "Run a command as the bot and return its result as a decimal (i.e. data get entity @s Health)");
 
         DESCRIPTIONS.put(BlockType.NUM_CALC, "Calculate numbers within block (more directions inside block); add inputs with ⁺ and use them as Input#");
         DESCRIPTIONS.put(BlockType.STRING_CALC, "Calculate Strings within block (more directions inside block); add inputs with ⁺ and use them as Input#");
@@ -103,7 +106,8 @@ public final class BlockDescriptions {
         DESCRIPTIONS.put(BlockType.POS_CALC, "Calculate Positions within block (more directions inside block); add inputs with ⁺ and use them as Input#");
         DESCRIPTIONS.put(BlockType.DIR_CALC, "Calculate Directions within block (more directions inside block); add inputs with ⁺ and use them as Input#");
         DESCRIPTIONS.put(BlockType.TERNARY, "Pick between two values: returns the first if the condition is true, else the second (type locking). Basically a tiny if-else block");
-        DESCRIPTIONS.put(BlockType.PLACE_BLOCK, "Place the held block at a position if a corner of the chosen face is in reach and sight (any tries every possible face)");
+        DESCRIPTIONS.put(BlockType.PLACE_BLOCK, "Place the held block at a position if a corner of the chosen face is in reach and sight (any tries every possible face); force skips that check and aims at the middle of the face instead");
+        DESCRIPTIONS.put(BlockType.BREAK_BLOCK, "Mine the block at a position until it breaks, using the first face that is in reach and sight; force mines through blocks by aiming at the middle of the closest face instead. Does nothing if the block is unbreakable or out of reach, and keeps running while the script continues");
         DESCRIPTIONS.put(BlockType.COMPARE, "Compare two numbers; <, >, ≤, ≥");
         DESCRIPTIONS.put(BlockType.EQUALITY, "Check whether two values (type locking) are equal (=) or not (≠)");
         DESCRIPTIONS.put(BlockType.LOGIC, "Combine two booleans; click the operator to cycle through and, or, xor");

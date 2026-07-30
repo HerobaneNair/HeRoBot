@@ -7,6 +7,7 @@
     "AbstractMinecartRendererMixin",
     "EntityRenderDispatcherMixin",
     "EntityViewRotationMixin",
+    "KeyMappingMixin",
     "KeyboardHandlerInvoker",
     "LevelRendererMixin",
     "LocalPlayerMixin",
@@ -23,6 +24,7 @@
     "requireAnnotations": true
   },
   "mixins": [
-    "LevelMixin"
+    "LevelMixin",
+    "LivingEntityHurtMixin"
   ]
 }

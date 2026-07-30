@@ -36,7 +36,7 @@ public record ParamSlot(String name, ParamType type, Object defaultValue, List<S
     }
 
     public static ParamSlot ofUuid(String name) {
-        return new ParamSlot(name, ParamType.UUID, "@n[]");
+        return new ParamSlot(name, ParamType.UUID, "@z[limit=1,sort=nearest]");
     }
 
     public static ParamSlot ofPos(String name) {
@@ -44,7 +44,7 @@ public record ParamSlot(String name, ParamType type, Object defaultValue, List<S
     }
 
     public static ParamSlot ofRot(String name) {
-        return new ParamSlot(name, ParamType.ROTATION, "0 0");
+        return new ParamSlot(name, ParamType.ROTATION, "~ ~");
     }
 
     public static ParamSlot ofItem(String name, String defaultValue) {

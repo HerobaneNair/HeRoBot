@@ -87,6 +87,9 @@ public enum BlockType {
     TIME_OF_DAY,
     EVERY_X_TICKS,
     ON_DAMAGE,
+    ATTACK_COOLDOWN,
+    HURT_TIME,
+    PING,
     ITEM_IN_SLOT,
     EQUIPMENT,
     GET_COUNT,
@@ -114,6 +117,7 @@ public enum BlockType {
 
     TERNARY,
     PLACE_BLOCK,
+    BREAK_BLOCK,
     DOING_ACTION,
 
     FUNC_DEFINE,

@@ -32,6 +32,9 @@ final class BlackHole {
     private static final double SMOTHER_PAD = 6.0;
     private static final int COVER_SAMPLES = 24;
 
+    private static final double LUT_STEP = 0.25;
+    private static final double LUT_INV = 1.0 / LUT_STEP;
+
     private static final double ORBIT_R = 260.0;
     private static final double GRAVITY = 500.0;
     private static final double TANGENT = 260.0;
@@ -62,6 +65,10 @@ final class BlackHole {
     private boolean absorbedThisFrame;
     private double growBucket, growLeft, growRate, growTimer;
     private double birthFrom = MIN_LIFE;
+
+    private double[] envLut, diskLut, bandHLut;
+    private int lutN;
+    private int rowLo, rowHi;
 
     BlackHole(double x, double y) {
         this.x = x;
@@ -320,22 +327,31 @@ final class BlackHole {
         double bandGateHi = band4 + bandDrop;
         boolean subOn = rSub >= 2, photonOn = rPhoton >= 2;
 
-        for (int py = -reach; py <= reach; py++) {
+        double cosSpin = Math.cos(spin), sinSpin = Math.sin(spin);
+        double flowPhase = spin * 1.6;
+        buildTables(bandSpan, inner, capH, lobePeak, bandDrop);
+
+        double spanY = Math.max(envGate, Math.max(bandGateHi, band4));
+        int reachY = Math.min(reach, (int) Math.ceil(bandSpan * Math.abs(sin) + spanY * Math.abs(cos)) + 1);
+
+        for (int py = -reachY; py <= reachY; py++) {
             double pySin = py * sin, pyCos = py * cos;
-            for (int px = -reach; px <= reach; px++) {
+            if (!rowRange(pySin, pyCos, bandSpan, spanY, reach)) continue;
+            int pxFrom = rowLo, pxTo = rowHi;
+            for (int px = pxFrom; px <= pxTo; px++) {
                 double lx = px * cos + pySin;
                 double ly = -px * sin + pyCos;
                 double hx = Math.abs(lx);
                 int d2 = px * px + py * py;
                 boolean nearCore = d2 <= ringGate;
-                double d = nearCore ? Math.hypot(px, py) : 0;
+                double d = nearCore ? Math.sqrt(d2) : 0;
 
                 if (nearCore && d <= core) {
                     batch.pixel(cx + px, cy + py, coreArgb);
                 } else if (hx <= bandSpan) {
                     double ay = Math.abs(ly);
                     if (ay <= envGate) {
-                        double env = capH + (lobePeak - capH) * glowProfile(hx, inner);
+                        double env = sample(envLut, hx);
                         if (hx > inner) {
                             double u = (hx - inner) / capR;
                             env *= Math.sqrt(Math.max(0, 1 - u * u));
@@ -344,8 +360,9 @@ final class BlackHole {
                         if (env > 0.5 && out <= FADE) {
                             int a, rgb;
                             if (out <= 0) {
-                                double aziSym = 0.82 + 0.18 * Math.sin(2.0 * Math.atan2(ay, lx) + spin);
-                                a = (int) (k205 * (1 - (ay / env) * (ay / env)) * aziSym);
+                                double aziSym = 0.82 + 0.18 * sinDouble(lx, ay, cosSpin, sinSpin);
+                                double q = ay / env;
+                                a = (int) (k205 * (1 - q * q) * aziSym);
                                 rgb = 0xFFFFFF;
                             } else {
                                 a = (int) (k90 * (1 - out / FADE));
@@ -360,7 +377,7 @@ final class BlackHole {
                     double sub = subOn ? ringWeight(d, rSub, SUB_RING_HALF) : 0;
                     double photon = photonOn ? ringWeight(d, rPhoton, PHOTON_HALF) : 0;
                     if (sub > 0 || photon > 0) {
-                        double azi = 0.82 + 0.18 * Math.sin(Math.atan2(ly, lx) * 2.0 + spin);
+                        double azi = 0.82 + 0.18 * sinDouble(lx, ly, cosSpin, sinSpin);
                         if (sub > 0) {
                             int a = (int) (k255 * azi * sub * SUB_RING_DIM);
                             if (a > 4) batch.pixel(cx + px, cy + py, (a << 24) | 0xFFFFFF);
@@ -373,18 +390,80 @@ final class BlackHole {
                 }
 
                 if (hx <= bandSpan && ly >= -band4 && ly <= bandGateHi) {
-                    double centerY = bandDrop * lobeProfile(hx, bandSpan, DISK_K);
+                    double centerY = sample(diskLut, hx);
                     double dyb = ly - centerY;
                     if (dyb <= band4 && dyb >= -band4) {
-                        double flow = 0.72 + 0.28 * Math.sin(lx * 0.18 - spin * 1.6);
+                        double flow = 0.72 + 0.28 * Math.sin(lx * 0.18 - flowPhase);
                         double bandV = Math.exp(-(dyb * dyb) / twoBandHalfSq);
-                        double bandH = Math.clamp(1.0 - Math.pow(hx / bandSpan, 1.5), 0, 1);
+                        double bandH = sample(bandHLut, hx);
                         int a = (int) (k255 * Math.clamp(bandV * bandH * flow, 0, 1));
                         if (a > 4) batch.pixel(cx + px, cy + py, (a << 24) | goldColor(Math.min(1.0, hx / bandSpan)));
                     }
                 }
             }
         }
+    }
+
+    private boolean rowRange(double pySin, double pyCos, double spanX, double spanY, int reach) {
+        double lo = -reach, hi = reach;
+        if (Math.abs(cos) > 1e-9) {
+            double a = (-spanX - pySin) / cos, b = (spanX - pySin) / cos;
+            if (a > b) {
+                double t = a;
+                a = b;
+                b = t;
+            }
+            if (a > lo) lo = a;
+            if (b < hi) hi = b;
+        } else if (Math.abs(pySin) > spanX) {
+            return false;
+        }
+        if (Math.abs(sin) > 1e-9) {
+            double a = (pyCos - spanY) / sin, b = (pyCos + spanY) / sin;
+            if (a > b) {
+                double t = a;
+                a = b;
+                b = t;
+            }
+            if (a > lo) lo = a;
+            if (b < hi) hi = b;
+        } else if (Math.abs(pyCos) > spanY) {
+            return false;
+        }
+        rowLo = Math.max(-reach, (int) Math.ceil(lo - 1e-9));
+        rowHi = Math.min(reach, (int) Math.floor(hi + 1e-9));
+        return rowLo <= rowHi;
+    }
+
+    private void buildTables(double bandSpan, double inner, double capH, double lobePeak, double bandDrop) {
+        int n = (int) Math.ceil(bandSpan * LUT_INV) + 2;
+        if (envLut == null || envLut.length < n) {
+            envLut = new double[n];
+            diskLut = new double[n];
+            bandHLut = new double[n];
+        }
+        lutN = n;
+        for (int k = 0; k < n; k++) {
+            double h = k * LUT_STEP;
+            envLut[k] = capH + (lobePeak - capH) * glowProfile(h, inner);
+            diskLut[k] = bandDrop * lobeProfile(h, bandSpan, DISK_K);
+            double t = Math.min(1.0, h / bandSpan);
+            bandHLut[k] = Math.clamp(1.0 - t * Math.sqrt(t), 0, 1);
+        }
+    }
+
+    private double sample(double[] table, double hx) {
+        double f = hx * LUT_INV;
+        int k = (int) f;
+        if (k < 0) return table[0];
+        if (k + 1 >= lutN) return table[lutN - 1];
+        return table[k] + (table[k + 1] - table[k]) * (f - k);
+    }
+
+    private static double sinDouble(double ax, double ay, double cosPhase, double sinPhase) {
+        double m2 = ax * ax + ay * ay;
+        if (m2 < 1e-12) return sinPhase;
+        return (2.0 * ay * ax / m2) * cosPhase + ((ax * ax - ay * ay) / m2) * sinPhase;
     }
 
     private static double ringWeight(double d, double radius, double half) {
@@ -398,7 +477,12 @@ final class BlackHole {
         double t = Math.clamp(hx / span, 0, 1);
         if (t < 1e-4) return 1.0;
         double u = Math.PI * t;
-        return Math.pow(Math.max(0, Math.sin(u) / u), k);
+        double base = Math.max(0, Math.sin(u) / u);
+        if (k == LOBE_K) {
+            double b2 = base * base;
+            return b2 * b2;
+        }
+        return Math.pow(base, k);
     }
 
     private static double glowProfile(double hx, double span) {

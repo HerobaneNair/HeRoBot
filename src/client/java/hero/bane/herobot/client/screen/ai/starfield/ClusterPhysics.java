@@ -1,6 +1,8 @@
 package hero.bane.herobot.client.screen.ai.starfield;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 final class ClusterPhysics {
     private static final double LINK_R = 95.0;
@@ -23,23 +25,38 @@ final class ClusterPhysics {
 
     private ClusterPhysics() {}
 
+    private static double[] omgBuf = new double[0];
+    private static double[] spdBuf = new double[0];
+    private static boolean[] orbitBuf = new boolean[0];
+    private static boolean[] clusterBuf = new boolean[0];
+    private static boolean[] claimBuf = new boolean[0];
+    private static boolean[] removeBuf = new boolean[0];
+    private static int[] blastBuf = new int[0];
+    private static int[] stampBuf = new int[0];
+
     static void apply(List<Comet> comets, double dt) {
         int n = comets.size();
         if (n < 2) return;
 
         Grid grid = new Grid(comets, LINK_R);
         UnionFind clusters = connect(comets, grid);
-        double blend = Math.min(1.0, ORBIT_RATE * dt);
-        boolean[] orbiting = new boolean[n];
-        boolean[] clustered = new boolean[n];
+        clusters.buildGroups();
 
-        for (List<Integer> members : clusters.groups().values()) {
-            if (members.size() < 2) continue;
-            for (int idx : members) clustered[idx] = true;
-            double[] center = mean(comets, members);
-            pullToCenter(comets, members, center, dt);
-            if (members.size() == 2) spring(comets, members, dt);
-            else orbit(comets, members, center, blend, dt, orbiting);
+        double blend = Math.min(1.0, ORBIT_RATE * dt);
+        boolean[] orbiting = orbitBuf = flags(orbitBuf, n);
+        boolean[] clustered = clusterBuf = flags(clusterBuf, n);
+        int[] items = clusters.items();
+        double[] center = new double[4];
+
+        for (int g = 0, gc = clusters.groupCount(); g < gc; g++) {
+            int from = clusters.groupStart(g), to = clusters.groupEnd(g);
+            int cnt = to - from;
+            if (cnt < 2) continue;
+            for (int k = from; k < to; k++) clustered[items[k]] = true;
+            mean(comets, items, from, to, center);
+            pullToCenter(comets, items, from, to, center, dt);
+            if (cnt == 2) spring(comets, items[from], items[from + 1], dt);
+            else orbit(comets, items, from, to, center, blend, dt, orbiting);
         }
 
         for (int i = 0; i < n; i++) {
@@ -49,8 +66,8 @@ final class ClusterPhysics {
         }
     }
 
-    private static void spring(List<Comet> comets, List<Integer> members, double dt) {
-        Comet a = comets.get(members.getFirst()), b = comets.get(members.get(1));
+    private static void spring(List<Comet> comets, int ia, int ib, double dt) {
+        Comet a = comets.get(ia), b = comets.get(ib);
         double dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
         if (d <= 0.01) return;
 
@@ -65,15 +82,20 @@ final class ClusterPhysics {
         b.vx += rvx * damp; b.vy += rvy * damp;
     }
 
-    private static void orbit(List<Comet> comets, List<Integer> members, double[] center,
+    private static void orbit(List<Comet> comets, int[] items, int from, int to, double[] center,
                               double blend, double dt, boolean[] orbiting) {
-        int cnt = members.size();
+        int cnt = to - from;
         double cx = center[0], cy = center[1], cvx = center[2], cvy = center[3];
 
-        double[] omg = new double[cnt], spd = new double[cnt];
+        if (omgBuf.length < cnt) {
+            omgBuf = new double[Math.max(64, cnt)];
+            spdBuf = new double[Math.max(64, cnt)];
+        }
+        double[] omg = omgBuf, spd = spdBuf;
+
         double omega = 0, omegaDen = 0, maxR = 0, sumOmg = 0, sumSpeed = 0;
         for (int m = 0; m < cnt; m++) {
-            Comet s = comets.get(members.get(m));
+            Comet s = comets.get(items[from + m]);
             double rx = s.x - cx, ry = s.y - cy, rvx = s.vx - cvx, rvy = s.vy - cvy;
             double r2 = rx * rx + ry * ry;
             maxR = Math.max(maxR, Math.sqrt(r2));
@@ -97,7 +119,7 @@ final class ClusterPhysics {
         double coherence = clamp01(1 - cvOmg) * clamp01(1 - cvSpeed);
 
         for (int m = 0; m < cnt; m++) {
-            int idx = members.get(m);
+            int idx = items[from + m];
             Comet s = comets.get(idx);
             double rx = s.x - cx, ry = s.y - cy, r = Math.hypot(rx, ry);
 
@@ -120,9 +142,9 @@ final class ClusterPhysics {
         }
     }
 
-    private static void pullToCenter(List<Comet> comets, List<Integer> members, double[] center, double dt) {
-        for (int idx : members) {
-            Comet s = comets.get(idx);
+    private static void pullToCenter(List<Comet> comets, int[] items, int from, int to, double[] center, double dt) {
+        for (int k = from; k < to; k++) {
+            Comet s = comets.get(items[k]);
             s.vx += (center[0] - s.x) * CENTER_PULL * s.gravityMul * dt;
             s.vy += (center[1] - s.y) * CENTER_PULL * s.gravityMul * dt;
         }
@@ -130,55 +152,79 @@ final class ClusterPhysics {
 
     static List<Blast> collide(List<Comet> comets) {
         int n = comets.size();
-        List<Blast> blasts = new ArrayList<>();
-        if (n < 2) return blasts;
+        if (n < 2) return List.of();
 
         Grid grid = new Grid(comets, LINK_R);
         UnionFind clusters = connect(comets, grid);
-        int[] clusterSize = clusters.sizes();
+        clusters.buildGroups();
 
         UnionFind merged = new UnionFind(n);
         grid.eachNeighborPair((i, j) -> {
             if (clusters.find(i) != clusters.find(j)) return;
-            double thresh = COLLIDE_R * Math.max(1, clusterSize[i] - 1);
+            double thresh = COLLIDE_R * Math.max(1, clusters.sizeOf(i) - 1);
             if (dist2(comets, i, j) <= thresh * thresh) merged.union(i, j);
         });
+        merged.buildGroups();
 
-        int[] mergedSize = merged.sizes();
-        boolean[] claimed = new boolean[n];
+        boolean[] claimed = claimBuf = flags(claimBuf, n);
+        boolean[] remove = removeBuf = flags(removeBuf, n);
+        if (blastBuf.length < n) blastBuf = new int[Math.max(64, n)];
+        if (stampBuf.length < n) stampBuf = new int[Math.max(64, n)];
+        int[] blast = blastBuf;
+        int[] stamp = stampBuf;
+        Arrays.fill(stamp, 0, n, 0);
+
+        int[] items = merged.items();
         double absorbR = COLLIDE_R * 3;
-        Set<Integer> toRemove = new TreeSet<>(Collections.reverseOrder());
+        double[] center = new double[4];
+        double[] at = new double[4];
+        int[] cursor = new int[1];
+        List<Blast> blasts = null;
+        int tag = 0;
 
-        for (List<Integer> members : merged.groups().values()) {
-            if (members.size() < 2) continue;
+        for (int g = 0, gc = merged.groupCount(); g < gc; g++) {
+            int from = merged.groupStart(g), to = merged.groupEnd(g);
+            if (to - from < 2) continue;
 
-            double[] center = mean(comets, members);
-            List<Integer> blast = new ArrayList<>(members);
-            for (int idx : members) claimed[idx] = true;
-
-            grid.eachWithin(center[0], center[1], absorbR, i -> {
-                if (claimed[i] || mergedSize[i] >= 2) return;
+            mean(comets, items, from, to, center);
+            int bc = 0;
+            for (int k = from; k < to; k++) {
+                int idx = items[k];
+                blast[bc++] = idx;
+                claimed[idx] = true;
+            }
+            cursor[0] = bc;
+            double ccx = center[0], ccy = center[1];
+            grid.eachWithin(ccx, ccy, absorbR, i -> {
+                if (claimed[i] || merged.sizeOf(i) >= 2) return;
                 Comet s = comets.get(i);
-                if (Math.hypot(s.x - center[0], s.y - center[1]) <= absorbR) {
-                    blast.add(i);
+                if (Math.hypot(s.x - ccx, s.y - ccy) <= absorbR) {
+                    blast[cursor[0]++] = i;
                     claimed[i] = true;
                 }
             });
+            bc = cursor[0];
 
-            double[] at = mean(comets, blast);
-            blasts.add(new Blast(at[0], at[1], blast.size()));
-            repel(comets, grid, at[0], at[1], blast);
-            toRemove.addAll(blast);
+            mean(comets, blast, 0, bc, at);
+            if (blasts == null) blasts = new ArrayList<>();
+            blasts.add(new Blast(at[0], at[1], bc));
+
+            tag++;
+            for (int k = 0; k < bc; k++) {
+                stamp[blast[k]] = tag;
+                remove[blast[k]] = true;
+            }
+            repel(comets, grid, at[0], at[1], stamp, tag);
         }
 
-        for (int idx : toRemove) comets.remove(idx);
+        if (blasts == null) return List.of();
+        compact(comets, remove);
         return blasts;
     }
 
-    private static void repel(List<Comet> comets, Grid grid, double x, double y, List<Integer> exploding) {
-        Set<Integer> blast = new HashSet<>(exploding);
+    private static void repel(List<Comet> comets, Grid grid, double x, double y, int[] stamp, int tag) {
         grid.eachWithin(x, y, BLAST_R, i -> {
-            if (blast.contains(i)) return;
+            if (stamp[i] == tag) return;
             Comet s = comets.get(i);
             double dx = s.x - x, dy = s.y - y, d = Math.hypot(dx, dy);
             if (d < 0.01 || d > BLAST_R) return;
@@ -188,23 +234,42 @@ final class ClusterPhysics {
         });
     }
 
+    private static void compact(List<Comet> comets, boolean[] remove) {
+        int n = comets.size(), w = 0;
+        for (int i = 0; i < n; i++) {
+            if (remove[i]) continue;
+            if (w != i) comets.set(w, comets.get(i));
+            w++;
+        }
+        for (int i = n - 1; i >= w; i--) comets.remove(i);
+    }
+
     private static UnionFind connect(List<Comet> comets, Grid grid) {
         UnionFind uf = new UnionFind(comets.size());
-        double r2 = ClusterPhysics.LINK_R * ClusterPhysics.LINK_R;
+        double r2 = LINK_R * LINK_R;
         grid.eachNeighborPair((i, j) -> {
             if (dist2(comets, i, j) < r2) uf.union(i, j);
         });
         return uf;
     }
 
-    private static double[] mean(List<Comet> comets, List<Integer> members) {
+    private static void mean(List<Comet> comets, int[] items, int from, int to, double[] out) {
         double cx = 0, cy = 0, cvx = 0, cvy = 0;
-        for (int idx : members) {
-            Comet s = comets.get(idx);
+        for (int k = from; k < to; k++) {
+            Comet s = comets.get(items[k]);
             cx += s.x; cy += s.y; cvx += s.vx; cvy += s.vy;
         }
-        int n = members.size();
-        return new double[]{cx / n, cy / n, cvx / n, cvy / n};
+        int n = to - from;
+        out[0] = cx / n;
+        out[1] = cy / n;
+        out[2] = cvx / n;
+        out[3] = cvy / n;
+    }
+
+    private static boolean[] flags(boolean[] buf, int n) {
+        if (buf.length < n) return new boolean[Math.max(64, n)];
+        Arrays.fill(buf, 0, n, false);
+        return buf;
     }
 
     private static double dist2(List<Comet> comets, int i, int j) {

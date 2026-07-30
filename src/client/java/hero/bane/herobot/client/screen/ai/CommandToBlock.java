@@ -69,6 +69,7 @@ public final class CommandToBlock {
             case "autojump" -> autojump(args);
             case "hotbar" -> hotbar(args);
             case "place" -> place(args);
+            case "break" -> breakBlock(args);
             case "path" -> path(args);
             case "msg" -> rest.isBlank() ? null : result(BlockType.SEND_MESSAGE, "message", rest);
             case "handedness" -> args.length == 1 && (args[0].equals("left") || args[0].equals("right"))
@@ -125,7 +126,8 @@ public final class CommandToBlock {
                 params.put("mode", "once");
             }
             case "twice" -> {
-                if (!sub.equals("attack") || args.length != 1) return null;
+                if (args.length != 1) return null;
+                if (!sub.equals("attack") && !sub.equals("use")) return null;
                 params.put("mode", "twice");
             }
             case "continuous" -> {
@@ -397,15 +399,38 @@ public final class CommandToBlock {
     }
 
     private static Result place(String[] args) {
+        if (args.length < 3 || args.length > 5) return null;
+        for (int i = 0; i < 3; i++) {
+            if (!COORD.matcher(args[i]).matches()) return null;
+        }
+        int i = 3;
+        String face = "any";
+        if (i < args.length && !args[i].equals("force")) {
+            if (!BlockDefRegistry.FACES.contains(args[i])) return null;
+            face = args[i++];
+        }
+        boolean force = false;
+        if (i < args.length) {
+            if (!args[i].equals("force") || args.length != i + 1) return null;
+            force = true;
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("position", args[0] + " " + args[1] + " " + args[2]);
+        params.put("face", face);
+        params.put("force", force);
+        return new Result(BlockType.PLACE_BLOCK, params);
+    }
+
+    private static Result breakBlock(String[] args) {
         if (args.length < 3 || args.length > 4) return null;
         for (int i = 0; i < 3; i++) {
             if (!COORD.matcher(args[i]).matches()) return null;
         }
-        if (args.length == 4 && !BlockDefRegistry.FACES.contains(args[3])) return null;
+        if (args.length == 4 && !args[3].equals("force")) return null;
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("position", args[0] + " " + args[1] + " " + args[2]);
-        params.put("face", args.length == 4 ? args[3] : "any");
-        return new Result(BlockType.PLACE_BLOCK, params);
+        params.put("force", args.length == 4);
+        return new Result(BlockType.BREAK_BLOCK, params);
     }
 
     private static Result path(String[] args) {

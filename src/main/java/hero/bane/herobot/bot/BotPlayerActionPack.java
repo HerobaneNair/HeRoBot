@@ -378,12 +378,17 @@ public class BotPlayerActionPack implements PlayerController {
         }
 
         if (player.getAbilities().flying && player instanceof BotPlayer) {
-            double verticalSpeed = 0.05 * 3.0;
-            Vec3 dm = player.getDeltaMovement();
-            if (jumping && !sneaking) {
-                player.setDeltaMovement(dm.add(0, verticalSpeed, 0));
-            } else if (sneaking && !jumping) {
-                player.setDeltaMovement(dm.add(0, -verticalSpeed, 0));
+            if (sneaking && player.onGround() && !player.isSpectator()) {
+                player.getAbilities().flying = false;
+                player.onUpdateAbilities();
+            } else {
+                double verticalSpeed = 0.05 * 3.0;
+                Vec3 dm = player.getDeltaMovement();
+                if (jumping && !sneaking) {
+                    player.setDeltaMovement(dm.add(0, verticalSpeed, 0));
+                } else if (sneaking && !jumping) {
+                    player.setDeltaMovement(dm.add(0, -verticalSpeed, 0));
+                }
             }
             if (jumping && actions.get(ActionType.JUMP) == null) {
                 jumping = false;
@@ -568,18 +573,19 @@ public class BotPlayerActionPack implements PlayerController {
                     return true;
                 }
                 HitResult hit = getTarget(player);
+                int uses = action.hits;
 
                 if (player instanceof BotPlayer bot && HeroBotSettings.botLagUses) {
                     int delay = bot.delayTicks(1);
                     if (delay > 0) {
                         long executeAt = player.level().getServer().getTickCount() + delay;
-                        ap.pendingActions.add(new DelayedAction(executeAt, () -> executeUse(player, hit)));
+                        ap.pendingActions.add(new DelayedAction(executeAt, () -> repeatUse(player, hit, uses)));
                         ap.itemUseCooldown = delay;
                         return true;
                     }
                 }
 
-                return executeUse(player, hit);
+                return repeatUse(player, hit, uses);
             }
 
             @Override
@@ -841,6 +847,12 @@ public class BotPlayerActionPack implements PlayerController {
             }
         };
 
+private static boolean repeatUse(ServerPlayer player, HitResult hit, int uses) {
+            boolean used = false;
+            for (int i = 0; i < uses; i++) used |= executeUse(player, hit);
+            return used;
+        }
+
         private static boolean executeUse(ServerPlayer player, HitResult hit) {
             BotPlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();
             for (InteractionHand hand : InteractionHand.values()) {
@@ -953,7 +965,7 @@ public class BotPlayerActionPack implements PlayerController {
         }
 
         public boolean resetMineCheck() {
-            return !isContinuous || ticksRemaining > 0;
+            return !isContinuous;
         }
 
         public boolean isContinuous() {
@@ -965,14 +977,12 @@ public class BotPlayerActionPack implements PlayerController {
         }
 
         Boolean tick(BotPlayerActionPack actionPack, ActionType type) {
-            if (ticksRemaining > 0) {
-                ticksRemaining--;
-                if (ticksRemaining <= 0) {
-                    type.stop(actionPack.player, this);
-                    done = true;
-                    return null;
-                }
+            if (ticksRemaining == 0) {
+                type.stop(actionPack.player, this);
+                done = true;
+                return null;
             }
+            if (ticksRemaining > 0) ticksRemaining--;
 
             next--;
             Boolean cancel = null;

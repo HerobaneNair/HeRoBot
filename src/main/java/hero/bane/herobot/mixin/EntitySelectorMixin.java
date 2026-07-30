@@ -1,27 +1,28 @@
 package hero.bane.herobot.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import hero.bane.herobot.util.EntitySelectorExcludeSelf;
 import hero.bane.herobot.util.EntitySelectorSharedDistance;
 import net.minecraft.advancements.criterion.MinMaxBounds;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.selector.EntitySelector;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.Iterator;
+import java.util.ArrayList;
 import java.util.List;
 
-// I DONT CARE
 @SuppressWarnings("AddedMixinMembersNamePattern")
 @Mixin(EntitySelector.class)
-public class EntitySelectorMixin implements EntitySelectorSharedDistance {
+public class EntitySelectorMixin implements EntitySelectorSharedDistance, EntitySelectorExcludeSelf {
 
     @Unique private MinMaxBounds.Doubles horizontalDistance;
     @Unique private MinMaxBounds.Doubles verticalDistance;
+    @Unique private boolean excludeSelf;
 
     @Override
     public void setHorizontalDistance(MinMaxBounds.Doubles bounds) {
@@ -43,39 +44,51 @@ public class EntitySelectorMixin implements EntitySelectorSharedDistance {
         return verticalDistance;
     }
 
-    @Inject(method = "findEntities", at = @At("RETURN"))
-    private void applyCustomDistanceFiltering(
-            CommandSourceStack source,
-            CallbackInfoReturnable<List<Entity>> cir
-    ) {
-        if (horizontalDistance == null && verticalDistance == null) return;
+    @Override
+    public void setExcludeSelf(boolean excludeSelf) {
+        this.excludeSelf = excludeSelf;
+    }
+
+    @Override
+    public boolean isExcludeSelf() {
+        return excludeSelf;
+    }
+
+    @ModifyReturnValue(method = "findEntities", at = @At("RETURN"))
+    private List<? extends Entity> filterFoundEntities(List<? extends Entity> found, CommandSourceStack source) {
+        return herobot$applyCustomFilters(found, source);
+    }
+
+    @ModifyReturnValue(method = "findPlayers", at = @At("RETURN"))
+    private List<ServerPlayer> filterFoundPlayers(List<ServerPlayer> found, CommandSourceStack source) {
+        return herobot$applyCustomFilters(found, source);
+    }
+
+    @Unique
+    private <T extends Entity> List<T> herobot$applyCustomFilters(List<T> found, CommandSourceStack source) {
+        Entity self = excludeSelf ? source.getEntity() : null;
+
+        if (self == null && horizontalDistance == null && verticalDistance == null) return found;
+        if (found.isEmpty()) return found;
 
         Vec3 origin = source.getPosition();
-        List<Entity> entities = cir.getReturnValue();
+        List<T> kept = new ArrayList<>(found.size());
 
-        Iterator<Entity> iterator = entities.iterator();
-
-        while (iterator.hasNext()) {
-            Entity entity = iterator.next();
+        for (T entity : found) {
+            if (entity == self) continue;
 
             if (horizontalDistance != null) {
                 double dx = entity.getX() - origin.x;
                 double dz = entity.getZ() - origin.z;
-                double horizontalSq = dx * dx + dz * dz;
 
-                if (!horizontalDistance.matchesSqr(horizontalSq)) {
-                    iterator.remove();
-                    continue;
-                }
+                if (!horizontalDistance.matchesSqr(dx * dx + dz * dz)) continue;
             }
 
-            if (verticalDistance != null) {
-                double dy = Math.abs(entity.getY() - origin.y);
+            if (verticalDistance != null && !verticalDistance.matches(Math.abs(entity.getY() - origin.y))) continue;
 
-                if (!verticalDistance.matches(dy)) {
-                    iterator.remove();
-                }
-            }
+            kept.add(entity);
         }
+
+        return kept;
     }
 }

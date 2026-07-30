@@ -114,7 +114,7 @@ public final class BlockRenderer {
             }
         }
         L.h = Math.max(HEADER_H, maxChildH + 6);
-        if (def.type() == BlockType.FUNC_DEFINE && funcArity(inst, script) > 0) {
+        if (def.type() == BlockType.FUNC_DEFINE && funcNumArgs(inst, script) > 0) {
             L.h = Math.max(L.h, PARAM_BLOCK_H);
         }
 
@@ -164,77 +164,18 @@ public final class BlockRenderer {
                 contentRight = cx - 4;
             }
         }
-        if (def.type() == BlockType.ELSE_IF) {
-            L.suffix = ")";
-            L.suffixX = cx - 2;
-            contentRight = L.suffixX + font.width(")");
-        } else if (def.type() == BlockType.WAIT) {
-            L.suffix = tickWord(inst);
-            L.suffixX = cx;
-            contentRight = cx + font.width(L.suffix);
-        } else if (def.type() == BlockType.LOOP_ITER) {
-            int loopNo = EffectiveSlots.loopDisplayId(script, inst.pairedId());
-            L.suffix = loopNo <= 0 ? "?" : String.valueOf(loopNo);
-            L.suffixX = contentRight;
-            contentRight = L.suffixX + font.width(L.suffix);
-        } else if (def.type() == BlockType.EVERY_X_TICKS) {
-            L.suffix = tickWord(inst);
-            L.suffixX = cx;
-            contentRight = cx + font.width(L.suffix);
+        BlockDecorators.SuffixDecorator suffixDecorator = BlockDecorators.suffixFor(def.type());
+        if (suffixDecorator != null) {
+            contentRight = suffixDecorator.apply(L, cx, contentRight, font, inst, script);
         }
         L.w = Math.max(MIN_W, (contentRight - ox) + PAD);
         if (def.type() == BlockType.STOP_SCRIPT) {
             L.w = font.width(blockLabel(def)) + PAD * 2;
         }
 
-        if (EffectiveSlots.isLookBlock(def.type())) {
-            L.w += 13;
-            L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-            L.expanderMinus = EffectiveSlots.isLookExpanded(inst);
-        } else if (EffectiveSlots.sensorTakesTarget(def.type())) {
-            L.w += 13;
-            L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-            L.expanderMinus = EffectiveSlots.isSensorTargetShown(inst);
-        } else if (EffectiveSlots.sendTakesOp(def.type())) {
-            L.w += 13;
-            L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-            L.expanderMinus = EffectiveSlots.isOpShown(inst);
-        } else if (EffectiveSlots.isCalcBlock(def.type())) {
-            boolean canRemove = EffectiveSlots.calcInputCount(inst) > 0;
-            L.w += canRemove ? 26 : 13;
-            L.plus = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-            if (canRemove) {
-                L.expander = new int[]{ox + L.w - 24, oy + 3, 9, 9};
-                L.expanderMinus = true;
-            }
-        } else if (EffectiveSlots.isLoopBlock(def.type())) {
-            boolean shown = EffectiveSlots.isLoopIterShown(script, inst);
-            L.iterId = EffectiveSlots.loopDisplayId(script, inst.id());
-            if (shown) {
-                String tag = iterTag(L.iterId);
-                int tw = font.width(tag);
-                L.w += 15 + tw;
-                L.iterChip = new int[]{ox + L.w - 12 - tw - 2, oy + 3, tw + 3, 9};
-            } else {
-                L.w += 13;
-            }
-            L.expander = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-            L.expanderMinus = shown;
-        }
-
-        if (def.type() == BlockType.FUNC_DEFINE) {
-            layoutParamColumns(L, inst, font, ox, oy, script);
-        }
-        if (def.type() == BlockType.ON_MESSAGE) {
-            String chip = "message";
-            int cw = font.width(chip) + 8;
-            int chipX = ox + L.w - PAD + 4;
-            L.msgChip = new int[]{chipX, chipY, cw, CHIP_H};
-            L.w = (chipX + cw - ox) + PAD;
-        }
-        if (EffectiveSlots.isVarBlock(def.type())) {
-            L.w += 12;
-            L.cycleButton = new int[]{ox + L.w - 12, oy + 3, 9, 9};
+        BlockDecorators.ButtonDecorator buttonDecorator = BlockDecorators.buttonsFor(def.type());
+        if (buttonDecorator != null) {
+            buttonDecorator.apply(L, inst, font, ox, oy, script);
         }
 
         L.inX = ox + L.w / 2;
@@ -309,21 +250,21 @@ public final class BlockRenderer {
         return L;
     }
 
-    private static int funcArity(BlockInstance inst, AiScript script) {
+    private static int funcNumArgs(BlockInstance inst, AiScript script) {
         if (script == null) return 0;
         hero.bane.herobot.ai.FuncDecl decl = script.function(EffectiveSlots.funcName(inst));
         return decl == null ? 0 : decl.numParams();
     }
 
-    private static void layoutParamColumns(Layout L, BlockInstance inst, Font font, int ox, int oy, AiScript script) {
+    static void layoutParamColumns(Layout L, BlockInstance inst, Font font, int ox, int oy, AiScript script) {
         String fname = EffectiveSlots.funcName(inst);
         hero.bane.herobot.ai.FuncDecl decl = script == null ? null : script.function(fname);
-        int arity = decl == null ? 0 : decl.numParams();
-        if (arity > 0) {
+        int numArgs = decl == null ? 0 : decl.numParams();
+        if (numArgs > 0) {
             int topY = oy + (L.h - (CHIP_H * 2 + 2)) / 2;
             int botY = topY + CHIP_H + 2;
             int cx = ox + L.w;
-            for (int i = 0; i < arity; i++) {
+            for (int i = 0; i < numArgs; i++) {
                 VarType pt = decl.paramType(i);
                 if (pt == null) continue;
                 String tlabel = pt.chipLabel();
@@ -336,9 +277,9 @@ public final class BlockRenderer {
             }
             L.w = (cx - ox) + PAD - 6;
         }
-        L.w += arity > 0 ? 26 : 13;
+        L.w += numArgs > 0 ? 26 : 13;
         L.plus = new int[]{ox + L.w - 12, oy + 3, 9, 9};
-        if (arity > 0) {
+        if (numArgs > 0) {
             L.expander = new int[]{ox + L.w - 24, oy + 3, 9, 9};
             L.expanderMinus = true;
         }
@@ -376,7 +317,9 @@ public final class BlockRenderer {
             if (slotName.equals("trueValue")) return "then";
             if (slotName.equals("falseValue")) return "else";
         }
+        if (type == BlockType.DISTANCE_TO && slotName.equals("toShape")) return "to";
         if (type == BlockType.SEND_MESSAGE && slotName.equals("op")) return "op";
+        if ((type == BlockType.PLACE_BLOCK || type == BlockType.BREAK_BLOCK) && slotName.equals("force")) return "force";
         if (type == BlockType.CONTAINS && slotName.equals("checkCase")) return "case";
         return null;
     }
@@ -395,9 +338,14 @@ public final class BlockRenderer {
         return blockLabel(def);
     }
 
-    private static String tickWord(BlockInstance inst) {
+    static String tickWord(BlockInstance inst) {
         Object v = inst.getParam("ticks");
         return (v instanceof Number n && n.intValue() == 1) ? "tick" : "ticks";
+    }
+
+    static String loopWord(BlockInstance inst) {
+        Object v = inst.getParam("count");
+        return (v instanceof Number n && n.intValue() == 1) ? "loop" : "loops";
     }
 
     private static void translate(Layout L, int dx, int dy) {
@@ -656,19 +604,19 @@ public final class BlockRenderer {
     public static int lighten(int argb, float t) {
         int a = (argb >> 24) & 0xFF;
         int r = (argb >> 16) & 0xFF;
-        int gg = (argb >> 8) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
         int b = argb & 0xFF;
         r = (int) (r + (255 - r) * t);
-        gg = (int) (gg + (255 - gg) * t);
+        g = (int) (g + (255 - g) * t);
         b = (int) (b + (255 - b) * t);
-        return (a << 24) | (r << 16) | (gg << 8) | b;
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     public static int darken(int argb, float f) {
         int a = (argb >> 24) & 0xFF;
         int r = (int) (((argb >> 16) & 0xFF) * f);
-        int gg = (int) (((argb >> 8) & 0xFF) * f);
+        int g = (int) (((argb >> 8) & 0xFF) * f);
         int b = (int) ((argb & 0xFF) * f);
-        return (a << 24) | (r << 16) | (gg << 8) | b;
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 }

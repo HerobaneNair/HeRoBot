@@ -253,7 +253,7 @@ public final class InventorySubtree {
         String slotsStr = StringArgumentType.getString(c, "slots");
         int[] slots = parseSlotList(slotsStr);
         if (slots == null || slots.length == 0) {
-            c.getSource().sendFailure(Component.literal("Invalid slot format. Use comma-separated numbers (e.g. 1,2,3,4)"));
+            c.getSource().sendFailure(Component.literal("Invalid slot format. Use comma-separated numbers (i.e. 1,2,3,4)"));
             return 0;
         }
 

@@ -72,6 +72,17 @@ public final class HeroBotSettings {
     @Bounds(min = 0)
     public static int shieldDelayTicks = 5;
 
+    @Rule(desc = "Disable knockback scaling, as in entities will take the same vertical knockback regardless of their previous vertical velocity")
+    public static boolean kbScaling = true;
+
+    @Rule(desc = "Change how many ticks the hurt animation/red flash and damage cooldown last when any living entity is damaged (default 10)")
+    @Bounds(min = 1)
+    public static int damageTicks = 10;
+
+    public static int damageInvulnerableTicks() {
+        return damageTicks * 2;
+    }
+
     public enum ExplosionNoDmgMode {
         TRUE, FALSE, MOST;
 

@@ -33,8 +33,14 @@ final class Comet {
 
     private double stretch, hnx, hny, holeDist;
 
+    boolean consumed;
+
+    private static int[] coverBuf = new int[0];
+    private static int[] stampBuf = new int[0];
+    private static int[] touchBuf = new int[0];
+    private static int stampGen;
+
     private final List<double[]> trail = new ArrayList<>();
-    private int[] trailCover;
     private double[][] trailPts;
     private double[][] warpPts;
     private double[] nosePt;
@@ -225,9 +231,20 @@ final class Comet {
         if (w <= 0 || h <= 0) return;
 
         int area = w * h;
-        if (trailCover == null || trailCover.length < area) trailCover = new int[area];
-        int[] cover = trailCover;
-        java.util.Arrays.fill(cover, 0, area, 0);
+        if (coverBuf.length < area) {
+            int cap = Math.max(4096, area);
+            coverBuf = new int[cap];
+            stampBuf = new int[cap];
+            touchBuf = new int[cap];
+            stampGen = 0;
+        }
+        if (stampGen == Integer.MAX_VALUE) {
+            java.util.Arrays.fill(stampBuf, 0);
+            stampGen = 0;
+        }
+        int gen = ++stampGen;
+        int[] cover = coverBuf, stamp = stampBuf, touch = touchBuf;
+        int touched = 0;
 
         for (int s = 0; s < segs; s++) {
             double[] pa = pts[s], pb = pts[s + 1];
@@ -255,17 +272,21 @@ final class Comet {
                     double edge = clamp01(radius - d);
                     int a = (int) (segAlpha * f * f * 230 * edge);
                     int idx = row + (px - x0);
-                    if (a > cover[idx]) cover[idx] = a;
+                    if (stamp[idx] != gen) {
+                        stamp[idx] = gen;
+                        cover[idx] = a;
+                        touch[touched++] = idx;
+                    } else if (a > cover[idx]) {
+                        cover[idx] = a;
+                    }
                 }
             }
         }
 
-        for (int py = y0; py <= y1; py++) {
-            int row = (py - y0) * w;
-            for (int px = x0; px <= x1; px++) {
-                int a = cover[row + (px - x0)];
-                if (a > 3) batch.pixel(px, py, (a << 24) | TRAIL_RGB);
-            }
+        for (int k = 0; k < touched; k++) {
+            int idx = touch[k];
+            int a = cover[idx];
+            if (a > 3) batch.pixel(x0 + idx % w, y0 + idx / w, (a << 24) | TRAIL_RGB);
         }
     }
 

@@ -94,7 +94,7 @@ public final class SelectorEditor {
         }
 
         String help1 = "Must select exactly one entity";
-        String help2 = "Use @n, @p, @r, @s - or @e/@a with limit=1";
+        String help2 = "Use @n, @p, @r, @s - or @e/@a/@z with limit=1";
         g.drawString(font, help1, px + 8, py + 70, 0xFFCBA6FF, false);
         g.drawString(font, help2, px + 8, py + 82, 0xFFCBA6FF, false);
         if (allowUuid) {

@@ -16,7 +16,7 @@ public record ControlOp(int kind, double x, double y, double z,
             PATH_MOVE_TYPE = 20, OPEN_INVENTORY = 21, SET_MAIN_HAND = 22, PICK_BLOCK = 23,
             PATH_AVOID_BLOCK = 24, PATH_DEBUG_CHANNEL = 25, ATTEMPT_AUTOJUMP = 26, CLOSE_SCREEN = 27;
 
-    public static final int MODE_ONCE = 0, MODE_CONTINUOUS = 1, MODE_INTERVAL = 2;
+    public static final int MODE_ONCE = 0, MODE_CONTINUOUS = 1, MODE_INTERVAL = 2, MODE_TWICE = 3;
 
     public static final int AVOID_ADD = 0, AVOID_REMOVE = 1, AVOID_CLEAR = 2;
 
@@ -75,6 +75,7 @@ public record ControlOp(int kind, double x, double y, double z,
                 Action a = switch (i1) {
                     case MODE_CONTINUOUS -> i3 > 0 ? Action.continuous(i3) : Action.continuous();
                     case MODE_INTERVAL -> i3 > 0 ? Action.interval(i2, i3) : Action.interval(i2);
+                    case MODE_TWICE -> Action.once(2);
                     default -> Action.once();
                 };
                 c.start(t, a);

@@ -8,9 +8,9 @@ public final class StrEval {
     private StrEval() {}
 
     public static final String OPS_LEGEND =
-            "\"text\"  +  {var}  Input1";
+            "\"text\"  +  {var}  Input1  ' \\\\,\\\" '";
     public static final String OPS_LEGEND_2 =
-            "[start:stop:step]  [::-1]  .strip()  \\{ escapes";
+            "[start:stop:step]  [::-1]  .strip()";
 
     @FunctionalInterface
     public interface Expr {
@@ -172,14 +172,20 @@ public final class StrEval {
             throw new RuntimeException("expected \"string\", {var} or Input#");
         }
 
+        /**
+         * Quoted text is taken literally - {@code "{var}"} is the four characters, not a lookup - so
+         * the only escapes are {@code \"} for a quote and {@code \\} for a backslash. Every other
+         * backslash stands for itself, leaving {@code "\{var}"} as written.
+         */
         Expr quoted() {
             pos++;
             StringBuilder sb = new StringBuilder();
             while (pos < input.length() && input.charAt(pos) != '"') {
                 char c = input.charAt(pos);
-                if (c == '\\' && pos + 1 < input.length()) {
+                char next = pos + 1 < input.length() ? input.charAt(pos + 1) : '\0';
+                if (c == '\\' && (next == '"' || next == '\\')) {
                     pos++;
-                    sb.append(input.charAt(pos));
+                    sb.append(next);
                 } else {
                     sb.append(c);
                 }

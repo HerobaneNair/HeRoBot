@@ -102,7 +102,6 @@ public final class EffectiveSlots {
         return n == null ? "" : n;
     }
 
-    /** Function names a define block may take: every declared function minus those already defined elsewhere. */
     public static List<String> defineNameChoices(BlockInstance block, AiScript script) {
         List<String> out = new ArrayList<>();
         if (script == null) return out;
@@ -168,7 +167,8 @@ public final class EffectiveSlots {
     public static boolean sensorTakesTarget(BlockType type) {
         return switch (type) {
             case HEALTH, POSITION, YAW, IS_TOUCHING_BLOCK, ON_DAMAGE, BLOCK_AT,
-                 HAS_TAG, SCOREBOARD, EQUIPMENT, DISTANCE_TO, DOING_ACTION -> true;
+                 HAS_TAG, SCOREBOARD, EQUIPMENT, DISTANCE_TO, DOING_ACTION,
+                 ATTACK_COOLDOWN, HURT_TIME, PING -> true;
             default -> false;
         };
     }
@@ -398,9 +398,10 @@ public final class EffectiveSlots {
             case VEC3, POSITION, POS_CALC -> ParamType.POSITION;
             case ROT, DIR_CALC -> ParamType.ROTATION;
             case TO_STRING, STRING_CALC, MSG_TEXT -> ParamType.STRING;
-            case NUM_CALC, RANDOM_DOUBLE, HEALTH, YAW, DISTANCE_TO, TIME_OF_DAY, SCOREBOARD, COMMAND_RESULT -> ParamType.DOUBLE;
+            case NUM_CALC, RANDOM_DOUBLE, HEALTH, YAW, DISTANCE_TO, TIME_OF_DAY, SCOREBOARD, COMMAND_RESULT,
+                 ATTACK_COOLDOWN -> ParamType.DOUBLE;
             case ITEM_IN_SLOT, EQUIPMENT -> ParamType.ITEM;
-            case RANDOM_INT, GET_COUNT, MAX_COUNT, INVENTORY_OPEN, CONTAINER_SIZE, LOOP_ITER -> ParamType.INT;
+            case RANDOM_INT, GET_COUNT, MAX_COUNT, INVENTORY_OPEN, CONTAINER_SIZE, LOOP_ITER, HURT_TIME, PING -> ParamType.INT;
             case COMPARE, EQUALITY, LOGIC, AND, OR, NOT, CONTAINS, IS_TOUCHING_BLOCK, HAS_TAG, IN_PATH, EVERY_X_TICKS, ON_DAMAGE, BOOL_CALC, DOING_ACTION -> ParamType.BOOLEAN;
             case READ_VAR -> paramTypeOf(varType(script, asString(reporter.getParam("name"))));
             case FUNC_PARAM -> paramTypeOf(funcParamType(script, reporter));

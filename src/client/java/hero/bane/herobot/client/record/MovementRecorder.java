@@ -2,6 +2,7 @@ package hero.bane.herobot.client.record;
 
 import hero.bane.herobot.ai.block.BlockType;
 import hero.bane.herobot.client.screen.ai.AiEditorScreen;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -11,6 +12,8 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +21,16 @@ import java.util.StringJoiner;
 
 public final class MovementRecorder {
     public static final MovementRecorder INSTANCE = new MovementRecorder();
+
+    private static final int K_FORWARD = 0;
+    private static final int K_BACK = 1;
+    private static final int K_LEFT = 2;
+    private static final int K_RIGHT = 3;
+    private static final int K_JUMP = 4;
+    private static final int K_SNEAK = 5;
+    private static final int K_ATTACK = 6;
+    private static final int K_USE = 7;
+    private static final int KEY_COUNT = 8;
 
     private MovementRecorder() {}
 
@@ -34,6 +47,9 @@ public final class MovementRecorder {
 
     private boolean recording;
     private AiEditorScreen editor;
+    private final Map<KeyMapping, Integer> watched = new IdentityHashMap<>();
+    private final boolean[] held = new boolean[KEY_COUNT];
+    private final boolean[] tapped = new boolean[KEY_COUNT];
     private final List<Frame> frames = new ArrayList<>();
     private final List<InvAction> invActions = new ArrayList<>();
     private final List<Integer> dragSlots = new ArrayList<>();
@@ -65,6 +81,7 @@ public final class MovementRecorder {
         prevInvScreen = false;
         prevMenuOpen = false;
         lastSelectedTrade = -1;
+        bindKeys(Minecraft.getInstance().options);
         LocalPlayer p = Minecraft.getInstance().player;
         startX = p != null ? p.getX() : 0;
         startY = p != null ? p.getY() : 0;
@@ -73,11 +90,50 @@ public final class MovementRecorder {
         Minecraft.getInstance().setScreen(null);
     }
 
+    private void bindKeys(Options o) {
+        watched.clear();
+        Arrays.fill(held, false);
+        Arrays.fill(tapped, false);
+        if (o == null) return;
+        watch(o.keyUp, K_FORWARD);
+        watch(o.keyDown, K_BACK);
+        watch(o.keyLeft, K_LEFT);
+        watch(o.keyRight, K_RIGHT);
+        watch(o.keyJump, K_JUMP);
+        watch(o.keyShift, K_SNEAK);
+        watch(o.keyAttack, K_ATTACK);
+        watch(o.keyUse, K_USE);
+    }
+
+    private void watch(KeyMapping mapping, int index) {
+        watched.put(mapping, index);
+        held[index] = mapping.isDown();
+    }
+
+    /**
+     * Called from the {@code KeyMapping.setDown} mixin, so a press that is made and released
+     * between two ticks is still seen. {@code held} follows the live state; {@code tapped} latches
+     * until the next sample for the keys vanilla reads through {@code consumeClick}.
+     */
+    public void onKeyStateChanged(KeyMapping mapping, boolean down) {
+        if (!recording) return;
+        Integer index = watched.get(mapping);
+        if (index == null) return;
+        held[index] = down;
+        if (down) tapped[index] = true;
+    }
+
+    /**
+     * Sampled at the head of {@code Minecraft.tick}, before {@code handleKeybinds} and
+     * {@code LocalPlayer.tick} read the same state, so frame {@code n} holds the input the client
+     * actually acted on during tick {@code n}.
+     */
+    public void sampleTick() {
+        if (recording) sample();
+    }
+
     public void clientTick() {
-        if (recording) {
-            sample();
-            return;
-        }
+        if (recording) return;
         if (pendingTarget != null) {
             AiEditorScreen target = pendingTarget;
             List<Frame> captured = pendingFrames;
@@ -96,15 +152,16 @@ public final class MovementRecorder {
         LocalPlayer p = mc.player;
         if (p == null) { cancel(); return; }
         sampleScreens(mc);
-        Options o = mc.options;
-        int forward = (o.keyUp.isDown() ? 1 : 0) - (o.keyDown.isDown() ? 1 : 0);
-        int strafe = (o.keyLeft.isDown() ? 1 : 0) - (o.keyRight.isDown() ? 1 : 0);
+        int forward = (held[K_FORWARD] ? 1 : 0) - (held[K_BACK] ? 1 : 0);
+        int strafe = (held[K_LEFT] ? 1 : 0) - (held[K_RIGHT] ? 1 : 0);
         frames.add(new Frame(
                 forward, strafe,
-                o.keyShift.isDown(), o.keySprint.isDown(), o.keyJump.isDown(),
-                o.keyAttack.isDown(), o.keyUse.isDown(),
+                held[K_SNEAK], p.isSprinting(), held[K_JUMP],
+                held[K_ATTACK] || tapped[K_ATTACK],
+                held[K_USE] || tapped[K_USE],
                 p.getInventory().getSelectedSlot(),
                 p.getYRot(), p.getXRot()));
+        Arrays.fill(tapped, false);
     }
 
     private void sampleScreens(Minecraft mc) {
@@ -194,6 +251,7 @@ public final class MovementRecorder {
         editor = null;
         frames.clear();
         invActions.clear();
+        watched.clear();
     }
 
     public void cancel() {
@@ -205,5 +263,6 @@ public final class MovementRecorder {
         editor = null;
         frames.clear();
         invActions.clear();
+        watched.clear();
     }
 }

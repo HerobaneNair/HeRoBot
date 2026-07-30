@@ -13,17 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Removes Carpet rules whose backing mixins HeroBot disables (see
- * {@code hero.bane.herobot.carpet.CarpetCompat}) so they no longer appear in {@code /carpet}.
- * Without this they'd be dead toggles: their implementing Carpet mixins are gone, so e.g.
- * {@code /carpet explosionNoBlockDamage} would silently do nothing, and several duplicate features
- * HeroBot already owns through its own settings.
- *
- * <p>{@link Pseudo} targets a class not on our compile classpath and is skipped when Carpet is
- * absent. Carpet registers its rules in {@code parseSettingsClass}; we drop the dead ones from the
- * backing map at its tail.
- */
 @Pseudo
 @Mixin(targets = "carpet.api.settings.SettingsManager", remap = false)
 public abstract class CarpetSettingsManagerMixin {

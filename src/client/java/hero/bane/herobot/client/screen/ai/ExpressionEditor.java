@@ -34,7 +34,7 @@ public final class ExpressionEditor {
     private Predicate<String> validator = ExprEval::isValid;
     private String legend1 = ExprEval.OPS_LEGEND;
     private String legend2 = ExprEval.OPS_LEGEND_2;
-    private String help1 = "Variables must be in braces, e.g. 5*{x}*3";
+    private String help1 = "Variables must be in braces, i.e. 5*{x}*3";
 
     public ExpressionEditor(Font font) {
         this.font = font;
@@ -48,7 +48,7 @@ public final class ExpressionEditor {
                      List<String> varNames, Consumer<String> onCommit) {
         open(screenW, screenH, title, initial, varNames,
                 ExprEval::isValid, ExprEval.OPS_LEGEND, ExprEval.OPS_LEGEND_2,
-                "Variables must be in braces, e.g. 5*{x}*3", onCommit);
+                "Variables must be in braces, i.e. 5*{x}*3", onCommit);
     }
 
     public void open(int screenW, int screenH, String title, String initial,

@@ -33,7 +33,7 @@ public final class RemotePlayerController implements PlayerController {
     @Override
     public PlayerController start(ActionType type, Action action) {
         int mode = action.limit == 1
-                ? ControlOp.MODE_ONCE
+                ? (action.hits > 1 ? ControlOp.MODE_TWICE : ControlOp.MODE_ONCE)
                 : (action.isContinuous() ? ControlOp.MODE_CONTINUOUS : ControlOp.MODE_INTERVAL);
         return send(ControlOp.startAction(type, mode, action.interval, action.ticksRemaining()));
     }

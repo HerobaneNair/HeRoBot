@@ -1,12 +1,13 @@
 package hero.bane.herobot.client.screen.ai.starfield;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Arrays;
 
 final class UnionFind {
     private final int[] parent;
+    private int[] items;
+    private int[] start;
+    private int[] elemGroup;
+    private int groupCount;
 
     UnionFind(int n) {
         parent = new int[n];
@@ -25,19 +26,49 @@ final class UnionFind {
         parent[find(a)] = find(b);
     }
 
-    Map<Integer, List<Integer>> groups() {
-        Map<Integer, List<Integer>> groups = new HashMap<>();
-        for (int i = 0; i < parent.length; i++) {
-            groups.computeIfAbsent(find(i), k -> new ArrayList<>()).add(i);
+    void buildGroups() {
+        int n = parent.length;
+        int[] gid = new int[n];
+        Arrays.fill(gid, -1);
+        elemGroup = new int[n];
+        int gc = 0;
+        for (int i = 0; i < n; i++) {
+            int root = find(i);
+            int g = gid[root];
+            if (g < 0) {
+                g = gc++;
+                gid[root] = g;
+            }
+            elemGroup[i] = g;
         }
-        return groups;
+        start = new int[gc + 1];
+        for (int i = 0; i < n; i++) start[elemGroup[i] + 1]++;
+        for (int g = 0; g < gc; g++) start[g + 1] += start[g];
+        int[] cursor = new int[gc];
+        System.arraycopy(start, 0, cursor, 0, gc);
+        items = new int[n];
+        for (int i = 0; i < n; i++) items[cursor[elemGroup[i]]++] = i;
+        groupCount = gc;
     }
 
-    int[] sizes() {
-        int[] size = new int[parent.length];
-        for (List<Integer> group : groups().values()) {
-            for (int idx : group) size[idx] = group.size();
-        }
-        return size;
+    int groupCount() {
+        return groupCount;
+    }
+
+    int groupStart(int g) {
+        return start[g];
+    }
+
+    int groupEnd(int g) {
+        return start[g + 1];
+    }
+
+    int[] items() {
+        return items;
+    }
+
+    int sizeOf(int i) {
+        int g = elemGroup[i];
+        return start[g + 1] - start[g];
     }
 }

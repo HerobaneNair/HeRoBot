@@ -10,7 +10,7 @@ import net.minecraft.client.renderer.RenderPipelines;
 import org.joml.Matrix3x2f;
 import org.jspecify.annotations.Nullable;
 
-final class PixelBatch implements GuiElementRenderState {
+public final class PixelBatch implements GuiElementRenderState {
     private int[] coords = new int[4096];
     private int[] colors = new int[1024];
     private int count;
@@ -20,7 +20,10 @@ final class PixelBatch implements GuiElementRenderState {
     private ScreenRectangle bounds;
     private int minX, minY, maxX, maxY;
 
-    void begin(GuiGraphics g, int left, int top, int right, int bottom) {
+    public PixelBatch() {
+    }
+
+    public void begin(GuiGraphics g, int left, int top, int right, int bottom) {
         count = 0;
         pose = new Matrix3x2f(g.pose());
         scissor = new ScreenRectangle(left, top, right - left, bottom - top).transformAxisAligned(pose);
@@ -47,11 +50,11 @@ final class PixelBatch implements GuiElementRenderState {
         if (y1 > maxY) maxY = y1;
     }
 
-    void pixel(int x, int y, int argb) {
+    public void pixel(int x, int y, int argb) {
         rect(x, y, x + 1, y + 1, argb);
     }
 
-    void submit(GuiGraphics g) {
+    public void submit(GuiGraphics g) {
         if (count == 0) return;
         ScreenRectangle box = new ScreenRectangle(minX, minY, maxX - minX, maxY - minY).transformMaxBounds(pose);
         bounds = scissor == null ? box : scissor.intersection(box);
