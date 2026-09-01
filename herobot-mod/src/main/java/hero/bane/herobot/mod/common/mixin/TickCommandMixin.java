@@ -15,7 +15,6 @@ public abstract class TickCommandMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/commands/Commands;hasPermission(Lnet/minecraft/server/permissions/PermissionCheck;)Lnet/minecraft/server/permissions/PermissionProviderCheck;")
     )
     private static PermissionProviderCheck<?> redirectPermission(net.minecraft.server.permissions.PermissionCheck check) {
-        // So command blocks can use it
         return Commands.hasPermission(Commands.LEVEL_MODERATORS);
     }
 }

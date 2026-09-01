@@ -30,7 +30,6 @@ public class DelayedCommand {
                                 .then(Commands.argument("ticks", IntegerArgumentType.integer(1))
                                         .then(Commands.literal("command")
                                                 .then(Commands.argument("command", StringArgumentType.greedyString())
-                                                        //Incredibly annoying to figure out
                                                         .suggests((c, b) -> {
                                                             String remaining = b.getRemaining();
                                                             ParseResults<CommandSourceStack> parse =

@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.ai.runtime;
 
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.BlockType;
 import hero.bane.herobot.mod.common.ai.runtime.executors.ActionExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.ControlExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.DataExecutor;
@@ -12,6 +12,7 @@ import hero.bane.herobot.mod.common.ai.runtime.executors.MotionExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.OperatorExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.PathExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.SensorExecutor;
+import hero.bane.herobot.mod.common.ai.runtime.executors.VoiceExecutor;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -26,6 +27,7 @@ public final class ScriptDispatch {
         ActionExecutor.register(FLOW);
         LookExecutor.register(FLOW);
         PathExecutor.register(FLOW);
+        VoiceExecutor.register(FLOW, REPORTER);
         InventoryExecutor.register(FLOW, REPORTER);
         ControlExecutor.register(FLOW, REPORTER);
         DataExecutor.register(FLOW, REPORTER);

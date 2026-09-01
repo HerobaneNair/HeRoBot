@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.client.record;
 
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.BlockType;
 import hero.bane.herobot.mod.client.screen.ai.AiEditorScreen;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -59,7 +59,6 @@ public final class MovementRecorder {
     private boolean prevMenuOpen;
     private int lastSelectedTrade;
 
-
     private double startX, startY, startZ;
 
     private AiEditorScreen pendingTarget;
@@ -110,11 +109,6 @@ public final class MovementRecorder {
         held[index] = mapping.isDown();
     }
 
-    /**
-     * Called from the {@code KeyMapping.setDown} mixin, so a press that is made and released
-     * between two ticks is still seen. {@code held} follows the live state; {@code tapped} latches
-     * until the next sample for the keys vanilla reads through {@code consumeClick}.
-     */
     public void onKeyStateChanged(KeyMapping mapping, boolean down) {
         if (!recording) return;
         Integer index = watched.get(mapping);
@@ -123,11 +117,6 @@ public final class MovementRecorder {
         if (down) tapped[index] = true;
     }
 
-    /**
-     * Sampled at the head of {@code Minecraft.tick}, before {@code handleKeybinds} and
-     * {@code LocalPlayer.tick} read the same state, so frame {@code n} holds the input the client
-     * actually acted on during tick {@code n}.
-     */
     public void sampleTick() {
         if (recording) sample();
     }

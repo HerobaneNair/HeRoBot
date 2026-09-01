@@ -1,11 +1,11 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import hero.bane.herobot.mod.common.ai.block.BlockCategory;
+import hero.bane.herobot.common.ai.block.BlockCategory;
 import hero.bane.herobot.mod.client.EditorPrefs;
-import hero.bane.herobot.mod.common.ai.block.BlockDef;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;

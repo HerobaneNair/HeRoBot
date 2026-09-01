@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockType;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -69,7 +69,7 @@ public final class CommandToBlock {
             case "autojump" -> autojump(args);
             case "hotbar" -> hotbar(args);
             case "place" -> place(args);
-            case "break" -> breakBlock(args);
+            case "mine", "break" -> breakBlock(args);
             case "path" -> path(args);
             case "msg" -> rest.isBlank() ? null : result(BlockType.SEND_MESSAGE, "message", rest);
             case "handedness" -> args.length == 1 && (args[0].equals("left") || args[0].equals("right"))

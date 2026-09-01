@@ -18,7 +18,7 @@ public final class WalkabilityValidator implements ValidationProcessor {
         PathPosition cur = context.getCurrentPathPosition();
 
         double cost = MoveEvaluator.cachedTransitionCost(
-                env.level(), env.settings(),
+                env.blocks(),
                 prev.getFlooredX(), prev.getFlooredY(), prev.getFlooredZ(),
                 cur.getFlooredX(), cur.getFlooredY(), cur.getFlooredZ(),
                 env.maxJumpHeight(), env.maxFallDistance());

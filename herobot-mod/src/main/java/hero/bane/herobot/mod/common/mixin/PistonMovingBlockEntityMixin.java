@@ -14,7 +14,6 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(PistonMovingBlockEntity.class)
 public class PistonMovingBlockEntityMixin {
 
-    // Thanks fabric modding discord
     @Definition(id = "entity", local = @Local(type = Entity.class))
     @Definition(id = "ServerPlayer", type = ServerPlayer.class)
     @Expression("entity instanceof ServerPlayer")

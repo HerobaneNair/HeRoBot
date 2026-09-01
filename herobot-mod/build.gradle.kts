@@ -1,6 +1,3 @@
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-
 plugins {
     alias(libs.plugins.fabric.loom)
     id("herobot.java")
@@ -10,10 +7,10 @@ plugins {
 
 description = "HeroBot for Fabric."
 
-version = "${libs.versions.minecraft.get()}-${rootProject.version}+v${LocalDate.now().format(DateTimeFormatter.ofPattern("yyMMdd"))}"
+version = extra["artifactVersion"] as String
 
 base {
-    archivesName = "herobot"
+    archivesName = "herobot-fabric"
 }
 
 loom {
@@ -48,6 +45,9 @@ dependencies {
     modImplementation(libs.fabric.api)
 
     modCompileOnly(libs.carpet)
+
+    compileOnly(libs.voicechat.api)
+    "clientCompileOnly"(libs.voicechat.api)
 
     implementation(projects.herobotCommon)
     add(shade.name, projects.herobotCommon)

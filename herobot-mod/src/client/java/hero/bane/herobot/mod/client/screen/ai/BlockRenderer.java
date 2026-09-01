@@ -1,8 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.VarType;
-import hero.bane.herobot.mod.common.ai.block.*;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.VarType;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
@@ -10,6 +9,14 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockShape;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.EffectiveSlots;
+import hero.bane.herobot.common.ai.block.ParamSlot;
+import hero.bane.herobot.common.ai.block.Wire;
 
 public final class BlockRenderer {
     public static final int HEADER_H = 20;
@@ -25,7 +32,6 @@ public final class BlockRenderer {
     public static final int ARM_H = 12;
 
     public static final String CYCLE_GLYPH = "§l⟳";
-    // ↺ ↻ ⟲ ⟳ 🔁 🔃 🔄 🗘
 
     private BlockRenderer() {}
 
@@ -252,13 +258,13 @@ public final class BlockRenderer {
 
     private static int funcNumArgs(BlockInstance inst, AiScript script) {
         if (script == null) return 0;
-        hero.bane.herobot.mod.common.ai.FuncDecl decl = script.function(EffectiveSlots.funcName(inst));
+        hero.bane.herobot.common.ai.FuncDecl decl = script.function(EffectiveSlots.funcName(inst));
         return decl == null ? 0 : decl.numParams();
     }
 
     static void layoutParamColumns(Layout L, BlockInstance inst, Font font, int ox, int oy, AiScript script) {
         String fname = EffectiveSlots.funcName(inst);
-        hero.bane.herobot.mod.common.ai.FuncDecl decl = script == null ? null : script.function(fname);
+        hero.bane.herobot.common.ai.FuncDecl decl = script == null ? null : script.function(fname);
         int numArgs = decl == null ? 0 : decl.numParams();
         if (numArgs > 0) {
             int topY = oy + (L.h - (CHIP_H * 2 + 2)) / 2;
@@ -341,11 +347,6 @@ public final class BlockRenderer {
     static String tickWord(BlockInstance inst) {
         Object v = inst.getParam("ticks");
         return (v instanceof Number n && n.intValue() == 1) ? "tick" : "ticks";
-    }
-
-    static String loopWord(BlockInstance inst) {
-        Object v = inst.getParam("count");
-        return (v instanceof Number n && n.intValue() == 1) ? "loop" : "loops";
     }
 
     private static void translate(Layout L, int dx, int dy) {

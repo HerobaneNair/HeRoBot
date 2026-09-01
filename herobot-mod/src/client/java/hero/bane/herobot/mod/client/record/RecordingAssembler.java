@@ -1,10 +1,10 @@
 package hero.bane.herobot.mod.client.record;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.EffectiveSlots;
-import hero.bane.herobot.mod.common.ai.block.ParamSlot;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.EffectiveSlots;
+import hero.bane.herobot.common.ai.block.ParamSlot;
 import hero.bane.herobot.mod.client.EditorPrefs;
 import hero.bane.herobot.mod.client.record.MovementRecorder.Frame;
 import hero.bane.herobot.mod.client.record.MovementRecorder.InvAction;

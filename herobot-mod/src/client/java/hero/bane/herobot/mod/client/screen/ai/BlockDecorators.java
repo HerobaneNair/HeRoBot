@@ -1,17 +1,15 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.EffectiveSlots;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.EffectiveSlots;
 import net.minecraft.client.gui.Font;
 
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Predicate;
 
-// Per-BlockType layout extras that BlockRenderer used to branch on inline.
-// To give a block its own expander/chip/suffix, register it here instead of adding a type check in BlockRenderer.
 final class BlockDecorators {
     private BlockDecorators() {}
 
@@ -50,11 +48,6 @@ final class BlockDecorators {
         };
         SUFFIXES.put(BlockType.WAIT, tickSuffix);
         SUFFIXES.put(BlockType.EVERY_X_TICKS, tickSuffix);
-        SUFFIXES.put(BlockType.BREAK, (L, cx, contentRight, font, inst, script) -> {
-            L.suffix = BlockRenderer.loopWord(inst);
-            L.suffixX = cx;
-            return cx + font.width(L.suffix);
-        });
         SUFFIXES.put(BlockType.LOOP_ITER, (L, cx, contentRight, font, inst, script) -> {
             int loopNo = EffectiveSlots.loopDisplayId(script, inst.pairedId());
             L.suffix = loopNo <= 0 ? "?" : String.valueOf(loopNo);

@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.Comment;
+import hero.bane.herobot.common.ai.Comment;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;

@@ -1,6 +1,7 @@
 package hero.bane.herobot.mod.common.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -8,15 +9,19 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import hero.bane.herobot.mod.common.HeroBotSettings;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.rule.HeroBotSettings;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelays;
+import hero.bane.herobot.mod.common.bot.BotChat;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.mod.common.command.helper.*;
 import hero.bane.herobot.mod.common.control.PlayerController;
 import hero.bane.herobot.mod.common.control.PlayerControllers;
-import hero.bane.herobot.mod.common.mixin.ServerCommonPacketListenerImplAccessor;
+import hero.bane.herobot.mod.common.ping.PingBoostHandler;
+import hero.bane.herobot.mod.common.ping.PingBoosters;
 import hero.bane.herobot.mod.common.util.BlockBreakTasks;
 import hero.bane.herobot.mod.common.util.BlockBreaker;
 import hero.bane.herobot.mod.common.util.BlockPlacer;
@@ -28,13 +33,8 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.commands.arguments.item.ItemArgument;
-import net.minecraft.network.chat.ChatType;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.PlayerChatMessage;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.phys.Vec3;
 
@@ -126,8 +126,21 @@ public class PlayerCommand {
 
                                 .then(LookSubtree.build())
 
+                                .then(SoundSubtree.build())
+
                                 .then(Commands.literal("ping")
                                         .executes(PlayerCommand::pingGet)
+                                        .then(Commands.literal("settings")
+                                                .executes(PlayerCommand::pingSettingsGet)
+                                                .then(Commands.argument("category", StringArgumentType.word())
+                                                        .suggests((c, b) -> {
+                                                            for (PingDelayOptions.Category value : PingDelayOptions.Category.values()) {
+                                                                b.suggest(value.id());
+                                                            }
+                                                            return b.buildFuture();
+                                                        })
+                                                        .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                                                .executes(PlayerCommand::pingSettingsSet))))
                                         .then(Commands.argument("value", IntegerArgumentType.integer(0))
                                                 .suggests((c, b) -> {
                                                     b.suggest(0);
@@ -255,16 +268,8 @@ public class PlayerCommand {
 
     private static int message(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String message = StringArgumentType.getString(context, "msg");
-        MinecraftServer server = context.getSource().getServer();
         for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            if (message.startsWith("/")) {
-                server.getCommands().performPrefixedCommand(
-                        bot.createCommandSourceStack().withPermission(PermissionSet.ALL_PERMISSIONS), message);
-            } else {
-                PlayerChatMessage chatMessage = PlayerChatMessage.unsigned(bot.getUUID(), message);
-                server.getPlayerList().broadcastChatMessage(
-                        chatMessage, bot, ChatType.bind(ChatType.CHAT, bot));
-            }
+            BotChat.send(bot, message, true);
         }
         return 1;
     }
@@ -285,29 +290,110 @@ public class PlayerCommand {
 
     private static int pingSet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         int value = IntegerArgumentType.getInteger(context, "value");
-        for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            bot.ping = value;
-            ((ServerCommonPacketListenerImplAccessor) bot.connection).setLatency(value);
-            context.getSource().getServer().getPlayerList().broadcastAll(
-                    new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY, bot));
-            context.getSource().sendSuccess(() -> Component.literal("Set " + bot.getGameProfile().name() + "'s ping to " + value + "ms"), false);
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+
+            if (player instanceof BotPlayer bot) {
+                bot.setPing(value);
+                context.getSource().sendSuccess(() -> Component.literal("Set " + name + "'s ping to " + value + "ms"), false);
+                continue;
+            }
+
+            if (value <= 0) {
+                PingBoosters.clear(player);
+                context.getSource().sendSuccess(() -> Component.literal("Cleared " + name + "'s ping boost"), false);
+                continue;
+            }
+
+            int real = player.connection.latency();
+            if (!PingBoosters.set(player, value)) {
+                context.getSource().sendFailure(Component.literal("Could not boost " + name + "'s ping"));
+                continue;
+            }
+            int added = Math.clamp(value - real, 0, PingBoostHandler.MAX_ADDED_DELAY_MS);
+            context.getSource().sendSuccess(() -> Component.literal(
+                    "Boosting " + name + "'s ping to " + value + "ms (real " + real + "ms, +" + added + "ms of delay)"), false);
+        }
+        return 1;
+    }
+
+    private static int pingSettingsGet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+            String summary = PingDelays.of(player.getUUID()).summary();
+            context.getSource().sendSuccess(() -> Component.literal(name + " ping delays: \n" + summary), false);
+        }
+        return 1;
+    }
+
+    private static int pingSettingsSet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        String id = StringArgumentType.getString(context, "category");
+        PingDelayOptions.Category category = PingDelayOptions.Category.byId(id);
+        if (category == null) {
+            context.getSource().sendFailure(Component.literal("Unknown ping delay category: " + id));
+            return 0;
+        }
+        boolean enabled = BoolArgumentType.getBool(context, "enabled");
+
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+            PingDelays.of(player.getUUID()).set(category, enabled);
+
+            if (!(player instanceof BotPlayer)) {
+                PingBoostHandler handler = PingBoosters.handlerOf(player);
+                if (handler != null) handler.setOptions(PingDelays.of(player.getUUID()));
+                if (category == PingDelayOptions.Category.KNOCKBACK) {
+                    context.getSource().sendSuccess(() -> Component.literal(
+                            name + ": knockback is server-side physics, so this has no effect on a real client"), false);
+                    continue;
+                }
+            }
+
+            context.getSource().sendSuccess(() -> Component.literal(
+                    name + " " + category.id() + " delay " + (enabled ? "on" : "off")), false);
         }
         return 1;
     }
 
     private static int pingGet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        List<BotPlayer> botPlayerList = CommandHelper.requireBotTargets(context);
-        if (!botPlayerList.isEmpty()) {
-            int botPing = botPlayerList.getFirst().ping;
-            int pingToTicks = HeroBotSettings.botPingToTicks;
-            context.getSource().sendSuccess(() -> Component.literal("Bot Ping: " + botPing +
-                    "ms\nDelay in Ticks: " + botPing / pingToTicks +
-                    (botPing % pingToTicks > 0 ? "\n with a " + botPing % pingToTicks + "/" + pingToTicks + " chance to add a tick" : "")
+        int first = 0;
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+
+            if (player instanceof BotPlayer bot) {
+                int botPing = bot.ping;
+                int pingToTicks = HeroBotSettings.botPingToTicks;
+                context.getSource().sendSuccess(() -> Component.literal(name + " Bot Ping: " + botPing +
+                        "ms\nDelay in Ticks: " + botPing / pingToTicks +
+                        (botPing % pingToTicks > 0 ? "\n with a " + botPing % pingToTicks + "/" + pingToTicks + " chance to add a tick" : "")
+                ), false);
+                if (first == 0) first = botPing;
+                continue;
+            }
+
+            int measured = player.connection.latency();
+            int target = PingBoosters.target(player);
+            PingBoostHandler handler = PingBoosters.handlerOf(player);
+
+            if (target <= 0 || handler == null) {
+                context.getSource().sendSuccess(() -> Component.literal(name + " Ping: " + measured + "ms (not boosted)"), false);
+                if (first == 0) first = measured;
+                continue;
+            }
+
+            int added = handler.addedDelayMs();
+            int outbound = added / 2;
+            int inbound = added - outbound;
+            int base = handler.baseMs();
+            String baseNote = handler.hasMeasuredBase() ? "" : " (estimated, awaiting keep alive)";
+            context.getSource().sendSuccess(() -> Component.literal(name + " Ping: target " + target + "ms" +
+                    "\nReal: " + base + "ms" + baseNote +
+                    "\nAdded: " + added + "ms (" + outbound + "ms to client, " + inbound + "ms from client)" +
+                    "\nServer-measured: " + measured + "ms"
             ), false);
-            return botPing;
-        } else {
-            return 0;
+            if (first == 0) first = target;
         }
+        return first;
     }
 
     private static int autoJump(CommandContext<CommandSourceStack> context, boolean value)

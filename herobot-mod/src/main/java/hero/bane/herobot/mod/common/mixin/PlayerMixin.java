@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 import java.util.List;
+import hero.bane.herobot.mod.common.rule.ModRules;
 
 @Mixin(Player.class)
 public abstract class PlayerMixin extends LivingEntity {
@@ -29,7 +30,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean canClipThroughWorld(Player player) {
-        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
+        return player.isSpectator() || ModRules.isCreativeNoClipFlying(player);
     }
 
     @Redirect(method = "aiStep", at = @At(
@@ -37,7 +38,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean collidesWithEntities(Player player) {
-        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
+        return player.isSpectator() || ModRules.isCreativeNoClipFlying(player);
     }
 
     @Redirect(method = "updatePlayerPose", at = @At(
@@ -45,7 +46,7 @@ public abstract class PlayerMixin extends LivingEntity {
             target = "Lnet/minecraft/world/entity/player/Player;isSpectator()Z")
     )
     private boolean spectatorsDontPose(Player player) {
-        return player.isSpectator() || HeroBotSettings.isCreativeNoClipFlying(player);
+        return player.isSpectator() || ModRules.isCreativeNoClipFlying(player);
     }
 
     @Redirect(

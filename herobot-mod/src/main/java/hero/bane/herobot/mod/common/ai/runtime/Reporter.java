@@ -1,6 +1,7 @@
 package hero.bane.herobot.mod.common.ai.runtime;
 
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.runtime.Branch;
 
 @FunctionalInterface
 public interface Reporter {

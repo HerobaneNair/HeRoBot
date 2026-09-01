@@ -1,12 +1,13 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.AiScriptIO;
+import hero.bane.herobot.common.ai.AiScriptCodec;
+import hero.bane.herobot.common.ai.AiScript;
 import hero.bane.herobot.mod.client.net.ServerLink;
 import hero.bane.herobot.mod.common.networking.*;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import java.util.List;
+import hero.bane.herobot.common.networking.ScriptCompression;
 
 public final class ScriptTransfer {
     private static volatile AiEditorScreen active;
@@ -23,7 +24,7 @@ public final class ScriptTransfer {
 
     public static void upload(String name, AiScript script, boolean omitPositions) {
         if (!ServerLink.canSend(AiUploadPayload.TYPE)) return;
-        byte[] data = ScriptCompression.compress(AiScriptIO.toJson(script, omitPositions));
+        byte[] data = ScriptCompression.compress(AiScriptCodec.toJson(script, omitPositions));
         List<byte[]> chunks = ScriptCompression.chunk(data);
         int count = chunks.size();
         for (int i = 0; i < count; i++) {

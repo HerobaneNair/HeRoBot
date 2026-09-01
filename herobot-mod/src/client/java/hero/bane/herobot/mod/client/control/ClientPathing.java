@@ -2,9 +2,9 @@ package hero.bane.herobot.mod.client.control;
 
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.ActionType;
-import hero.bane.herobot.mod.common.bot.pathing.DebugChannel;
+import hero.bane.herobot.common.bot.pathing.DebugChannel;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
-import hero.bane.herobot.mod.common.bot.pathing.PathStats;
+import hero.bane.herobot.common.bot.pathing.PathStats;
 import hero.bane.herobot.mod.common.bot.pathing.placement.MovementHelper;
 import hero.bane.herobot.mod.common.bot.pathing.placement.PathFinder;
 import net.minecraft.client.Minecraft;
@@ -49,6 +49,7 @@ public class ClientPathing {
 
     private final Entity targetEntity;
     private int recalcCd;
+    private Vec3 pathedTarget;
     private Vec3 lastRecalcTarget;
     private BlockPos progressNode;
     private double closestNodeDist;
@@ -62,7 +63,6 @@ public class ClientPathing {
     private PendingKind pendingKind;
     private int pendingSpliceIdx;
     private List<BlockPos> pendingSplicePath;
-    private Vec3 pendingRequestPos;
     private Vec3 pendingTarget;
     private int failedRecalcs;
     private int recalcBackoffTicks;
@@ -113,15 +113,15 @@ public class ClientPathing {
         return !done && pendingPath == null && recalcBackoffTicks <= 0;
     }
 
-    private void requestFullRecalc() {
-        if (!canRequestPath()) return;
+    private boolean requestFullRecalc() {
+        if (!canRequestPath()) return false;
         debugRecalc();
         LocalPlayer p = player();
         Vec3 currentTarget = targetEntity != null ? targetEntity.position() : target;
         pendingKind = PendingKind.FULL;
-        pendingRequestPos = p.position();
         pendingTarget = currentTarget;
         pendingPath = PathFinder.findPathAsync(level(), p.blockPosition(), currentTarget, settings, p, 50000, new PathStats());
+        return true;
     }
 
     private void requestSpliceRecalc(Vec3 newTarget) {
@@ -186,7 +186,6 @@ public class ClientPathing {
                 applyNewPath(result);
             }
             case FULL -> {
-                if (player().position().distanceTo(pendingRequestPos) > 3.0) return;
                 applyNewPath(result);
                 lastRecalcTarget = pendingTarget;
             }
@@ -207,10 +206,30 @@ public class ClientPathing {
 
     private void applyNewPath(List<BlockPos> newPath) {
         this.path = newPath;
-        this.currentIndex = 0;
+        this.currentIndex = entryIndex(newPath, player().position());
         this.stuckTime = 0;
         this.jumpInputHoldTicks = 0;
         initDebugNodes(newPath);
+    }
+
+    private static int entryIndex(List<BlockPos> nodes, Vec3 pos) {
+        int nearest = 0;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < nodes.size(); i++) {
+            double d = Vec3.atBottomCenterOf(nodes.get(i)).distanceToSqr(pos);
+            if (d < bestDist) {
+                bestDist = d;
+                nearest = i;
+            }
+        }
+
+        if (nearest + 1 < nodes.size()) {
+            Vec3 next = Vec3.atBottomCenterOf(nodes.get(nearest + 1));
+            if (pos.distanceToSqr(next) < Vec3.atBottomCenterOf(nodes.get(nearest)).distanceToSqr(next)) {
+                return nearest + 1;
+            }
+        }
+        return nearest;
     }
 
     public void tick() {
@@ -255,10 +274,11 @@ public class ClientPathing {
             return;
         }
         if (++noProgressTicks >= 10) {
-            if (targetEntity != null && recalcCd > 0) return;
             progressNode = null;
-            requestFullRecalc();
-            if (targetEntity != null) recalcCd = 10;
+            if (requestFullRecalc() && targetEntity != null) {
+                pathedTarget = target;
+                recalcCd = 4 + player().getRandom().nextInt(7);
+            }
         }
     }
 
@@ -295,11 +315,23 @@ public class ClientPathing {
     }
 
     private void tickEntityRecalc() {
-        recalcCd--;
-        if (recalcCd <= 0) {
-            tryRecalcPath();
-            recalcCd = 10;
+        if (--recalcCd > 0) return;
+
+        LocalPlayer p = player();
+        boolean targetMoved = pathedTarget == null || pathedTarget.distanceToSqr(target) >= 1.0;
+        if (!targetMoved && p.getRandom().nextFloat() >= 0.05f) {
+            recalcCd = 4;
+            return;
         }
+
+        pathedTarget = target;
+        recalcCd = 4 + p.getRandom().nextInt(7);
+
+        double distSq = p.position().distanceToSqr(target);
+        if (distSq > 1024.0) recalcCd += 10;
+        else if (distSq > 256.0) recalcCd += 5;
+
+        if (!requestFullRecalc()) recalcCd += 15;
     }
 
     private void tryRecalcPath() {

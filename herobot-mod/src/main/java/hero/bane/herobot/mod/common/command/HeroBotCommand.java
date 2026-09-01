@@ -68,7 +68,7 @@ public final class HeroBotCommand {
             HeroBot.LOGGER.error(versionProblems, e);
         }
 
-        context.getSource().sendSuccess(() -> Component.literal("HeroBotVersion: " + pvpBotVersion), false);
+        context.getSource().sendSuccess(() -> Component.literal("HeroBot Mod Version: " + pvpBotVersion), false);
         int finalVersionReturned = versionReturned;
         context.getSource().sendSuccess(() -> Component.literal("Returns: " + finalVersionReturned).withColor(0xAAAAAA), false);
         return finalVersionReturned;

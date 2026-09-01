@@ -3,7 +3,7 @@ package hero.bane.herobot.mod.client.mixin;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.Lifecycle;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.client.gui.screens.worldselection.WorldOpenFlows;
 import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;

@@ -1,17 +1,17 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.Comment;
-import hero.bane.herobot.mod.common.ai.VarType;
-import hero.bane.herobot.mod.common.ai.block.BlockDef;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockShape;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.EffectiveSlots;
-import hero.bane.herobot.mod.common.ai.block.ParamSlot;
-import hero.bane.herobot.mod.common.ai.block.ParamType;
-import hero.bane.herobot.mod.common.ai.block.Wire;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.Comment;
+import hero.bane.herobot.common.ai.VarType;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockShape;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.EffectiveSlots;
+import hero.bane.herobot.common.ai.block.ParamSlot;
+import hero.bane.herobot.common.ai.block.ParamType;
+import hero.bane.herobot.common.ai.block.Wire;
 import hero.bane.herobot.mod.client.screen.ai.starfield.PixelBatch;
 import hero.bane.herobot.mod.client.screen.ai.starfield.StarField;
 import net.minecraft.client.Minecraft;
@@ -688,11 +688,11 @@ public final class ScriptCanvas {
         return side ? qx >= px : qy >= py;
     }
 
-    private boolean connectNearestFromOutput(int fromId, int port) {
+    private void connectNearestFromOutput(int fromId, int port) {
         BlockInstance from = script().block(fromId);
-        if (from == null) return false;
+        if (from == null) return;
         BlockRenderer.Layout fl = layout(from);
-        if (port < 0 || port >= fl.outPorts.size()) return false;
+        if (port < 0 || port >= fl.outPorts.size()) return;
         int[] p = fl.outPorts.get(port);
         boolean side = port == fl.sideOutPort;
 
@@ -708,17 +708,16 @@ public final class ScriptCanvas {
             double d = Math.hypot(tl.inX - p[0], tl.inY - p[1]);
             if (d < bestD) { bestD = d; bestId = t.id(); }
         }
-        if (bestId < 0) return false;
+        if (bestId < 0) return;
         addWire(fromId, port, bestId);
-        return true;
     }
 
-    private boolean connectNearestFromInput(int toId) {
+    private void connectNearestFromInput(int toId) {
         BlockInstance to = script().block(toId);
-        if (to == null) return false;
+        if (to == null) return;
         BlockRenderer.Layout tl = layout(to);
-        if (!tl.hasInput) return false;
-        if (to.type() == BlockType.ELSE_IF && inputHasWire(toId)) return false;
+        if (!tl.hasInput) return;
+        if (to.type() == BlockType.ELSE_IF && inputHasWire(toId)) return;
 
         int bestId = -1;
         int bestPort = -1;
@@ -734,9 +733,8 @@ public final class ScriptCanvas {
                 if (d < bestD) { bestD = d; bestId = s.id(); bestPort = i; }
             }
         }
-        if (bestId < 0) return false;
+        if (bestId < 0) return;
         addWire(bestId, bestPort, toId);
-        return true;
     }
 
     private void connectNearestAllPorts(BlockInstance b) {
@@ -1042,7 +1040,6 @@ public final class ScriptCanvas {
         };
     }
 
-    /** Nested reporters leave the block map, so walk the canvas blocks to find the one holding this. */
     private BlockInstance topLevelOwner(BlockInstance b) {
         if (script().block(b.id()) == b) return b;
         for (BlockInstance top : script().blocks().values()) {
@@ -1058,7 +1055,6 @@ public final class ScriptCanvas {
         return false;
     }
 
-    /** An owner-ref chip is in scope when its host sits within the owner's body. */
     private boolean inOwnerScope(int ownerId, int blockId) {
         BlockInstance owner = script().block(ownerId);
         if (owner != null && EffectiveSlots.isLoopBlock(owner.type())) {
@@ -1093,10 +1089,6 @@ public final class ScriptCanvas {
         return false;
     }
 
-    /**
-     * A loop's body is what hangs off its body ports (never the trailing "after" port) up to its end
-     * block. The loop block itself counts, so an iterator can be used in the loop's own condition.
-     */
     private boolean inLoopBody(int loopId, int blockId) {
         BlockInstance loop = script().block(loopId);
         if (loop == null) return false;
@@ -2474,10 +2466,6 @@ public final class ScriptCanvas {
         menu.openAt(sx, sy, left, top, right, bottom);
     }
 
-    /**
-     * Function names always open a picker, even with a single choice: unlike a fixed enum, the list
-     * shrinks as functions get defined, so one remaining option still has to be selectable.
-     */
     private void pickDefineName(BlockInstance b, double sx, double sy) {
         List<String> choices = EffectiveSlots.defineNameChoices(b, script());
         menu.clear();

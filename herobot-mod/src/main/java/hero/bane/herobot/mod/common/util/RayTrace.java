@@ -10,15 +10,29 @@ import java.util.function.Predicate;
 
 public class RayTrace
 {
-    public static HitResult rayTrace(Entity source, float partialTicks, double reach, boolean fluids)
+    @FunctionalInterface
+    public interface EntityView
+    {
+        AABB boxOf(Entity entity);
+
+        default double searchMargin()
+    {
+            return 0.0;
+        }
+    }
+
+    public static final EntityView LIVE = e -> e.getBoundingBox().inflate(e.getPickRadius());
+
+    public static HitResult rayTrace(Entity source, float partialTicks, double reach, boolean fluids, EntityView view)
     {
         BlockHitResult blockHit = rayTraceBlocks(source, partialTicks, reach, fluids);
         double maxSqDist = reach * reach;
-        if (blockHit != null)
-        {
+        // Edge case in case it's not finding an air block when it hits nothing
+        //noinspection ConstantValue
+        if (blockHit != null) {
             maxSqDist = blockHit.getLocation().distanceToSqr(source.getEyePosition(partialTicks));
         }
-        EntityHitResult entityHit = rayTraceEntities(source, partialTicks, reach, maxSqDist);
+        EntityHitResult entityHit = rayTraceEntities(source, partialTicks, reach, maxSqDist, view);
         return entityHit == null ? blockHit : entityHit;
     }
 
@@ -36,18 +50,19 @@ public class RayTrace
         ));
     }
 
-    public static EntityHitResult rayTraceEntities(Entity source, float partialTicks, double reach, double maxSqDist)
+    public static EntityHitResult rayTraceEntities(Entity source, float partialTicks, double reach, double maxSqDist, EntityView view)
     {
         Vec3 pos = source.getEyePosition(partialTicks);
         Vec3 reachVec = source.getViewVector(partialTicks).scale(reach);
-        AABB box = source.getBoundingBox().expandTowards(reachVec).inflate(1);
+        AABB box = source.getBoundingBox().expandTowards(reachVec).inflate(1 + view.searchMargin());
         return rayTraceEntities(
                 source,
                 pos,
                 pos.add(reachVec),
                 box,
                 e -> !e.isSpectator() && e.isPickable(),
-                maxSqDist
+                maxSqDist,
+                view
         );
     }
 
@@ -57,7 +72,8 @@ public class RayTrace
             Vec3 end,
             AABB box,
             Predicate<Entity> predicate,
-            double maxSqDistance
+            double maxSqDistance,
+            EntityView view
     )
     {
         Level world = source.level();
@@ -67,7 +83,7 @@ public class RayTrace
 
         for (Entity current : world.getEntities(source, box, predicate))
         {
-            AABB currentBox = current.getBoundingBox().inflate(current.getPickRadius());
+            AABB currentBox = view.boxOf(current);
             Optional<Vec3> currentHit = currentBox.clip(start, end);
 
             if (currentBox.contains(start))

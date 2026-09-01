@@ -11,6 +11,9 @@ import java.util.Objects;
 
 import static net.minecraft.commands.Commands.argument;
 import static net.minecraft.commands.Commands.literal;
+import hero.bane.herobot.common.rule.Bounds;
+import hero.bane.herobot.common.rule.RuleEntry;
+import hero.bane.herobot.common.rule.RuleRegistry;
 
 public final class RuleCommandBuilder {
     private enum Permanence { TEMP, PERM }

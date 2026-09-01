@@ -2,7 +2,7 @@ package hero.bane.herobot.mod.common.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.server.level.ServerPlayer;

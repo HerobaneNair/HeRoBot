@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.world.entity.projectile.hurtingprojectile.windcharge.WindCharge;
 import net.minecraft.world.level.Level.ExplosionInteraction;
 import org.spongepowered.asm.mixin.Mixin;

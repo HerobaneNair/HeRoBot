@@ -1,13 +1,16 @@
 package hero.bane.herobot.mod.common.bot;
 
+import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelays;
 import com.mojang.authlib.GameProfile;
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.bot.connection.BotClientConnection;
 import hero.bane.herobot.mod.common.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
 import hero.bane.herobot.mod.common.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.mod.common.mixin.LivingEntityAccessor;
+import hero.bane.herobot.mod.common.mixin.ServerCommonPacketListenerImplAccessor;
 import hero.bane.herobot.mod.common.mixin.ServerPlayerAccessor;
 import it.unimi.dsi.fastutil.doubles.DoubleDoubleImmutablePair;
 import net.minecraft.advancements.CriteriaTriggers;
@@ -20,6 +23,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.resources.ResourceKey;
@@ -77,6 +81,20 @@ public class BotPlayer extends ServerPlayer {
     });
 
     public int ping = 0;
+
+    public void applyPing() {
+        if (this.connection == null) return;
+        ((ServerCommonPacketListenerImplAccessor) this.connection).setLatency(this.ping);
+        MinecraftServer server = this.level().getServer();
+        if (server == null) return;
+        server.getPlayerList().broadcastAll(
+                new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY, this));
+    }
+
+    public void setPing(int value) {
+        this.ping = value;
+        applyPing();
+    }
 
     private record DelayedKnockback(long tick, double strength, double x, double z, double horizontalScale) {
     }
@@ -191,13 +209,7 @@ public class BotPlayer extends ServerPlayer {
     private static void resolveAndPlace(String username, MinecraftServer server, ServerLevel worldIn, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying, boolean bypassWhitelist) {
         boolean scheduled = false;
         try {
-            server.services().nameToIdCache().resolveOfflineUsers(false);
-
-            UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
-            if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
-                server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
-                uuid = UUIDUtil.createOfflinePlayerUUID(username);
-            }
+            UUID uuid = resolveId(server, username);
             if (uuid == null) {
                 return;
             }
@@ -225,6 +237,16 @@ public class BotPlayer extends ServerPlayer {
                 spawning.remove(username);
             }
         }
+    }
+
+    static UUID resolveId(MinecraftServer server, String username) {
+        server.services().nameToIdCache().resolveOfflineUsers(false);
+        UUID uuid = OldUsersConverter.convertMobOwnerIfNecessary(server, username);
+        if (uuid == null && HeroBotSettings.allowSpawningOfflinePlayers) {
+            server.services().nameToIdCache().resolveOfflineUsers(server.isDedicatedServer() && server.usesAuthentication());
+            uuid = UUIDUtil.createOfflinePlayerUUID(username);
+        }
+        return uuid;
     }
 
     private static void placeBot(MinecraftServer server, ServerLevel worldIn, GameProfile profile, Vec3 pos, double yaw, double pitch, ResourceKey<Level> dimensionId, GameType gamemode, boolean flying, boolean bypassWhitelist) {
@@ -266,7 +288,7 @@ public class BotPlayer extends ServerPlayer {
                 ),
                 false
         );
-        instance.ping = 0;
+        instance.applyPing();
         instance.spawnYaw = yaw;
         instance.setYRot((float) yaw);
         instance.setXRot((float) pitch);
@@ -276,6 +298,8 @@ public class BotPlayer extends ServerPlayer {
         playerList.broadcastAll(ClientboundEntityPositionSyncPacket.of(instance), dimensionId);
         instance.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) 0x7f);
         instance.getAbilities().flying = flying;
+        instance.broadcastTabListState();
+        BotRegistry.fireSpawn(instance);
     }
 
     private static CompletableFuture<GameProfile> fetchGameProfile(MinecraftServer server, final UUID name) {
@@ -341,6 +365,22 @@ public class BotPlayer extends ServerPlayer {
     public void toggleSkinPart(byte mask) {
         byte current = this.entityData.get(DATA_PLAYER_MODE_CUSTOMISATION);
         this.entityData.set(DATA_PLAYER_MODE_CUSTOMISATION, (byte) (current ^ mask));
+        broadcastTabListState();
+    }
+
+    private static final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> TAB_LIST_STATE = EnumSet.of(
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT,
+            ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER);
+
+    public void broadcastTabListState() {
+        MinecraftServer server = this.level().getServer();
+        if (server == null) return;
+        server.getPlayerList().broadcastAll(
+                new ClientboundPlayerInfoUpdatePacket(TAB_LIST_STATE, List.of(this)));
     }
 
     public boolean isSkinPartEnabled(byte mask) {
@@ -401,6 +441,10 @@ public class BotPlayer extends ServerPlayer {
         ));
     }
 
+    public void botPlayerDisconnectNow(Component reason) {
+        this.connection.onDisconnect(new DisconnectionDetails(reason));
+    }
+
     public void kill(Component reason) {
         shakeOff();
 
@@ -417,6 +461,7 @@ public class BotPlayer extends ServerPlayer {
         if (this.level().getServer().getTickCount() % 10 == 0) {
             this.connection.resetPosition();
             this.level().getChunkSource().move(this);
+            if (this.connection.latency() != this.ping) applyPing();
         }
         try {
             double startX = this.getX();
@@ -507,7 +552,7 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public void delayedExplosionKB(Vec3 vec3) {
-        int delayTicks = delayTicks(2);
+        int delayTicks = knockbackDelayTicks();
         if (delayTicks <= 0) {
             super.push(vec3);
         } else {
@@ -523,7 +568,7 @@ public class BotPlayer extends ServerPlayer {
     }
 
     private void scaledKnockback(double strength, double x, double z, double horizontalScale) {
-        int delayTicks = delayTicks(2);
+        int delayTicks = knockbackDelayTicks();
         if (delayTicks <= 0) {
             applyKnockbackWithScale(strength, x, z, horizontalScale);
         } else {
@@ -554,14 +599,25 @@ public class BotPlayer extends ServerPlayer {
         this.setDeltaMovement(vel.x / 2.0 - dir.x, grounded ? Math.min(0.4, verticalVel / 2.0 + d) : verticalVel, vel.z / 2.0 - dir.z);
     }
 
-    public int delayTicks(int p2tMultiplier) {
+    private int knockbackDelayTicks() {
+        return PingDelays.enabled(this.getUUID(), PingDelayOptions.Category.KNOCKBACK) ? delayTicks() : 0;
+    }
+
+    public boolean deferByPing(PingDelayOptions.Category category, Runnable action) {
+        if (!PingDelays.enabled(this.getUUID(), category)) return false;
+        int delay = delayTicks();
+        if (delay <= 0) return false;
+        ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(delay, action);
+        return true;
+    }
+
+    public int delayTicks() {
         int pingToTicks = HeroBotSettings.botPingToTicks;
-        int remainder = ping % (pingToTicks * p2tMultiplier);
-        if (remainder == 0) {
-            return ping / pingToTicks;
-        }
-        int random = ThreadLocalRandom.current().nextInt(pingToTicks);
-        return random < remainder ? (ping / pingToTicks) + 1 : ping / pingToTicks;
+        if (pingToTicks <= 0) return 0;
+        int whole = ping / pingToTicks;
+        int remainder = ping % pingToTicks;
+        if (remainder == 0) return whole;
+        return ThreadLocalRandom.current().nextInt(pingToTicks) < remainder ? whole + 1 : whole;
     }
 
     @Override

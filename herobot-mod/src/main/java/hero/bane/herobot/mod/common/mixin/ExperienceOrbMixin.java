@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -32,7 +32,6 @@ public abstract class ExperienceOrbMixin extends Entity {
     private void addXP(Player player, CallbackInfo ci) {
         if (HeroBotSettings.xpNoCooldown && !level().isClientSide()) {
             player.takeXpDelay = 0;
-            // reducing the count to 1 and leaving vanilla to deal with it
             while (this.count > 1) {
                 int remainder = this.repairPlayerItems((ServerPlayer) player, this.getValue());
                 if (remainder > 0) {

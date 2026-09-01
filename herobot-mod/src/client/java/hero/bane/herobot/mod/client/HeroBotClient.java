@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.client.control.ClientOps;
 import hero.bane.herobot.mod.client.control.ClientPlayerController;
 import hero.bane.herobot.mod.client.net.ServerLink;
@@ -26,6 +26,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import org.lwjgl.glfw.GLFW;
+import hero.bane.herobot.common.networking.ChunkReassembler;
+import hero.bane.herobot.common.networking.ScriptCompression;
 
 public class HeroBotClient implements ClientModInitializer {
     private static boolean heroBotLoaded = false;
@@ -129,7 +131,6 @@ public class HeroBotClient implements ClientModInitializer {
             MovementRecorder.INSTANCE.clientTick();
             if (MovementRecorder.INSTANCE.isRecording() && client.player != null) {
                 int secs = MovementRecorder.INSTANCE.recordedTicks() / 20;
-                // hehe secs
                 recIndicatorText = Component.literal("§c⬤ REC §f" + secs + "s - /herorecord stop");
                 recIndicatorTicks = REC_TICKS;
             } else if (recIndicatorTicks > 0) {

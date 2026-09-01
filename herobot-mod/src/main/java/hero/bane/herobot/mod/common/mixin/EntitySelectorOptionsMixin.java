@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.util.EntitySelectorSharedDistance;
+import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
 import net.fabricmc.fabric.mixin.command.EntitySelectorOptionsAccessor;
 import net.minecraft.advancements.criterion.MinMaxBounds;
 import net.minecraft.commands.arguments.selector.options.EntitySelectorOptions;
@@ -29,14 +29,14 @@ public class EntitySelectorOptionsMixin {
                                 .createWithContext(parser.getReader());
                     }
 
-                    ((EntitySelectorSharedDistance) parser).setHorizontalDistance(bounds);
+                    ((EntitySelectorSharedState) parser).setHorizontalDistance(bounds);
                     parser.setWorldLimited();
                 },
-                parser -> ((EntitySelectorSharedDistance) parser).getHorizontalDistance() == null,
+                parser -> ((EntitySelectorSharedState) parser).getHorizontalDistance() == null,
                 Component.literal("Horizontal distance")
         );
         EntitySelectorOptionsAccessor.callPutOption(
-                "distanceV", //should this be distanceY? I think distanceV is better cause Vertical
+                "distanceV",
                 parser -> {
                     int cursor = parser.getReader().getCursor();
                     MinMaxBounds.Doubles bounds =
@@ -49,11 +49,20 @@ public class EntitySelectorOptionsMixin {
                                 .createWithContext(parser.getReader());
                     }
 
-                    ((EntitySelectorSharedDistance) parser).setVerticalDistance(bounds);
+                    ((EntitySelectorSharedState) parser).setVerticalDistance(bounds);
                     parser.setWorldLimited();
                 },
-                parser -> ((EntitySelectorSharedDistance) parser).getVerticalDistance() == null,
+                parser -> ((EntitySelectorSharedState) parser).getVerticalDistance() == null,
                 Component.literal("Vertical distance")
+        );
+        EntitySelectorOptionsAccessor.callPutOption(
+                "isSelf",
+                parser -> {
+                    boolean wanted = parser.getReader().readBoolean();
+                    ((EntitySelectorSharedState) parser).setSelf(wanted);
+                },
+                parser -> ((EntitySelectorSharedState) parser).getSelf() == null,
+                Component.literal("Whether the entity is the one running the command")
         );
     }
 }

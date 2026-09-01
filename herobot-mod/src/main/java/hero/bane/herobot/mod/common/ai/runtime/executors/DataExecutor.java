@@ -1,14 +1,14 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
 import hero.bane.herobot.mod.common.ai.SelectorValidation;
-import hero.bane.herobot.mod.common.ai.VarType;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.VarType;
+import hero.bane.herobot.common.ai.block.BlockType;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
-import hero.bane.herobot.mod.common.ai.runtime.RuntimeVariable;
+import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.mod.common.ai.runtime.StepResult;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 import com.mojang.brigadier.StringReader;
 import net.minecraft.commands.arguments.item.ItemInput;
 import net.minecraft.commands.arguments.item.ItemParser;
@@ -97,7 +97,6 @@ public final class DataExecutor {
             }
             default -> {
                 String s = ParamEval.asString(v);
-                // isUuid trims before validating, so fromString has to see the same trimmed text.
                 if (SelectorValidation.isUuid(s)) return entityName(UUID.fromString(s.trim()), r);
                 return s;
             }

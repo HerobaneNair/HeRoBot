@@ -1,18 +1,18 @@
 package hero.bane.herobot.mod.common.ai.runtime;
 
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.VarDecl;
-import hero.bane.herobot.mod.common.ai.VarType;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.VarDecl;
+import hero.bane.herobot.common.ai.VarType;
 import hero.bane.herobot.mod.common.ai.runtime.executors.DataExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.FunctionExecutor;
 import hero.bane.herobot.mod.common.ai.runtime.executors.PathExecutor;
 import hero.bane.herobot.mod.common.control.PlayerControllers;
-import hero.bane.herobot.mod.common.ai.block.BlockCategory;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.Wire;
+import hero.bane.herobot.common.ai.block.BlockCategory;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.Wire;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -22,6 +22,11 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import hero.bane.herobot.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.runtime.ControlFrame;
+import hero.bane.herobot.common.ai.runtime.JoinState;
+import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 
 public final class ScriptRunner {
     private ServerPlayer player;
@@ -262,7 +267,6 @@ public final class ScriptRunner {
         variables.remove(name);
     }
 
-    /** Fresh id for each function invocation, so its param storage never collides with another active call. */
     public long nextCallSeq() {
         return ++callSeq;
     }
@@ -397,7 +401,6 @@ public final class ScriptRunner {
         }
     }
 
-    /** A body that runs out of blocks returns to its caller instead of ending the branch. */
     public boolean returnFromFunction(Branch br) {
         ControlFrame top = br.frames().peek();
         if (!FunctionExecutor.isCallFrame(top)) return false;

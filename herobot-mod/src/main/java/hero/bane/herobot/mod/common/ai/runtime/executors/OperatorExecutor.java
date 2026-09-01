@@ -1,15 +1,15 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.expr.BoolEval;
-import hero.bane.herobot.mod.common.ai.expr.ExprEval;
-import hero.bane.herobot.mod.common.ai.expr.StrEval;
-import hero.bane.herobot.mod.common.ai.expr.VecEval;
-import hero.bane.herobot.mod.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.expr.BoolEval;
+import hero.bane.herobot.common.ai.expr.ExprEval;
+import hero.bane.herobot.common.ai.expr.StrEval;
+import hero.bane.herobot.common.ai.expr.VecEval;
+import hero.bane.herobot.common.ai.runtime.Branch;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
-import hero.bane.herobot.mod.common.ai.runtime.RuntimeVariable;
+import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;

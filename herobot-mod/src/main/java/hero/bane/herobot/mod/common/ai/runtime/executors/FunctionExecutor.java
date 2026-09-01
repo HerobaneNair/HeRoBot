@@ -1,18 +1,18 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.ai.FuncDecl;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.Wire;
-import hero.bane.herobot.mod.common.ai.runtime.Branch;
-import hero.bane.herobot.mod.common.ai.runtime.ControlFrame;
+import hero.bane.herobot.common.ai.FuncDecl;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.Wire;
+import hero.bane.herobot.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.runtime.ControlFrame;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
-import hero.bane.herobot.mod.common.ai.runtime.RuntimeVariable;
+import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.mod.common.ai.runtime.StepResult;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 
 import java.util.*;
 
@@ -26,11 +26,6 @@ public final class FunctionExecutor {
 
     private FunctionExecutor() {}
 
-    /**
-     * Reserved prefix; user variable names cannot contain '§', so params can never collide.
-     * The call sequence number gives every invocation its own storage slot, so recursive or
-     * concurrently-running calls to the same function don't clobber each other's arguments.
-     */
     public static String paramKey(String func, int index, long callSeq) {
         return "§fn/" + func + "/" + index + "/" + callSeq;
     }
@@ -44,7 +39,6 @@ public final class FunctionExecutor {
         return v instanceof Number n ? n.intValue() : -1;
     }
 
-    /** Finds the call sequence of the innermost active invocation of {@code func} on this branch's stack. */
     public static long currentCallSeq(Branch br, String func) {
         for (ControlFrame f : br.frames()) {
             if (!isCallFrame(f)) continue;
@@ -101,7 +95,6 @@ public final class FunctionExecutor {
         }
         if (br.callsThisTick() >= MAX_CALLS_PER_TICK) return StepResult.wait(1);
 
-        // Evaluate every argument before rebinding, so a recursive call can pass its own params along.
         List<Object> values = new ArrayList<>(decl.numParams());
         for (int i = 0; i < decl.numParams(); i++) {
             Object raw = ParamEval.raw(b, "Arg" + (i + 1), r, br);

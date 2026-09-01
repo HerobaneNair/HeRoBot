@@ -1,8 +1,8 @@
 package hero.bane.herobot.mod.common.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
-import hero.bane.herobot.mod.common.util.EntitySelectorExcludeSelf;
-import hero.bane.herobot.mod.common.util.EntitySelectorSharedDistance;
+import com.llamalad7.mixinextras.sugar.Local;
+import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
 import net.minecraft.advancements.criterion.MinMaxBounds;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.selector.EntitySelector;
@@ -12,17 +12,21 @@ import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Predicate;
 
 @SuppressWarnings("AddedMixinMembersNamePattern")
 @Mixin(EntitySelector.class)
-public class EntitySelectorMixin implements EntitySelectorSharedDistance, EntitySelectorExcludeSelf {
+public class EntitySelectorMixin implements EntitySelectorSharedState {
 
     @Unique private MinMaxBounds.Doubles horizontalDistance;
     @Unique private MinMaxBounds.Doubles verticalDistance;
-    @Unique private boolean excludeSelf;
+    @Unique private Boolean self;
+    @Unique private CommandSourceStack herobot$currentSource;
 
     @Override
     public void setHorizontalDistance(MinMaxBounds.Doubles bounds) {
@@ -32,6 +36,11 @@ public class EntitySelectorMixin implements EntitySelectorSharedDistance, Entity
     @Override
     public void setVerticalDistance(MinMaxBounds.Doubles bounds) {
         this.verticalDistance = bounds;
+    }
+
+    @Override
+    public void setSelf(Boolean wanted) {
+        this.self = wanted;
     }
 
     @Override
@@ -45,50 +54,50 @@ public class EntitySelectorMixin implements EntitySelectorSharedDistance, Entity
     }
 
     @Override
-    public void setExcludeSelf(boolean excludeSelf) {
-        this.excludeSelf = excludeSelf;
+    public Boolean getSelf() {
+        return self;
     }
 
-    @Override
-    public boolean isExcludeSelf() {
-        return excludeSelf;
+    @Inject(method = "findEntities", at = @At("HEAD"))
+    private void captureSourceForEntities(CommandSourceStack source,
+                                          CallbackInfoReturnable<List<? extends Entity>> cir) {
+        this.herobot$currentSource = source;
     }
 
-    @ModifyReturnValue(method = "findEntities", at = @At("RETURN"))
-    private List<? extends Entity> filterFoundEntities(List<? extends Entity> found, CommandSourceStack source) {
-        return herobot$applyCustomFilters(found, source);
+    @Inject(method = "findPlayers", at = @At("HEAD"))
+    private void captureSourceForPlayers(CommandSourceStack source,
+                                         CallbackInfoReturnable<List<ServerPlayer>> cir) {
+        this.herobot$currentSource = source;
     }
 
-    @ModifyReturnValue(method = "findPlayers", at = @At("RETURN"))
-    private List<ServerPlayer> filterFoundPlayers(List<ServerPlayer> found, CommandSourceStack source) {
-        return herobot$applyCustomFilters(found, source);
+    @ModifyReturnValue(method = "getPredicate", at = @At("RETURN"))
+    private Predicate<Entity> addCustomFilters(Predicate<Entity> original,
+                                               @Local(argsOnly = true) Vec3 origin) {
+        if (horizontalDistance == null && verticalDistance == null && self == null) return original;
+
+        CommandSourceStack source = this.herobot$currentSource;
+        this.herobot$currentSource = null;
+
+        Entity sourceEntity = source == null ? null : source.getEntity();
+        UUID sourceId = sourceEntity == null ? null : sourceEntity.getUUID();
+
+        return original.and(entity -> herobot$matches(entity, origin, sourceId));
     }
 
     @Unique
-    private <T extends Entity> List<T> herobot$applyCustomFilters(List<T> found, CommandSourceStack source) {
-        Entity self = excludeSelf ? source.getEntity() : null;
-
-        if (self == null && horizontalDistance == null && verticalDistance == null) return found;
-        if (found.isEmpty()) return found;
-
-        Vec3 origin = source.getPosition();
-        List<T> kept = new ArrayList<>(found.size());
-
-        for (T entity : found) {
-            if (entity == self) continue;
-
-            if (horizontalDistance != null) {
-                double dx = entity.getX() - origin.x;
-                double dz = entity.getZ() - origin.z;
-
-                if (!horizontalDistance.matchesSqr(dx * dx + dz * dz)) continue;
-            }
-
-            if (verticalDistance != null && !verticalDistance.matches(Math.abs(entity.getY() - origin.y))) continue;
-
-            kept.add(entity);
+    private boolean herobot$matches(Entity entity, Vec3 origin, UUID sourceId) {
+        if (self != null) {
+            boolean isSource = sourceId != null && sourceId.equals(entity.getUUID());
+            if (isSource != self) return false;
         }
 
-        return kept;
+        if (horizontalDistance != null) {
+            double dx = entity.getX() - origin.x;
+            double dz = entity.getZ() - origin.z;
+
+            if (!horizontalDistance.matchesSqr(dx * dx + dz * dz)) return false;
+        }
+
+        return verticalDistance == null || verticalDistance.matches(Math.abs(entity.getY() - origin.y));
     }
 }

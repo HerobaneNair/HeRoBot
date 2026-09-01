@@ -14,6 +14,8 @@ import java.io.FileWriter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import hero.bane.herobot.common.rule.RuleEntry;
+import hero.bane.herobot.common.rule.RuleRegistry;
 
 public final class RuleConfigIO {
 

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import hero.bane.herobot.common.ai.AiScript;
 
 public final class AiScriptRegistry {
     private static final Map<String, AiScript> CACHE = new HashMap<>();
@@ -55,25 +56,16 @@ public final class AiScriptRegistry {
         if (old != null) old.stop();
     }
 
-    /**
-     * Stops a running script but leaves it assigned, so the bot still has the script loaded and
-     * ready for `ai run`. Used on respawn, where the ServerPlayer instance is replaced but the
-     * UUID (and so the runner) survives.
-     */
     public static void stopRunning(ServerPlayer player) {
         ScriptRunner r = RUNNERS.get(player.getUUID());
         if (r == null) return;
         r.rebind(player);
         r.stop();
-        // The runner is keyed by UUID so it survives, but the respawned BotPlayer is a new instance
-        // whose assignedScriptName is a fresh (null) field. Re-attach it so the bot still reports
-        // the script as loaded.
         if (player instanceof BotPlayer bot && bot.getAssignedScriptName() == null) {
             bot.setAssignedScriptName(r.script().name());
         }
     }
 
-    /** Freezes the script in place; state is kept so resume carries on from the same block. */
     public static void pause(ServerPlayer player) {
         ScriptRunner r = RUNNERS.get(player.getUUID());
         if (r != null) r.pause();
@@ -84,7 +76,6 @@ public final class AiScriptRegistry {
         if (r != null) r.resume();
     }
 
-    /** Scripts and runners are keyed per-world state; a fresh server must not inherit them. */
     public static synchronized void reset() {
         for (ScriptRunner r : RUNNERS.values()) {
             try { r.stop(); } catch (Throwable ignored) {}

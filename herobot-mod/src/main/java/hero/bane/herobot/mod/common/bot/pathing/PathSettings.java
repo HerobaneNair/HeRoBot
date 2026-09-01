@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
+import hero.bane.herobot.common.bot.pathing.DebugChannel;
 
 public class PathSettings {
 
@@ -27,7 +28,7 @@ public class PathSettings {
     private MoveType moveType = MoveType.SPRINT;
     private double maxHorizontalDistance = 1.0;
     private double maxVerticalDistance = 2.0;
-    private double nodeHorizontalDistance = 0.1; // just really needs to be less than 0.3 but this seems like a good number
+    private double nodeHorizontalDistance = 0.1;
     private double nodeVerticalDistance = 0.5;
     private boolean stopFollowing = true;
     private double horizontalMoveCost = 1.0;

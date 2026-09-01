@@ -1,18 +1,19 @@
 package hero.bane.herobot.mod.common.bot.pathing.placement;
 
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
-import hero.bane.herobot.mod.common.bot.pathing.PathStats;
+import hero.bane.herobot.common.bot.pathing.PathStats;
 import de.bsommerfeld.pathetic.api.pathing.Pathfinder;
 import de.bsommerfeld.pathetic.api.pathing.configuration.PathfinderConfiguration;
 import de.bsommerfeld.pathetic.api.pathing.result.PathState;
 import de.bsommerfeld.pathetic.api.pathing.result.PathfinderResult;
 import de.bsommerfeld.pathetic.api.wrapper.PathPosition;
 import de.bsommerfeld.pathetic.engine.factory.AStarPathfinderFactory;
+import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.BlockCache;
 import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.CostProcessor;
 import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.EnvironmentContext;
-import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.LevelNavigationPointProvider;
-import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.McHeuristicStrategy;
-import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.NeighborStrategy;
+import hero.bane.herobot.common.bot.pathing.placement.mcadapter.LevelNavigationPointProvider;
+import hero.bane.herobot.common.bot.pathing.placement.mcadapter.McHeuristicStrategy;
+import hero.bane.herobot.common.bot.pathing.placement.mcadapter.NeighborStrategy;
 import hero.bane.herobot.mod.common.bot.pathing.placement.mcadapter.WalkabilityValidator;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.effect.MobEffects;
@@ -27,9 +28,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import hero.bane.herobot.common.bot.pathing.placement.PathingExecutor;
 
 public class PathFinder {
     private static final int NO_FALL = 256;
+
+    private static final int MIN_ITERATIONS = 4000;
+    private static final int ITERATIONS_PER_BLOCK = 150;
+
     private static final AStarPathfinderFactory FACTORY = new AStarPathfinderFactory();
 
     private static int getMaxFallDistance(Player player) {
@@ -86,7 +92,11 @@ public class PathFinder {
         boolean dolphinsGrace = player.hasEffect(MobEffects.DOLPHINS_GRACE);
         settings.calculateSwimCost(waterEfficiency, dolphinsGrace);
 
-        EnvironmentContext env = new EnvironmentContext(world, settings, player, maxJump, maxFall);
+        BlockCache blocks = new BlockCache(world, settings);
+        EnvironmentContext env = new EnvironmentContext(world, settings, player, maxJump, maxFall, blocks);
+
+        BlockPos goal = snapGoal(blocks, target);
+        maxIterations = iterationCap(start, goal, maxIterations);
 
         PathfinderConfiguration config = PathfinderConfiguration.builder()
                 .provider(LevelNavigationPointProvider.INSTANCE)
@@ -102,7 +112,7 @@ public class PathFinder {
         Pathfinder pathfinder = FACTORY.createPathfinder(config);
 
         PathPosition startPos = new PathPosition(start.getX(), start.getY(), start.getZ());
-        PathPosition targetPos = new PathPosition(target.x, target.y, target.z);
+        PathPosition targetPos = new PathPosition(goal.getX(), goal.getY(), goal.getZ());
 
         PathfinderResult result = pathfinder.findPath(startPos, targetPos, env).resultBlocking();
 
@@ -120,16 +130,58 @@ public class PathFinder {
         }
         List<BlockPos> nodes = goalIdx >= 0 ? new ArrayList<>(raw.subList(0, goalIdx + 1)) : raw;
 
-        List<BlockPos> path = nodes.isEmpty() ? null : smoothPath(nodes, world, settings);
+        List<BlockPos> path = nodes.isEmpty() ? null : smoothPath(nodes, blocks);
 
         if (stats != null) {
             stats.elapsedNs = System.nanoTime() - startNs;
             stats.hitIterationCap = result.getPathState() == PathState.MAX_ITERATIONS_REACHED;
             stats.pathLength = path == null ? 0 : path.size();
-            stats.success = goalIdx >= 0;
+            stats.success = goalIdx >= 0 || (!raw.isEmpty() && raw.getLast().equals(goal));
         }
 
         return path;
+    }
+
+    private static int iterationCap(BlockPos start, BlockPos goal, int maxIterations) {
+        long distance = Math.abs(start.getX() - goal.getX())
+                + Math.abs(start.getY() - goal.getY())
+                + Math.abs(start.getZ() - goal.getZ());
+        long cap = Math.max(MIN_ITERATIONS, distance * ITERATIONS_PER_BLOCK);
+        return (int) Math.min(maxIterations, cap);
+    }
+
+    private static BlockPos snapGoal(BlockCache blocks, Vec3 target) {
+        BlockPos base = BlockPos.containing(target);
+        if (blocks.canSwimThrough(base.getX(), base.getY(), base.getZ())) return base;
+        if (blocks.isWalkable(base.getX(), base.getY(), base.getZ())) return base;
+
+        for (int dy = 1; dy <= 2; dy++) {
+            BlockPos up = base.above(dy);
+            if (blocks.isWalkable(up.getX(), up.getY(), up.getZ())) return up;
+        }
+
+        for (int dy = 1; dy <= 64; dy++) {
+            BlockPos down = base.below(dy);
+            if (blocks.isWalkable(down.getX(), down.getY(), down.getZ())) return down;
+            if (!blocks.isPassable(down.getX(), down.getY(), down.getZ())) break;
+        }
+
+        BlockPos best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    BlockPos candidate = base.offset(dx, dy, dz);
+                    if (!blocks.isWalkable(candidate.getX(), candidate.getY(), candidate.getZ())) continue;
+                    double d = Vec3.atBottomCenterOf(candidate).distanceToSqr(target);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = candidate;
+                    }
+                }
+            }
+        }
+        return best != null ? best : base;
     }
 
     private static boolean isWithinGoal(BlockPos pos, Vec3 target, PathSettings settings) {
@@ -146,38 +198,43 @@ public class PathFinder {
         return Math.sqrt(dx * dx + dz * dz);
     }
 
-    private static List<BlockPos> smoothPath(List<BlockPos> path, Level level, PathSettings settings) {
+    private static List<BlockPos> smoothPath(List<BlockPos> path, BlockCache blocks) {
         if (path.size() <= 2) return path;
+
+        int[] parkourBefore = new int[path.size() + 1];
+        for (int i = 0; i < path.size(); i++) {
+            boolean parkour = i < path.size() - 1 && isParkourSegment(path, i, blocks);
+            parkourBefore[i + 1] = parkourBefore[i] + (parkour ? 1 : 0);
+        }
 
         List<BlockPos> smoothed = new ArrayList<>();
         smoothed.add(path.getFirst());
 
         int current = 0;
         while (current < path.size() - 1) {
-            if (isParkourSegment(path, current, level, settings)) {
+            if (parkourBefore[current + 1] > parkourBefore[current]) {
                 smoothed.add(path.get(current + 1));
                 current = current + 1;
                 continue;
             }
 
+            BlockPos from = path.get(current);
+            boolean fromWater = blocks.isWater(from.getX(), from.getY(), from.getZ());
+
             int farthest = current + 1;
             for (int i = path.size() - 1; i > current + 1; i--) {
-                if (containsParkourSegment(path, current + 1, i, level, settings)) continue;
+                BlockPos to = path.get(i);
 
-                boolean bothWater = MovementHelper.isWater(level, path.get(current).getX(), path.get(current).getY(), path.get(current).getZ())
-                        && MovementHelper.isWater(level, path.get(i).getX(), path.get(i).getY(), path.get(i).getZ());
+                boolean bothWater = fromWater && blocks.isWater(to.getX(), to.getY(), to.getZ());
+                if (!bothWater && to.getY() != from.getY()) continue;
+                if (parkourBefore[i] > parkourBefore[current + 1]) continue;
 
-                if (bothWater) {
-                    if (hasWaterLineOfSight(level, path.get(current), path.get(i))) {
-                        farthest = i;
-                        break;
-                    }
-                } else {
-                    if (path.get(i).getY() != path.get(current).getY()) continue;
-                    if (hasLineOfSight(level, path.get(current), path.get(i), settings)) {
-                        farthest = i;
-                        break;
-                    }
+                boolean visible = bothWater
+                        ? hasWaterLineOfSight(blocks, from, to)
+                        : hasLineOfSight(blocks, from, to);
+                if (visible) {
+                    farthest = i;
+                    break;
                 }
             }
             smoothed.add(path.get(farthest));
@@ -187,7 +244,7 @@ public class PathFinder {
         return smoothed;
     }
 
-    private static boolean isParkourSegment(List<BlockPos> path, int index, Level level, PathSettings settings) {
+    private static boolean isParkourSegment(List<BlockPos> path, int index, BlockCache blocks) {
         if (index + 1 >= path.size()) return false;
         BlockPos from = path.get(index);
         BlockPos to = path.get(index + 1);
@@ -198,17 +255,10 @@ public class PathFinder {
         if (dx != 0 && dz != 0) return false;
         int stepX = Integer.compare(to.getX() - from.getX(), 0);
         int stepZ = Integer.compare(to.getZ() - from.getZ(), 0);
-        return !MovementHelper.canWalkOn(level, from.getX() + stepX, from.getY() - 1, from.getZ() + stepZ, settings);
+        return !blocks.canWalkOn(from.getX() + stepX, from.getY() - 1, from.getZ() + stepZ);
     }
 
-    private static boolean containsParkourSegment(List<BlockPos> path, int startIdx, int endIdx, Level level, PathSettings settings) {
-        for (int i = startIdx; i < endIdx; i++) {
-            if (isParkourSegment(path, i, level, settings)) return true;
-        }
-        return false;
-    }
-
-    private static boolean hasLineOfSight(Level level, BlockPos from, BlockPos to, PathSettings settings) {
+    private static boolean hasLineOfSight(BlockCache blocks, BlockPos from, BlockPos to) {
         int y = from.getY();
         int dx = to.getX() - from.getX();
         int dz = to.getZ() - from.getZ();
@@ -231,13 +281,13 @@ public class PathFinder {
                 error += adx;
                 z += sz;
             }
-            if (!MovementHelper.isWalkable(level, x, y, z, settings)) return false;
+            if (!blocks.isWalkable(x, y, z)) return false;
         }
 
         return true;
     }
 
-    private static boolean hasWaterLineOfSight(Level level, BlockPos from, BlockPos to) {
+    private static boolean hasWaterLineOfSight(BlockCache blocks, BlockPos from, BlockPos to) {
         int dx = to.getX() - from.getX();
         int dy = to.getY() - from.getY();
         int dz = to.getZ() - from.getZ();
@@ -248,7 +298,7 @@ public class PathFinder {
             int x = from.getX() + dx * step / steps;
             int y = from.getY() + dy * step / steps;
             int z = from.getZ() + dz * step / steps;
-            if (!MovementHelper.canSwimThrough(level, x, y, z)) return false;
+            if (!blocks.canSwimThrough(x, y, z)) return false;
         }
         return true;
     }

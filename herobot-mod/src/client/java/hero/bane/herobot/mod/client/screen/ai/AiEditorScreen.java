@@ -1,12 +1,11 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.AiScriptIO;
-import hero.bane.herobot.mod.common.ai.Comment;
-import hero.bane.herobot.mod.common.ai.FuncDecl;
-import hero.bane.herobot.mod.common.ai.VarType;
-import hero.bane.herobot.mod.common.ai.block.*;
+import hero.bane.herobot.common.ai.AiScriptCodec;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.Comment;
+import hero.bane.herobot.common.ai.FuncDecl;
+import hero.bane.herobot.common.ai.VarType;
 import hero.bane.herobot.mod.client.EditorDraft;
 import hero.bane.herobot.mod.client.EditorPrefs;
 import hero.bane.herobot.mod.client.record.MovementRecorder;
@@ -23,6 +22,14 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
 import java.util.function.Consumer;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.EffectiveSlots;
+import hero.bane.herobot.common.ai.block.ParamSlot;
+import hero.bane.herobot.common.ai.block.ParamType;
+import hero.bane.herobot.common.ai.block.Wire;
+import hero.bane.herobot.common.ai.block.BlockDef;
 
 public final class AiEditorScreen extends Screen {
     private AiScript script = new AiScript("untitled");
@@ -121,8 +128,8 @@ public final class AiEditorScreen extends Screen {
         String draft = EditorDraft.load();
         if (draft != null) {
             try {
-                this.script = AiScriptIO.fromJson(draft, "untitled");
-                positionsSorted = AiScriptIO.wasSorted(draft);
+                this.script = AiScriptCodec.fromJson(draft, "untitled");
+                positionsSorted = AiScriptCodec.wasSorted(draft);
                 pendingTidyOnInit = positionsSorted;
             } catch (RuntimeException ignored) {
             }
@@ -132,7 +139,7 @@ public final class AiEditorScreen extends Screen {
 
     private String snapshotJson() {
         try {
-            return AiScriptIO.toJson(script, positionsSorted);
+            return AiScriptCodec.toJson(script, positionsSorted);
         } catch (RuntimeException e) {
             return null;
         }
@@ -345,7 +352,7 @@ public final class AiEditorScreen extends Screen {
 
     public void pushUndo() {
         positionsSorted = false;
-        undoStack.push(AiScriptIO.toJson(script));
+        undoStack.push(AiScriptCodec.toJson(script));
         while (undoStack.size() > HISTORY_CAP) undoStack.removeLast();
         redoStack.clear();
     }
@@ -353,16 +360,16 @@ public final class AiEditorScreen extends Screen {
     public void undo() {
         if (undoStack.isEmpty()) return;
         if (canvas != null) canvas.cancelCommentEdit();
-        redoStack.push(AiScriptIO.toJson(script));
-        script = AiScriptIO.fromJson(undoStack.pop(), script.name());
+        redoStack.push(AiScriptCodec.toJson(script));
+        script = AiScriptCodec.fromJson(undoStack.pop(), script.name());
         select(-1);
     }
 
     public void redo() {
         if (redoStack.isEmpty()) return;
         if (canvas != null) canvas.cancelCommentEdit();
-        undoStack.push(AiScriptIO.toJson(script));
-        script = AiScriptIO.fromJson(redoStack.pop(), script.name());
+        undoStack.push(AiScriptCodec.toJson(script));
+        script = AiScriptCodec.fromJson(redoStack.pop(), script.name());
         select(-1);
     }
 
@@ -372,26 +379,26 @@ public final class AiEditorScreen extends Screen {
 
     public void copySelection() {
         if (selection.isEmpty()) {
-            if (selectedId >= 0) clipboard = AiScriptIO.copyBlocks(script, Set.of(selectedId));
+            if (selectedId >= 0) clipboard = AiScriptCodec.copyBlocks(script, Set.of(selectedId));
             return;
         }
-        clipboard = AiScriptIO.copyBlocks(script, selection);
+        clipboard = AiScriptCodec.copyBlocks(script, selection);
     }
 
     public void paste() {
         if (clipboard == null) return;
         pushUndo();
-        List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, 16, 16);
+        List<Integer> ids = AiScriptCodec.pasteBlocks(script, clipboard, 16, 16);
         normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
 
     public void pasteAt(double worldX, double worldY) {
         if (clipboard == null) return;
-        double[] mn = AiScriptIO.minCorner(clipboard);
+        double[] mn = AiScriptCodec.minCorner(clipboard);
         if (mn == null) return;
         pushUndo();
-        List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, worldX - mn[0], worldY - mn[1]);
+        List<Integer> ids = AiScriptCodec.pasteBlocks(script, clipboard, worldX - mn[0], worldY - mn[1]);
         normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
@@ -402,7 +409,7 @@ public final class AiEditorScreen extends Screen {
         double[] b = canvas.selectionWorldBounds();
         double dx = 16, dy = (b != null) ? (b[3] - b[1]) + 16 : 16;
         pushUndo();
-        List<Integer> ids = AiScriptIO.pasteBlocks(script, clipboard, dx, dy);
+        List<Integer> ids = AiScriptCodec.pasteBlocks(script, clipboard, dx, dy);
         normalizeDefineNames(ids);
         if (!ids.isEmpty()) selectMany(ids, false);
     }
@@ -473,7 +480,7 @@ public final class AiEditorScreen extends Screen {
 
     private List<String> variableNames() {
         List<String> names = new ArrayList<>();
-        for (hero.bane.herobot.mod.common.ai.VarDecl v : script.variables()) names.add(v.qualifiedName());
+        for (hero.bane.herobot.common.ai.VarDecl v : script.variables()) names.add(v.qualifiedName());
         return names;
     }
 
@@ -534,7 +541,7 @@ public final class AiEditorScreen extends Screen {
 
     public void copyJson() {
         try {
-            String json = AiScriptIO.toJson(script);
+            String json = AiScriptCodec.toJson(script);
             Minecraft.getInstance().keyboardHandler.setClipboard(json);
             setStatus("Copied AI JSON to clipboard (" + json.length() + " chars)");
         } catch (RuntimeException e) {
@@ -547,7 +554,7 @@ public final class AiEditorScreen extends Screen {
         if (json.isBlank()) { setStatus("Clipboard is empty"); return; }
         AiScript decoded;
         try {
-            decoded = AiScriptIO.fromJson(json, script.name());
+            decoded = AiScriptCodec.fromJson(json, script.name());
         } catch (RuntimeException e) {
             setStatus("Clipboard is not valid AI JSON: " + e.getMessage());
             return;
@@ -1129,37 +1136,37 @@ public final class AiEditorScreen extends Screen {
         List<String> vars = variableNames();
         switch (b.type()) {
             case STRING_CALC -> exprEditor.open(width, height, "Edit string expression", initial, vars,
-                    hero.bane.herobot.mod.common.ai.expr.StrEval::isValid,
-                    hero.bane.herobot.mod.common.ai.expr.StrEval.OPS_LEGEND,
-                    hero.bane.herobot.mod.common.ai.expr.StrEval.OPS_LEGEND_2,
+                    hero.bane.herobot.common.ai.expr.StrEval::isValid,
+                    hero.bane.herobot.common.ai.expr.StrEval.OPS_LEGEND,
+                    hero.bane.herobot.common.ai.expr.StrEval.OPS_LEGEND_2,
                     "Join \"text\" and {vars} with +, slice like python", commit);
             case BOOL_CALC -> exprEditor.open(width, height, "Edit boolean expression", initial, vars,
-                    expr -> hero.bane.herobot.mod.common.ai.expr.BoolEval.isValid(expr, calcOperandTypes(b)),
-                    hero.bane.herobot.mod.common.ai.expr.BoolEval.OPS_LEGEND,
-                    hero.bane.herobot.mod.common.ai.expr.BoolEval.OPS_LEGEND_2,
+                    expr -> hero.bane.herobot.common.ai.expr.BoolEval.isValid(expr, calcOperandTypes(b)),
+                    hero.bane.herobot.common.ai.expr.BoolEval.OPS_LEGEND,
+                    hero.bane.herobot.common.ai.expr.BoolEval.OPS_LEGEND_2,
                     "Compared types must match; strings order by length", commit);
             case POS_CALC -> exprEditor.open(width, height, "Edit position expression", initial, vars,
-                    expr -> hero.bane.herobot.mod.common.ai.expr.VecEval.isValid(expr, 3, calcOperandTypes(b)),
-                    hero.bane.herobot.mod.common.ai.expr.VecEval.OPS_LEGEND,
-                    hero.bane.herobot.mod.common.ai.expr.VecEval.OPS_LEGEND_2,
+                    expr -> hero.bane.herobot.common.ai.expr.VecEval.isValid(expr, 3, calcOperandTypes(b)),
+                    hero.bane.herobot.common.ai.expr.VecEval.OPS_LEGEND,
+                    hero.bane.herobot.common.ai.expr.VecEval.OPS_LEGEND_2,
                     "Math is per-component; climb/fall snap to terrain", commit);
             case DIR_CALC -> exprEditor.open(width, height, "Edit direction expression", initial, vars,
-                    expr -> hero.bane.herobot.mod.common.ai.expr.VecEval.isValid(expr, 2, calcOperandTypes(b)),
+                    expr -> hero.bane.herobot.common.ai.expr.VecEval.isValid(expr, 2, calcOperandTypes(b)),
                     "dir(yaw,pitch)  +  -  *  /  %  ^",
                     "floor(dir)  abs  sin  {var}  Input1",
                     "Math is applied per-component", commit);
             default -> exprEditor.open(width, height, "Edit expression", initial, vars,
-                    expr -> hero.bane.herobot.mod.common.ai.expr.ExprEval.isValid(expr, calcOperandTypes(b)),
-                    hero.bane.herobot.mod.common.ai.expr.ExprEval.OPS_LEGEND,
-                    hero.bane.herobot.mod.common.ai.expr.ExprEval.OPS_LEGEND_2,
+                    expr -> hero.bane.herobot.common.ai.expr.ExprEval.isValid(expr, calcOperandTypes(b)),
+                    hero.bane.herobot.common.ai.expr.ExprEval.OPS_LEGEND,
+                    hero.bane.herobot.common.ai.expr.ExprEval.OPS_LEGEND_2,
                     "Variables must be in braces, i.e. 5*{x}*3", commit);
         }
     }
 
     private java.util.function.Function<String, ParamType> calcOperandTypes(BlockInstance b) {
         return name -> {
-            if (hero.bane.herobot.mod.common.ai.expr.ExprEval.isInputRef(name)) {
-                String canonical = hero.bane.herobot.mod.common.ai.expr.ExprEval.canonicalInput(name);
+            if (hero.bane.herobot.common.ai.expr.ExprEval.isInputRef(name)) {
+                String canonical = hero.bane.herobot.common.ai.expr.ExprEval.canonicalInput(name);
                 BlockInstance rep = b.getReporter(canonical);
                 return rep == null ? null : EffectiveSlots.reporterOutputType(rep, script);
             }
@@ -1603,7 +1610,7 @@ public final class AiEditorScreen extends Screen {
     }
 
     private double[] importOffset(String clip) {
-        double[] mn = AiScriptIO.minCorner(clip);
+        double[] mn = AiScriptCodec.minCorner(clip);
         if (mn == null || canvas == null) return new double[]{0, 0};
         double[] b = canvas.scriptWorldBounds();
         if (b == null) return new double[]{0, 0};
@@ -1622,17 +1629,17 @@ public final class AiEditorScreen extends Screen {
         if (canvas != null) canvas.cancelCommentEdit();
         try {
             if (pendingImport) {
-                AiScript foreign = AiScriptIO.fromJson(json, name);
-                if (AiScriptIO.wasSorted(json)) BlockSorter.tidy(foreign, font);
-                String clip = AiScriptIO.copyBlocks(foreign, new HashSet<>(foreign.blocks().keySet()));
+                AiScript foreign = AiScriptCodec.fromJson(json, name);
+                if (AiScriptCodec.wasSorted(json)) BlockSorter.tidy(foreign, font);
+                String clip = AiScriptCodec.copyBlocks(foreign, new HashSet<>(foreign.blocks().keySet()));
                 pushUndo();
                 double[] off = importOffset(clip);
-                List<Integer> ids = AiScriptIO.pasteBlocks(script, clip, off[0], off[1]);
+                List<Integer> ids = AiScriptCodec.pasteBlocks(script, clip, off[0], off[1]);
                 normalizeDefineNames(ids);
                 selectMany(ids, false);
             } else {
-                this.script = AiScriptIO.fromJson(json, name);
-                positionsSorted = AiScriptIO.wasSorted(json);
+                this.script = AiScriptCodec.fromJson(json, name);
+                positionsSorted = AiScriptCodec.wasSorted(json);
                 if (positionsSorted) BlockSorter.tidy(script, font);
                 select(-1);
                 lastSavedJson = snapshotJson();
@@ -2048,7 +2055,7 @@ public final class AiEditorScreen extends Screen {
             EditorDraft.clear();
         } else {
             try {
-                EditorDraft.save(AiScriptIO.toJson(script, positionsSorted));
+                EditorDraft.save(AiScriptCodec.toJson(script, positionsSorted));
             } catch (RuntimeException ignored) {
             }
         }

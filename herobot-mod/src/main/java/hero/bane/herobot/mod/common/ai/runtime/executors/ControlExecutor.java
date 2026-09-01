@@ -1,19 +1,19 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.Wire;
+import hero.bane.herobot.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.runtime.ControlFrame;
+import hero.bane.herobot.common.ai.runtime.JoinState;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.ai.AiScript;
 import hero.bane.herobot.mod.common.ai.AiScriptRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.Wire;
-import hero.bane.herobot.mod.common.ai.runtime.Branch;
-import hero.bane.herobot.mod.common.ai.runtime.ControlFrame;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
-import hero.bane.herobot.mod.common.ai.runtime.JoinState;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.mod.common.ai.runtime.StepResult;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -48,7 +48,6 @@ public final class ControlExecutor {
             int endId = -1;
             int found = 0;
             for (ControlFrame f : br.frames()) {
-                // A function call is a barrier: break never escapes into the caller's loops.
                 if (FunctionExecutor.isCallFrame(f)) break;
                 JoinState js = r.joinState(f.activationId());
                 if (js == null) continue;
@@ -57,7 +56,6 @@ public final class ControlExecutor {
                 if (++found >= want) break;
             }
             if (target == null) {
-                // No loop left inside this function: return from it rather than killing the branch.
                 return r.returnFromFunction(br) ? StepResult.handled() : StepResult.end();
             }
 
@@ -90,8 +88,6 @@ public final class ControlExecutor {
             if (name != null && !name.isBlank()) {
                 ServerPlayer player = r.player();
                 MinecraftServer server = player.level().getServer();
-                // Not just IOException: BlockType/VarType.valueOf and the JSON parser all throw
-                // unchecked, and a script from a newer version would otherwise kill the branch.
                 try {
                     AiScript next = AiScriptRegistry.load(server, name);
                     if (next != null) {

@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
 import hero.bane.herobot.mod.client.HeroBotClient;
+import hero.bane.herobot.mod.common.rule.ModRules;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -15,10 +15,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(Level.class)
 public abstract class LevelMixin {
 
-    /**
-     * @author HerobaneNair
-     * @reason Treat moving piston as transparent for rain checks
-     */
     @Redirect(
             method = "precipitationAt",
             at = @At(
@@ -64,7 +60,7 @@ public abstract class LevelMixin {
 
     @Unique
     private static boolean isRainPassThroughOrMovingPiston(BlockState state) {
-        if (HeroBotSettings.rainThroughMovingPiston && state.is(Blocks.MOVING_PISTON) && HeroBotClient.isHeroBotLoaded()) {
+        if (ModRules.rainThroughMovingPiston && state.is(Blocks.MOVING_PISTON) && HeroBotClient.isHeroBotLoaded()) {
             return true;
         }
 

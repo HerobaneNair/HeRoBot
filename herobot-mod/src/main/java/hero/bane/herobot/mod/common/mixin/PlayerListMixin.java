@@ -2,6 +2,7 @@ package hero.bane.herobot.mod.common.mixin;
 
 import com.mojang.authlib.GameProfile;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
+import hero.bane.herobot.mod.common.bot.BotRegistry;
 import hero.bane.herobot.mod.common.bot.connection.BotPlayerNetHandler;
 import net.minecraft.network.Connection;
 import net.minecraft.server.MinecraftServer;
@@ -24,6 +25,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PlayerListMixin {
     @Shadow @Final
     private MinecraftServer server;
+
+    @Inject(method = "placeNewPlayer", at = @At("HEAD"))
+    private void evictBotForRealPlayer(Connection connection, ServerPlayer serverPlayer, CommonListenerCookie commonListenerCookie, CallbackInfo ci)
+    {
+        if (serverPlayer instanceof BotPlayer) return;
+        BotRegistry.despawnMatching(this.server, serverPlayer.getUUID(), serverPlayer.getGameProfile().name());
+    }
 
     @Inject(method = "placeNewPlayer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;level()Lnet/minecraft/server/level/ServerLevel;"))
     private void fixStartingPos(Connection connection, ServerPlayer serverPlayer, CommonListenerCookie commonListenerCookie, CallbackInfo ci)
@@ -71,6 +79,7 @@ public abstract class PlayerListMixin {
         if (oldPlayer instanceof BotPlayer oldBot) {
             BotPlayer newBot = BotPlayer.respawnFake(this.server, level, profile, cli);
             newBot.getPathSettings().copyFrom(oldBot.getPathSettings());
+            newBot.ping = oldBot.ping;
             newBot.setDeltaMovement(Vec3.ZERO);
             return newBot;
         }

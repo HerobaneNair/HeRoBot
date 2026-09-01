@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.common.util;
 
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;

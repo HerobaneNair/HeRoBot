@@ -6,7 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import hero.bane.herobot.mod.common.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
-import hero.bane.herobot.mod.common.bot.pathing.DebugChannel;
+import hero.bane.herobot.common.bot.pathing.DebugChannel;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettingOps;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
 import hero.bane.herobot.mod.common.control.ControlOp;
@@ -205,8 +205,6 @@ public final class PathSubtree {
         return 1;
     }
 
-    // Applies a scalar setting to the bot's own settings or the remote mirror, mirrors it to the
-    // client when remote, and reports it. Message reads "Set <name>'s <label> to <display>".
     private static int setSetting(CommandContext<CommandSourceStack> context, int index, double value,
                                   String label, String display) throws CommandSyntaxException {
         for (PathTarget t : pathTargets(context)) {
@@ -218,7 +216,6 @@ public final class PathSubtree {
         return 1;
     }
 
-    // Reports a setting as "<name>'s <label>: <value><suffix>".
     private static int getSetting(CommandContext<CommandSourceStack> context, String label,
                                   Function<PathSettings, String> read, String suffix)
             throws CommandSyntaxException {

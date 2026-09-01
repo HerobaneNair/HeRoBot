@@ -10,7 +10,6 @@ import net.minecraft.world.item.trading.MerchantOffer;
 import java.util.Optional;
 
 public final class TradeOps {
-    /** Returned by {@link #check} when there is no trade menu or the index is invalid. */
     public static final int NO_TRADE = -3;
 
     private TradeOps() {}
@@ -26,20 +25,12 @@ public final class TradeOps {
         return idx >= 0 && idx < menu.getOffers().size();
     }
 
-    /**
-     * Selects the offer and loads its input slots from the inventory, filling up to a full stack
-     * of each required item (the same thing the vanilla client does when a trade is clicked).
-     */
     public static void loadInputs(MerchantMenu menu, int idx) {
         menu.setSelectionHint(idx);
         menu.tryMoveItems(idx);
         menu.broadcastChanges();
     }
 
-    /**
-     * Status of an offer: -2 locked and unaffordable, -1 locked but affordable,
-     * 0 unlocked but unaffordable, 1 unlocked and affordable.
-     */
     public static int check(ServerPlayer player, MerchantMenu menu, int idx) {
         if (!validIndex(menu, idx)) return NO_TRADE;
         MerchantOffer offer = menu.getOffers().get(idx);
@@ -52,8 +43,7 @@ public final class TradeOps {
     private static boolean canAfford(ServerPlayer player, MerchantOffer offer) {
         if (countMatching(player, offer.getItemCostA()) < offer.getCostA().getCount()) return false;
         Optional<ItemCost> costB = offer.getItemCostB();
-        if (costB.isPresent() && countMatching(player, costB.get()) < offer.getCostB().getCount()) return false;
-        return true;
+        return !(costB.isPresent() && countMatching(player, costB.get()) < offer.getCostB().getCount());
     }
 
     private static int countMatching(ServerPlayer player, ItemCost cost) {

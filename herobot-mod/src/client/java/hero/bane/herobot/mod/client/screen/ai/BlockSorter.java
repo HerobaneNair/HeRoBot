@@ -1,10 +1,15 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.block.*;
+import hero.bane.herobot.common.ai.AiScript;
 import net.minecraft.client.gui.Font;
 
 import java.util.*;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockShape;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.Wire;
 
 public final class BlockSorter {
     public static final double SPREAD = 20;
@@ -33,10 +38,6 @@ public final class BlockSorter {
         tidy(script, font, 0);
     }
 
-    /**
-     * Same layout as {@link #tidy(AiScript, Font)}, but every connection is opened up by
-     * {@code spread} extra pixels so wires are visible instead of ports sitting flush.
-     */
     public static void tidy(AiScript script, Font font, double spread) {
         new BlockSorter(script, font, spread).run();
     }
@@ -247,11 +248,6 @@ public final class BlockSorter {
         return null;
     }
 
-    /**
-     * Lays an if / else-if / else chain out as parallel columns: every header sits on the rail
-     * formed by the previous header's side port, and every branch body starts at one shared Y so
-     * the branches run down beside each other instead of stepping right and down as the chain grows.
-     */
     private double placeChain(BlockInstance head, double x, double y, Set<Integer> visited) {
         List<BlockInstance> members = new ArrayList<>();
         BlockInstance m = head;

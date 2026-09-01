@@ -10,16 +10,19 @@ public final class EnvironmentContext implements de.bsommerfeld.pathetic.api.pat
     private final Player actor;
     private final int maxJumpHeight;
     private final int maxFallDistance;
+    private final BlockCache blocks;
 
     public EnvironmentContext(Level level, PathSettings settings, Player actor,
-                              int maxJumpHeight, int maxFallDistance) {
+                              int maxJumpHeight, int maxFallDistance, BlockCache blocks) {
         this.level = level;
         this.settings = settings;
         this.actor = actor;
         this.maxJumpHeight = maxJumpHeight;
         this.maxFallDistance = maxFallDistance;
+        this.blocks = blocks;
     }
 
+    public BlockCache blocks() { return blocks; }
     public Level level() { return level; }
     public PathSettings settings() { return settings; }
     public Player actor() { return actor; }

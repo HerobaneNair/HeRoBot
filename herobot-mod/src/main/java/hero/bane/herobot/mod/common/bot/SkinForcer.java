@@ -7,7 +7,7 @@ import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.mixin.PlayerAccessor;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;

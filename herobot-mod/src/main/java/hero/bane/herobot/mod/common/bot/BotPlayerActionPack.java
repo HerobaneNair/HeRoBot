@@ -1,6 +1,7 @@
 package hero.bane.herobot.mod.common.bot;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelays;
 import hero.bane.herobot.mod.common.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.mod.common.control.PlayerController;
 import hero.bane.herobot.mod.common.util.RayTrace;
@@ -62,7 +63,14 @@ public class BotPlayerActionPack implements PlayerController {
 
     private final List<DelayedAction> pendingActions = new ArrayList<>();
 
+    public void scheduleDelayed(long ticks, Runnable action) {
+        pendingActions.add(new DelayedAction(player.level().getServer().getTickCount() + ticks, action));
+    }
+
     private LookInterpolation lookInterpolation;
+
+    private Float intendedYaw;
+    private Float intendedPitch;
 
     private static class LookInterpolation {
         float targetYaw;
@@ -178,8 +186,8 @@ public class BotPlayerActionPack implements PlayerController {
             case SOUTH -> look(0, 0);
             case EAST -> look(-90, 0);
             case WEST -> look(90, 0);
-            case UP -> look(player.getYRot(), -90);
-            case DOWN -> look(player.getYRot(), 90);
+            case UP -> look(intendedYRot(), -90);
+            case DOWN -> look(intendedYRot(), 90);
         };
     }
 
@@ -188,22 +196,59 @@ public class BotPlayerActionPack implements PlayerController {
     }
 
     public BotPlayerActionPack look(float yaw, float pitch) {
+        if (deferLook(() -> applyLook(yaw, pitch), yaw, pitch)) return this;
+        return applyLook(yaw, pitch);
+    }
+
+    private BotPlayerActionPack applyLook(float yaw, float pitch) {
         player.setYRot(yaw % 360);
         player.setXRot(Mth.clamp(pitch, -90, 90));
         return this;
     }
 
     public BotPlayerActionPack lookAt(Vec3 position) {
+        if (deferLook(() -> player.lookAt(EntityAnchorArgument.Anchor.EYES, position), null, null)) return this;
         player.lookAt(EntityAnchorArgument.Anchor.EYES, position);
         return this;
     }
 
     public BotPlayerActionPack turn(float yaw, float pitch) {
-        return look(player.getYRot() + yaw, player.getXRot() + pitch);
+        return look(intendedYRot() + yaw, intendedXRot() + pitch);
+    }
+
+    public float intendedYRot() {
+        return intendedYaw != null ? intendedYaw : player.getYRot();
+    }
+
+    public float intendedXRot() {
+        return intendedPitch != null ? intendedPitch : player.getXRot();
+    }
+
+    private boolean deferLook(Runnable apply, Float targetYaw, Float targetPitch) {
+        if (!(player instanceof BotPlayer bot)) return false;
+        Float previousYaw = intendedYaw;
+        Float previousPitch = intendedPitch;
+        intendedYaw = targetYaw == null ? null : targetYaw % 360;
+        intendedPitch = targetPitch == null ? null : Mth.clamp(targetPitch, -90, 90);
+        if (bot.deferByPing(PingDelayOptions.Category.LOOK, () -> {
+            apply.run();
+            intendedYaw = null;
+            intendedPitch = null;
+        })) {
+            return true;
+        }
+        intendedYaw = previousYaw;
+        intendedPitch = previousPitch;
+        return false;
     }
 
     public BotPlayerActionPack lookInterpolated(float targetYaw, float targetPitch, int ticks) {
         if (ticks <= 0) return look(targetYaw, targetPitch);
+        if (deferLook(() -> startLookInterpolation(targetYaw, targetPitch, ticks), targetYaw, targetPitch)) return this;
+        return startLookInterpolation(targetYaw, targetPitch, ticks);
+    }
+
+    private BotPlayerActionPack startLookInterpolation(float targetYaw, float targetPitch, int ticks) {
         float clampedPitch = Mth.clamp(targetPitch, -90, 90);
         lookInterpolation = new LookInterpolation(
                 targetYaw,
@@ -357,6 +402,10 @@ public class BotPlayerActionPack implements PlayerController {
         } else if (clearJumpNextTick) {
             player.setJumping(false);
             clearJumpNextTick = false;
+        }
+
+        if (sprinting && player.isInWater()) {
+            setSprinting(false);
         }
 
         if ((forward != 0.0F || strafing != 0.0F) && player.getFoodData().getFoodLevel() < 3) {
@@ -524,10 +573,11 @@ public class BotPlayerActionPack implements PlayerController {
         double blockReach = player.getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
         double entityReach = player.getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE);
 
-        HitResult hit = RayTrace.rayTrace(player, 1, blockReach, false);
+        RayTrace.EntityView view = BotVision.viewFor(player);
+        HitResult hit = RayTrace.rayTrace(player, 1, blockReach, false, view);
 
         if (hit.getType() == HitResult.Type.BLOCK) return hit;
-        return RayTrace.rayTrace(player, 1, entityReach, false);
+        return RayTrace.rayTrace(player, 1, entityReach, false, view);
     }
 
     public void setSlot(int slot) {
@@ -536,7 +586,6 @@ public class BotPlayerActionPack implements PlayerController {
     }
 
     public void pickBlock(boolean includeData) {
-        // Copying block entity data is a creative-only ability; vanilla enforces this too.
         boolean data = includeData && player.hasInfiniteMaterials();
         HitResult hit = getTarget(player);
         switch (hit.getType()) {
@@ -575,8 +624,8 @@ public class BotPlayerActionPack implements PlayerController {
                 HitResult hit = getTarget(player);
                 int uses = action.hits;
 
-                if (player instanceof BotPlayer bot && HeroBotSettings.botLagUses) {
-                    int delay = bot.delayTicks(1);
+                if (player instanceof BotPlayer bot && PingDelays.enabled(bot.getUUID(), PingDelayOptions.Category.USE)) {
+                    int delay = bot.delayTicks();
                     if (delay > 0) {
                         long executeAt = player.level().getServer().getTickCount() + delay;
                         ap.pendingActions.add(new DelayedAction(executeAt, () -> repeatUse(player, hit, uses)));
@@ -604,8 +653,8 @@ public class BotPlayerActionPack implements PlayerController {
                 if (isSpear) {
                     if (player.getAttackStrengthScale(0.5F) < 1.0F) return false;
 
-                    if (player instanceof BotPlayer bot && HeroBotSettings.botLagAttacks) {
-                        int delay = bot.delayTicks(1);
+                    if (player instanceof BotPlayer bot && PingDelays.enabled(bot.getUUID(), PingDelayOptions.Category.ATTACK)) {
+                        int delay = bot.delayTicks();
                         if (delay > 0) {
                             BotPlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();
                             long executeAt = player.level().getServer().getTickCount() + delay;
@@ -623,8 +672,8 @@ public class BotPlayerActionPack implements PlayerController {
                         Entity target = ((EntityHitResult) hit).getEntity();
                         boolean continuous = action.isContinuous;
 
-                        if (player instanceof BotPlayer bot && HeroBotSettings.botLagAttacks) {
-                            int delay = bot.delayTicks(1);
+                        if (player instanceof BotPlayer bot && PingDelays.enabled(bot.getUUID(), PingDelayOptions.Category.ATTACK)) {
+                            int delay = bot.delayTicks();
                             if (delay > 0) {
                                 boolean wasSprinting = player.isSprinting();
                                 double savedFallDistance = player.fallDistance;
@@ -1024,4 +1073,3 @@ private static boolean repeatUse(ServerPlayer player, HitResult hit, int uses) {
         }
     }
 }
-

@@ -15,7 +15,7 @@ public abstract class EntityViewRotationMixin {
     private void herobot$smoothViewYaw(float partialTick, CallbackInfoReturnable<Float> cir) {
         if (!HeroBotClient.isHeroBotLoaded()) return;
         if ((Object) this != Minecraft.getInstance().player) return;
-        Float yaw = ClientPlayerController.INSTANCE.viewYaw(partialTick);
+        Float yaw = ClientPlayerController.INSTANCE.viewYaw();
         if (yaw != null) cir.setReturnValue(yaw);
     }
 
@@ -23,7 +23,7 @@ public abstract class EntityViewRotationMixin {
     private void herobot$smoothViewPitch(float partialTick, CallbackInfoReturnable<Float> cir) {
         if (!HeroBotClient.isHeroBotLoaded()) return;
         if ((Object) this != Minecraft.getInstance().player) return;
-        Float pitch = ClientPlayerController.INSTANCE.viewPitch(partialTick);
+        Float pitch = ClientPlayerController.INSTANCE.viewPitch();
         if (pitch != null) cir.setReturnValue(pitch);
     }
 }

@@ -14,8 +14,11 @@ paperweight = "2.0.0-beta.21"
 
 # Shared libraries
 pathetic = "5.5.2"
+voicechat = "2.6.20"
 
 jetbrains-annotations = "26.0.2-1"
+slf4j = "2.0.16"
+gson = "2.13.2"
 
 # Build plugins resolved through build-logic
 shadow = "9.6.1"
@@ -28,12 +31,15 @@ fabric-loader = { group = "net.fabricmc", name = "fabric-loader", version.ref = 
 fabric-api = { group = "net.fabricmc.fabric-api", name = "fabric-api", version.ref = "fabric-api" }
 carpet = { group = "maven.modrinth", name = "carpet", version.ref = "carpet" }
 
-paper-api = { group = "io.papermc.paper", name = "paper-api", version.ref = "paper" }
 
 pathetic-api = { group = "de.bsommerfeld.pathetic", name = "api", version.ref = "pathetic" }
 pathetic-engine = { group = "de.bsommerfeld.pathetic", name = "engine", version.ref = "pathetic" }
 
+voicechat-api = { group = "de.maxhenkel.voicechat", name = "voicechat-api", version.ref = "voicechat" }
+
 jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrains-annotations" }
+slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 # Plugin markers, consumed by build-logic so convention plugins can apply them by id
 plugin-shadow = { group = "com.gradleup.shadow", name = "com.gradleup.shadow.gradle.plugin", version.ref = "shadow" }

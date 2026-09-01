@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.common.mixin;
 
 import hero.bane.herobot.mod.common.HeroBot;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.commands.data.EntityDataAccessor;
 import net.minecraft.util.ProblemReporter;

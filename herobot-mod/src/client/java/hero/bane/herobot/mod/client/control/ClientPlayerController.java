@@ -428,16 +428,15 @@ public final class ClientPlayerController implements PlayerController {
         }
     }
 
-    public Float viewYaw(float partialTick) {
+    public Float viewYaw() {
         if (viewActive) return currentViewYaw();
-        return ClientOps.INSTANCE.pathViewYaw(partialTick);
+        return ClientOps.INSTANCE.pathViewYaw();
     }
 
-    public Float viewPitch(float partialTick) {
+    public Float viewPitch() {
         if (viewActive) return currentViewPitch();
-        return ClientOps.INSTANCE.pathViewPitch(partialTick);
+        return ClientOps.INSTANCE.pathViewPitch();
     }
-
 
     private static float easeInOutSine(float t) {
         if (t <= 0f) return 0f;

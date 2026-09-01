@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,7 +21,7 @@ public abstract class ProjectileMixin {
             double dirY,
             double dirZ,
             float velocity,
-            float inaccuracy, // we're setting this to 0 pretty much
+            float inaccuracy,
             CallbackInfoReturnable<Vec3> cir
     ) {
         if (HeroBotSettings.noProjectileRandom) {

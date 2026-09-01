@@ -1,6 +1,7 @@
 package hero.bane.herobot.mod.common;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
+import hero.bane.herobot.common.ai.AiScriptCodec;
+import hero.bane.herobot.common.ai.AiScript;
 import hero.bane.herobot.mod.common.ai.AiScriptIO;
 import hero.bane.herobot.mod.common.ai.AiScriptRegistry;
 import hero.bane.herobot.mod.common.command.*;
@@ -13,13 +14,21 @@ import hero.bane.herobot.mod.common.networking.AiDownloadRequestPayload;
 import hero.bane.herobot.mod.common.networking.AiListPayload;
 import hero.bane.herobot.mod.common.networking.AiListRequestPayload;
 import hero.bane.herobot.mod.common.networking.AiUploadPayload;
-import hero.bane.herobot.mod.common.networking.ChunkReassembler;
+import hero.bane.herobot.common.networking.ChunkReassembler;
 import hero.bane.herobot.mod.common.networking.ControlPlayerPayload;
 import hero.bane.herobot.mod.common.networking.HeroBotSyncPayload;
 import hero.bane.herobot.mod.common.networking.PathDonePayload;
-import hero.bane.herobot.mod.common.networking.ScriptCompression;
+import hero.bane.herobot.common.networking.ScriptCompression;
 import hero.bane.herobot.mod.common.rule.RuleConfigIO;
 import hero.bane.herobot.mod.common.util.BlockBreakTasks;
+import hero.bane.herobot.mod.common.bot.BotVision;
+import hero.bane.herobot.mod.common.bot.BotPlayer;
+import hero.bane.herobot.mod.common.bot.BotRegistry;
+import hero.bane.herobot.common.bot.PlayerLogouts;
+import hero.bane.herobot.mod.common.ping.PingBoosters;
+import hero.bane.herobot.common.ping.PingDelays;
+import hero.bane.herobot.mod.common.voice.ModVoice;
+import hero.bane.herobot.mod.common.voice.VoiceOps;
 import hero.bane.herobot.mod.common.util.delayer.DelayedQueue;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -33,6 +42,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import hero.bane.herobot.mod.common.rule.ModRules;
 
 public class HeroBot implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("HeroBot");
@@ -43,7 +53,9 @@ public class HeroBot implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        HeroBotSettings.init();
+        ModRules.init();
+        HeroBotSelectorOptions.register();
+        ModVoice.init();
 
         PayloadTypeRegistry.playS2C().register(HeroBotSyncPayload.TYPE, HeroBotSyncPayload.STREAM_CODEC);
 
@@ -53,9 +65,17 @@ public class HeroBot implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(PathDonePayload.TYPE, (payload, context) ->
                 RemotePathState.finish(context.player(), payload.seq()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayer leaving = handler.player;
+            PlayerLogouts.record(leaving.getUUID(), leaving.getGameProfile().name(),
+                    leaving.level().dimension().identifier().toString(),
+                    leaving.getX(), leaving.getY(), leaving.getZ(), leaving.getYRot(), leaving.getXRot());
+            if (handler.player instanceof BotPlayer bot) BotRegistry.fireDespawn(bot);
             RemotePathState.clear(handler.player.getUUID());
             RemotePathSettings.clear(handler.player.getUUID());
             BlockBreakTasks.clear(handler.player.getUUID());
+            VoiceOps.forget(handler.player.getUUID());
+            PingBoosters.forget(handler.player.getUUID());
+            PingDelays.forget(handler.player.getUUID());
         });
 
         PayloadTypeRegistry.playC2S().register(AiUploadPayload.TYPE, AiUploadPayload.STREAM_CODEC);
@@ -82,22 +102,30 @@ public class HeroBot implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             currentServer = null;
+            PingBoosters.shutdown(server);
             AiScriptRegistry.reset();
+            ModVoice.shutdown();
         });
 
-        // Respawn replaces the ServerPlayer instance but keeps the UUID, so the runner survives.
-        // Stop the script and point it at the new entity; the bot keeps it loaded for `ai run`.
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) ->
                 AiScriptRegistry.stopRunning(newPlayer));
 
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-                syncSettingsToPlayer(handler.player));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            if (!(handler.player instanceof BotPlayer)) {
+                BotRegistry.despawnMatching(server, handler.player.getUUID(),
+                        handler.player.getGameProfile().name());
+            }
+            syncSettingsToPlayer(handler.player);
+        });
 
         RuleConfigIO.onSettingsChanged = HeroBot::syncSettingsToAllPlayers;
 
         ServerTickEvents.END_SERVER_TICK.register(DelayedQueue::tick);
         ServerTickEvents.END_SERVER_TICK.register(BlockBreakTasks::tick);
         ServerTickEvents.END_SERVER_TICK.register(AiScriptRegistry::tickAll);
+        ServerTickEvents.END_SERVER_TICK.register(PingBoosters::tick);
+        ServerTickEvents.END_SERVER_TICK.register(BotVision::tick);
+        ServerTickEvents.END_SERVER_TICK.register(ModVoice::tick);
     }
 
     private static boolean validScriptName(String name) {
@@ -121,7 +149,7 @@ public class HeroBot implements ModInitializer {
                 if (full == null) return;
                 try {
                     String json = ScriptCompression.decompress(full);
-                    AiScript script = AiScriptIO.fromJson(json, payload.name());
+                    AiScript script = AiScriptCodec.fromJson(json, payload.name());
                     AiScriptIO.saveByName(server, payload.name(), json);
                     AiScriptRegistry.put(payload.name(), script);
                     if (ANNOUNCED_SAVES.add(key)) {

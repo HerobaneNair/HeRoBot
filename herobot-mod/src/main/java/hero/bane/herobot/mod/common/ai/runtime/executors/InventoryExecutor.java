@@ -1,11 +1,11 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.BlockType;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.mod.common.ai.runtime.StepResult;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.command.helper.InventorySubtree;
 import hero.bane.herobot.mod.common.command.helper.TradeOps;

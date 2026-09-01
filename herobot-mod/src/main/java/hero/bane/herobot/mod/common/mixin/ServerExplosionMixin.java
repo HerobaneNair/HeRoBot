@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
@@ -48,7 +48,7 @@ public class ServerExplosionMixin {
             };
 
             if (remove) {
-                i.remove(); //remove it from the list of blocks to explode, not remove it from the world
+                i.remove();
             }
         }
 

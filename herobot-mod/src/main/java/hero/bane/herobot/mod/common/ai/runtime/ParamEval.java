@@ -1,11 +1,11 @@
 package hero.bane.herobot.mod.common.ai.runtime;
 
-import hero.bane.herobot.mod.common.ai.block.BlockDef;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.block.ParamSlot;
-import hero.bane.herobot.mod.common.ai.block.ParamType;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.block.ParamSlot;
+import hero.bane.herobot.common.ai.block.ParamType;
 import net.minecraft.commands.arguments.coordinates.WorldCoordinates;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import hero.bane.herobot.common.ai.runtime.Branch;
 
 public final class ParamEval {
     private ParamEval() {}
@@ -31,10 +32,6 @@ public final class ParamEval {
         return coerceEnum(slot, v);
     }
 
-    /**
-     * Slot lookup happens on every parameter read, so the per-type name->slot map is resolved once.
-     * The block registry is static and immutable once loaded, so this never goes stale.
-     */
     private static final Map<BlockType, Map<String, ParamSlot>> SLOTS = new ConcurrentHashMap<>();
 
     private static ParamSlot slotOf(BlockInstance block, String name) {
@@ -42,7 +39,6 @@ public final class ParamEval {
         if (def == null) return null;
         return SLOTS.computeIfAbsent(block.type(), t -> {
             Map<String, ParamSlot> m = new HashMap<>();
-            // putIfAbsent keeps first-match-wins, matching the scan this replaces.
             for (ParamSlot s : def.params()) m.putIfAbsent(s.name(), s);
             return m;
         }).get(name);

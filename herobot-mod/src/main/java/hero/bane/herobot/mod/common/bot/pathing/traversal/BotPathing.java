@@ -3,11 +3,11 @@ package hero.bane.herobot.mod.common.bot.pathing.traversal;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack;
 import hero.bane.herobot.mod.common.bot.connection.ServerPlayerInterface;
-import hero.bane.herobot.mod.common.bot.pathing.DebugChannel;
+import hero.bane.herobot.common.bot.pathing.DebugChannel;
 import hero.bane.herobot.mod.common.bot.pathing.placement.MovementHelper;
 import hero.bane.herobot.mod.common.bot.pathing.placement.PathFinder;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
-import hero.bane.herobot.mod.common.bot.pathing.PathStats;
+import hero.bane.herobot.common.bot.pathing.PathStats;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -44,6 +44,7 @@ public class BotPathing {
 
     private final Entity targetEntity;
     private int recalcCd;
+    private Vec3 pathedTarget;
     private Vec3 lastRecalcTarget;
     private BlockPos progressNode;
     private double closestNodeDist;
@@ -56,7 +57,6 @@ public class BotPathing {
     private PendingKind pendingKind;
     private int pendingSpliceIdx;
     private List<BlockPos> pendingSplicePath;
-    private Vec3 pendingRequestPos;
     private Vec3 pendingTarget;
     private PathStats pendingStats;
     private int failedRecalcs;
@@ -121,15 +121,15 @@ public class BotPathing {
         return !done && pendingPath == null && recalcBackoffTicks <= 0;
     }
 
-    private void requestFullRecalc() {
-        if (!canRequestPath()) return;
+    private boolean requestFullRecalc() {
+        if (!canRequestPath()) return false;
         debugRecalc();
         Vec3 currentTarget = targetEntity != null ? targetEntity.position() : target;
         pendingKind = PendingKind.FULL;
-        pendingRequestPos = bot.position();
         pendingTarget = currentTarget;
         pendingStats = new PathStats();
         pendingPath = PathFinder.findPathAsync(bot.level(), bot.blockPosition(), currentTarget, settings, bot, 50000, pendingStats);
+        return true;
     }
 
     private void requestSpliceRecalc(Vec3 newTarget) {
@@ -181,7 +181,7 @@ public class BotPathing {
             if (kind == PendingKind.INITIAL) {
                 awaitingInitialPath = false;
                 finish(false);
-                source.sendFailure(Component.literal(bot.getGameProfile().name() + " could not find a path"));
+                reportFailure(bot.getGameProfile().name() + " could not find a path");
             }
             return;
         }
@@ -196,7 +196,6 @@ public class BotPathing {
                 applyNewPath(result);
             }
             case FULL -> {
-                if (bot.position().distanceTo(pendingRequestPos) > 3.0) return;
                 applyNewPath(result);
                 lastRecalcTarget = pendingTarget;
             }
@@ -217,10 +216,30 @@ public class BotPathing {
 
     private void applyNewPath(List<BlockPos> newPath) {
         this.path = newPath;
-        this.currentIndex = 0;
+        this.currentIndex = entryIndex(newPath, bot.position());
         this.stuckTime = 0;
         this.jumpInputHoldTicks = 0;
         initDebugNodes(newPath);
+    }
+
+    private static int entryIndex(List<BlockPos> nodes, Vec3 pos) {
+        int nearest = 0;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < nodes.size(); i++) {
+            double d = Vec3.atBottomCenterOf(nodes.get(i)).distanceToSqr(pos);
+            if (d < bestDist) {
+                bestDist = d;
+                nearest = i;
+            }
+        }
+
+        if (nearest + 1 < nodes.size()) {
+            Vec3 next = Vec3.atBottomCenterOf(nodes.get(nearest + 1));
+            if (pos.distanceToSqr(next) < Vec3.atBottomCenterOf(nodes.get(nearest)).distanceToSqr(next)) {
+                return nearest + 1;
+            }
+        }
+        return nearest;
     }
 
     public void requestRecalc() {
@@ -271,10 +290,11 @@ public class BotPathing {
             return;
         }
         if (++noProgressTicks >= 10) {
-            if (targetEntity != null && recalcCd > 0) return;
             progressNode = null;
-            requestFullRecalc();
-            if (targetEntity != null) recalcCd = 10;
+            if (requestFullRecalc() && targetEntity != null) {
+                pathedTarget = target;
+                recalcCd = 4 + bot.getRandom().nextInt(7);
+            }
         }
     }
 
@@ -282,7 +302,7 @@ public class BotPathing {
         if (targetEntity != null) {
             if (targetEntity.isRemoved()) {
                 finish(false);
-                source.sendFailure(Component.literal(bot.getGameProfile().name() + " lost target entity"));
+                reportFailure(bot.getGameProfile().name() + " lost target entity");
                 return false;
             }
             target = computeEntityTarget(targetEntity, settings, bot);
@@ -301,7 +321,7 @@ public class BotPathing {
             finish(true);
             String msg = bot.getGameProfile().name() + " reached target"
                     + (targetEntity != null ? " entity" : " position");
-            source.sendSuccess(() -> Component.literal(msg), false);
+            reportSuccess(msg);
             return false;
         }
 
@@ -315,11 +335,22 @@ public class BotPathing {
     }
 
     private void tickEntityRecalc() {
-        recalcCd--;
-        if (recalcCd <= 0) {
-            tryRecalcPath();
-            recalcCd = 10;
+        if (--recalcCd > 0) return;
+
+        boolean targetMoved = pathedTarget == null || pathedTarget.distanceToSqr(target) >= 1.0;
+        if (!targetMoved && bot.getRandom().nextFloat() >= 0.05f) {
+            recalcCd = 4;
+            return;
         }
+
+        pathedTarget = target;
+        recalcCd = 4 + bot.getRandom().nextInt(7);
+
+        double distSq = bot.position().distanceToSqr(target);
+        if (distSq > 1024.0) recalcCd += 10;
+        else if (distSq > 256.0) recalcCd += 5;
+
+        if (!requestFullRecalc()) recalcCd += 15;
     }
 
     private void tryRecalcPath() {
@@ -565,7 +596,7 @@ public class BotPathing {
                     retryTarget = null;
                     settings.setNodeHorizontalDistance(originalNodeDistance);
                     finish(false);
-                    source.sendFailure(Component.literal(bot.getGameProfile().name() + " got stuck while pathing"));
+                    reportFailure(bot.getGameProfile().name() + " got stuck while pathing");
                     return;
                 }
                 int prevIndex = Math.max(0, currentIndex - 1);
@@ -817,6 +848,20 @@ public class BotPathing {
         actionPack.autoJump = false;
         bot.setJumping(false);
     }
+
+    private void reportFailure(String message) {
+
+        if (source != null) source.sendFailure(Component.literal(message));
+
+    }
+
+
+    private void reportSuccess(String message) {
+
+        if (source != null) source.sendSuccess(() -> Component.literal(message), false);
+
+    }
+
 
     public boolean isDone() {
         return done;

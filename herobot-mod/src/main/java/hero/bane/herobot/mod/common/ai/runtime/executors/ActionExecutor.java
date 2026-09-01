@@ -1,12 +1,13 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
-import hero.bane.herobot.mod.common.ai.block.BlockInstance;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
-import hero.bane.herobot.mod.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.block.BlockInstance;
+import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.runtime.Branch;
+import hero.bane.herobot.common.ai.runtime.StepResult;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.mod.common.ai.runtime.StepResult;
+import hero.bane.herobot.mod.common.bot.BotChat;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.Action;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.mod.common.control.PlayerController;
@@ -14,12 +15,8 @@ import hero.bane.herobot.mod.common.control.PlayerControllers;
 import hero.bane.herobot.mod.common.util.BlockBreakTasks;
 import hero.bane.herobot.mod.common.util.BlockBreaker;
 import hero.bane.herobot.mod.common.util.BlockPlacer;
-import net.minecraft.world.phys.Vec3;
-import net.minecraft.network.chat.ChatType;
-import net.minecraft.network.chat.PlayerChatMessage;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.permissions.PermissionSet;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Map;
 
@@ -81,18 +78,7 @@ public final class ActionExecutor {
             String message = ParamEval.evalString(b, "message", r, br);
             if (message != null && !message.isBlank()) {
                 ServerPlayer player = r.player();
-                MinecraftServer server = player.level().getServer();
-                if (message.startsWith("/")) {
-                    boolean op = ParamEval.evalBool(b, "op", r, br);
-                    var source = player.createCommandSourceStack();
-                    if (op) {
-                        source = source.withPermission(PermissionSet.ALL_PERMISSIONS);
-                    }
-                    server.getCommands().performPrefixedCommand(source, message);
-                } else {
-                    PlayerChatMessage chat = PlayerChatMessage.unsigned(player.getUUID(), message);
-                    server.getPlayerList().broadcastChatMessage(chat, player, ChatType.bind(ChatType.CHAT, player));
-                }
+                BotChat.send(player, message, () -> ParamEval.evalBool(b, "op", r, br));
             }
             return StepResult.continueVia(0);
         });

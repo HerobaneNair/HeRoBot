@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.mod.common.rule.ModRules;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
@@ -22,7 +22,7 @@ public class BlockItemMixin {
     private boolean canSpectatingPlace(Level world, BlockState state, BlockPos pos, CollisionContext context,
                                        BlockPlaceContext contextOuter, BlockState stateOuter) {
         Player player = contextOuter.getPlayer();
-        if (player != null && HeroBotSettings.isCreativeNoClipFlying(player)) {
+        if (player != null && ModRules.isCreativeNoClipFlying(player)) {
             VoxelShape voxelShape = state.getCollisionShape(world, pos, context);
             return voxelShape.isEmpty() || world.isUnobstructed(player, voxelShape.move(pos.getX(), pos.getY(), pos.getZ()));
 

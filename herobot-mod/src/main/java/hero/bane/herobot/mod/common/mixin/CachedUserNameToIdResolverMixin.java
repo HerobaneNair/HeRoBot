@@ -13,7 +13,7 @@ public abstract class CachedUserNameToIdResolverMixin {
     @Inject(method = "save", at = @At("HEAD"), cancellable = true)
     private void disableSaveInSingleplayer(CallbackInfo ci) {
         if (HeroBot.currentServer != null) {
-            if (HeroBot.currentServer.isSingleplayer()) { // Not an amazing fix but should work
+            if (HeroBot.currentServer.isSingleplayer()) {
                 ci.cancel();
             }
         }

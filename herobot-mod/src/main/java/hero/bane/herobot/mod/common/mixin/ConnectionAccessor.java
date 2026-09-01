@@ -10,4 +10,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface ConnectionAccessor extends ClientConnectionInterface {
     @Accessor("channel")
     void setChannel(Channel channel);
+
+    @Accessor("channel")
+    Channel getChannel();
 }

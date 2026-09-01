@@ -1,6 +1,6 @@
 package hero.bane.herobot.mod.client.control;
 
-import hero.bane.herobot.mod.common.bot.pathing.DebugChannel;
+import hero.bane.herobot.common.bot.pathing.DebugChannel;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettingOps;
 import hero.bane.herobot.mod.common.bot.pathing.PathSettings;
 import hero.bane.herobot.mod.client.net.ServerLink;
@@ -98,12 +98,12 @@ public final class ClientOps {
         }
     }
 
-    Float pathViewYaw(float partialTick) {
+    Float pathViewYaw() {
         ClientPathing p = path;
         return p == null ? null : p.viewYaw();
     }
 
-    Float pathViewPitch(float partialTick) {
+    Float pathViewPitch() {
         ClientPathing p = path;
         return p == null ? null : p.viewPitch();
     }

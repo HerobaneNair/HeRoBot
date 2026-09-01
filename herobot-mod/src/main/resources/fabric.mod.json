@@ -20,6 +20,9 @@
     ],
     "main": [
       "hero.bane.herobot.mod.common.HeroBot"
+    ],
+    "voicechat": [
+      "hero.bane.herobot.common.voice.HeroVoicePlugin"
     ]
   },
   "mixins": [
@@ -34,6 +37,9 @@
     "fabricloader": ">=0.15.11",
     "fabric-api": "*",
     "minecraft": "1.21.11"
+  },
+  "suggests": {
+    "voicechat": ">=2.5.0"
   },
   "breaks": {
     "carpetpvp": "*"

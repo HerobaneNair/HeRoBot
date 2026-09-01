@@ -4,7 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import hero.bane.herobot.mod.common.HeroBotSettings;
+import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
@@ -24,6 +24,7 @@ import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import hero.bane.herobot.mod.common.rule.ModRules;
 
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin extends Entity {
@@ -35,7 +36,6 @@ public abstract class LivingEntityMixin extends Entity {
         super(type, level);
     }
 
-    //creativeFlyDrag can be changed with the herobot command thing, can ignore the yellow squiggly
     @SuppressWarnings("ConstantConditions")
     @ModifyConstant(method = "travelInAir", constant = @Constant(floatValue = 0.91F))
     private float dragAir(float original) {
@@ -46,7 +46,6 @@ public abstract class LivingEntityMixin extends Entity {
         return original;
     }
 
-    //creativeFlySpeed can be changed with the herobot command thing, can ignore the yellow squiggly
     @SuppressWarnings("ConstantConditions")
     @Inject(method = "getFrictionInfluencedSpeed(F)F", at = @At("HEAD"), cancellable = true)
     private void flyingAltSpeed(float slipperiness, CallbackInfoReturnable<Float> cir) {
@@ -58,7 +57,7 @@ public abstract class LivingEntityMixin extends Entity {
 
     @Inject(method = "canUsePortal", at = @At("HEAD"), cancellable = true)
     private void canChangeDimensions(CallbackInfoReturnable<Boolean> cir) {
-        if (HeroBotSettings.isCreativeNoClipFlying(this)) {
+        if (ModRules.isCreativeNoClipFlying(this)) {
             cir.setReturnValue(false);
         }
     }
@@ -124,32 +123,24 @@ public abstract class LivingEntityMixin extends Entity {
         return original || !HeroBotSettings.kbScaling;
     }
 
-    /**
-     * Shield Stunning and fixing the shield
-     */
     @Unique
     private boolean blockedHit = false;
 
-    // Detect when a hit was blocked by a shield
     @WrapOperation(method = "hurtServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;applyItemBlocking(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)F"))
     private float trackBlockedHit(LivingEntity instance, ServerLevel serverLevel, DamageSource damageSource, float damageAmount, Operation<Float> original) {
         float blockedAmount = original.call(instance, serverLevel, damageSource, damageAmount);
-        // Only for non-BotPlayer players (BotPlayer does this in its own hurtServer)
         blockedHit = blockedAmount > 0.0F && instance instanceof Player && !(instance instanceof BotPlayer);
         return blockedAmount;
     }
 
     @ModifyReturnValue(method = "hurtServer", at = @At("RETURN"))
     private boolean handleBlockedHit(boolean original) {
-        // Still only works on non-botPlayer players
         if (blockedHit) {
             blockedHit = false;
             if (HeroBotSettings.shieldStunning) {
-                // Shield Stunning: Skip the damage tick completely, no invul frames - matches with servers now
                 this.invulnerableTime = 0;
                 return false;
             } else {
-                // No Shield Stunning: Invisible damage tick, looks like it didn't take a damage tick but is in one
                 LivingEntity self = (LivingEntity) (Object) this;
                 self.hurtDuration = 0;
                 self.hurtTime = 0;

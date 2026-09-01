@@ -1,29 +1,25 @@
 package hero.bane.herobot.mod.common.mixin;
 
-import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import hero.bane.herobot.mod.common.util.EntitySelectorExcludeSelf;
-import hero.bane.herobot.mod.common.util.EntitySelectorSharedDistance;
+import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
 import net.minecraft.advancements.criterion.MinMaxBounds;
 import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.commands.arguments.selector.EntitySelectorParser;
-import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+@SuppressWarnings("AddedMixinMembersNamePattern") // I HATE YOU DIEEE
 @Mixin(EntitySelectorParser.class)
-public class EntitySelectorParserMixin implements EntitySelectorSharedDistance, EntitySelectorExcludeSelf {
+public class EntitySelectorParserMixin implements EntitySelectorSharedState {
 
     @Unique
     private MinMaxBounds.Doubles horizontalDistance;
     @Unique
     private MinMaxBounds.Doubles verticalDistance;
     @Unique
-    private boolean excludeSelf;
+    private Boolean self;
 
     @Override
     public void setHorizontalDistance(MinMaxBounds.Doubles bounds) {
@@ -33,6 +29,11 @@ public class EntitySelectorParserMixin implements EntitySelectorSharedDistance, 
     @Override
     public void setVerticalDistance(MinMaxBounds.Doubles bounds) {
         this.verticalDistance = bounds;
+    }
+
+    @Override
+    public void setSelf(Boolean wanted) {
+        this.self = wanted;
     }
 
     @Override
@@ -46,36 +47,18 @@ public class EntitySelectorParserMixin implements EntitySelectorSharedDistance, 
     }
 
     @Override
-    public void setExcludeSelf(boolean excludeSelf) {
-        this.excludeSelf = excludeSelf;
-    }
-
-    @Override
-    public boolean isExcludeSelf() {
-        return excludeSelf;
-    }
-
-    @ModifyExpressionValue(
-            method = "parseSelector",
-            at = @At(value = "INVOKE", target = "Lcom/mojang/brigadier/StringReader;read()C"))
-    private char acceptExcludeSelfSelector(char selectorType) {
-        this.excludeSelf = selectorType == 'z';
-        return this.excludeSelf ? 'e' : selectorType;
-    }
-
-    @Inject(method = "fillSelectorSuggestions", at = @At("TAIL"))
-    private static void suggestExcludeSelfSelector(SuggestionsBuilder builder, CallbackInfo ci) {
-        builder.suggest("@z", Component.translatable("argument.entity.selector.allEntitiesExceptSelf"));
+    public Boolean getSelf() {
+        return self;
     }
 
     @Inject(method = "getSelector", at = @At("RETURN"))
     private void copyCustomStateToSelector(CallbackInfoReturnable<EntitySelector> cir) {
         EntitySelector selector = cir.getReturnValue();
 
-        EntitySelectorSharedDistance selectorExt = (EntitySelectorSharedDistance) selector;
+        EntitySelectorSharedState selectorExt = (EntitySelectorSharedState) selector;
         selectorExt.setHorizontalDistance(this.horizontalDistance);
         selectorExt.setVerticalDistance(this.verticalDistance);
+        selectorExt.setSelf(this.self);
 
-        ((EntitySelectorExcludeSelf) selector).setExcludeSelf(this.excludeSelf);
     }
 }

@@ -1,13 +1,13 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
-import hero.bane.herobot.mod.common.ai.AiScript;
-import hero.bane.herobot.mod.common.ai.FuncDecl;
-import hero.bane.herobot.mod.common.ai.VarDecl;
-import hero.bane.herobot.mod.common.ai.VarType;
-import hero.bane.herobot.mod.common.ai.block.BlockDef;
-import hero.bane.herobot.mod.common.ai.block.BlockDefRegistry;
-import hero.bane.herobot.mod.common.ai.block.BlockDescriptions;
-import hero.bane.herobot.mod.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.AiScript;
+import hero.bane.herobot.common.ai.FuncDecl;
+import hero.bane.herobot.common.ai.VarDecl;
+import hero.bane.herobot.common.ai.VarType;
+import hero.bane.herobot.common.ai.block.BlockDef;
+import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.ai.block.BlockDescriptions;
+import hero.bane.herobot.common.ai.block.BlockType;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
@@ -539,7 +539,7 @@ public final class VariablePanel {
     }
 
     public static Object defaultFor(VarType t) {
-        return hero.bane.herobot.mod.common.ai.block.EffectiveSlots.defaultForVar(t);
+        return hero.bane.herobot.common.ai.block.EffectiveSlots.defaultForVar(t);
     }
 
     private List<String> wrap(String text, int maxW) {

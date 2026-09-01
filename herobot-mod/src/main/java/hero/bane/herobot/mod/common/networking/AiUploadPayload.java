@@ -16,7 +16,7 @@ public record AiUploadPayload(String name, int index, int count, byte[] data) im
                     ByteBufCodecs.STRING_UTF8, AiUploadPayload::name,
                     ByteBufCodecs.VAR_INT, AiUploadPayload::index,
                     ByteBufCodecs.VAR_INT, AiUploadPayload::count,
-                    ByteBufCodecs.byteArray(hero.bane.herobot.mod.common.networking.ScriptCompression.MAX_CHUNK), AiUploadPayload::data,
+                    ByteBufCodecs.byteArray(hero.bane.herobot.common.networking.ScriptCompression.MAX_CHUNK), AiUploadPayload::data,
                     AiUploadPayload::new
             );
 

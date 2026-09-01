@@ -43,5 +43,9 @@ tasks {
 
         jvmArgs("-Dcom.mojang.eula.agree=true")
         pluginJars(named<Jar>("shadowJar").flatMap { it.archiveFile })
+
+        downloadPlugins {
+            modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.get()}")
+        }
     }
 }

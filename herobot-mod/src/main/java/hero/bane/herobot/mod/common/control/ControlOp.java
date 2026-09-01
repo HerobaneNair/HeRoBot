@@ -46,7 +46,6 @@ public record ControlOp(int kind, double x, double y, double z,
     public static ControlOp pathStop()                              { return of(PATH_STOP, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
     public static ControlOp pathSetting(int key, double value)      { return of(PATH_SETTING, value, 0, 0, 0, 0, key, 0, 0, 0); }
     public static ControlOp pathMoveType(int ordinal)               { return of(PATH_MOVE_TYPE, 0, 0, 0, 0, 0, ordinal, 0, 0, 0); }
-    // blockKey is the namespaced block id, mode is one of AVOID_*.
     public static ControlOp pathAvoidBlock(String blockKey, int mode) {
         return new ControlOp(PATH_AVOID_BLOCK, 0, 0, 0, 0, 0, 0, mode, 0, 0, blockKey);
     }
