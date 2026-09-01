@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "herobot",
+  "version": "${version}",
+  "name": "HeroBot",
+  "description": "Robots scripted to be Heroes",
+  "authors": [
+    "HerobaneNair"
+  ],
+  "contact": {},
+  "license": "CC-BY-NC-SA-4.0",
+  "icon": "assets/herobot/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "preLaunch": [
+      "hero.bane.herobot.mod.common.carpet.CarpetCompat"
+    ],
+    "client": [
+      "hero.bane.herobot.mod.client.HeroBotClient"
+    ],
+    "main": [
+      "hero.bane.herobot.mod.common.HeroBot"
+    ],
+    "voicechat": [
+      "hero.bane.herobot.common.voice.HeroVoicePlugin"
+    ]
+  },
+  "mixins": [
+    "herobot.mixins.json",
+    "herobot.carpet.mixins.json",
+    {
+      "config": "herobot.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "fabric-api": "*",
+    "minecraft": "1.21.11"
+  },
+  "suggests": {
+    "voicechat": ">=2.5.0"
+  },
+  "breaks": {
+    "carpetpvp": "*"
+  }
+}

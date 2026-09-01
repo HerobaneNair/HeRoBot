@@ -1,0 +1,21 @@
+package hero.bane.herobot.mod.common.mixin;
+
+import hero.bane.herobot.mod.common.HeroBot;
+import net.minecraft.server.players.CachedUserNameToIdResolver;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(CachedUserNameToIdResolver.class)
+public abstract class CachedUserNameToIdResolverMixin {
+
+    @Inject(method = "save", at = @At("HEAD"), cancellable = true)
+    private void disableSaveInSingleplayer(CallbackInfo ci) {
+        if (HeroBot.currentServer != null) {
+            if (HeroBot.currentServer.isSingleplayer()) {
+                ci.cancel();
+            }
+        }
+    }
+}

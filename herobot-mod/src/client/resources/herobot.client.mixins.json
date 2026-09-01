@@ -1,0 +1,30 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "hero.bane.herobot.mod.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "AbstractMinecartRendererMixin",
+    "EntityRenderDispatcherMixin",
+    "EntityViewRotationMixin",
+    "KeyMappingMixin",
+    "KeyboardHandlerInvoker",
+    "LevelRendererMixin",
+    "LocalPlayerMixin",
+    "MouseHandlerInvoker",
+    "MerchantScreenMixin",
+    "MinecraftMixin",
+    "MultiPlayerGameModeMixin",
+    "WorldOpenFlowsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  },
+  "mixins": [
+    "LevelMixin",
+    "LivingEntityHurtMixin"
+  ]
+}
