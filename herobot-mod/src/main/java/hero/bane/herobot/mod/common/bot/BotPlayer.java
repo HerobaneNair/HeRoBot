@@ -13,7 +13,7 @@ import hero.bane.herobot.mod.common.mixin.LivingEntityAccessor;
 import hero.bane.herobot.mod.common.mixin.ServerCommonPacketListenerImplAccessor;
 import hero.bane.herobot.mod.common.mixin.ServerPlayerAccessor;
 import it.unimi.dsi.fastutil.doubles.DoubleDoubleImmutablePair;
-import net.minecraft.advancements.CriteriaTriggers;
+import net.minecraft.advancements.triggers.CriteriaTriggers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
@@ -96,7 +96,8 @@ public class BotPlayer extends ServerPlayer {
         applyPing();
     }
 
-    private record DelayedKnockback(long tick, double strength, double x, double z, double horizontalScale) {
+    private record DelayedKnockback(long tick, double strength, double x, double z, double horizontalScale,
+                                    DamageSource source, float damage, boolean extra) {
     }
 
     private final List<DelayedKnockback> pendingKnockbacks = new ArrayList<>();
@@ -534,7 +535,8 @@ public class BotPlayer extends ServerPlayer {
         if (!pendingKnockbacks.isEmpty()) {
             pendingKnockbacks.removeIf(kb -> {
                 if (currentTick >= kb.tick()) {
-                    applyKnockbackWithScale(kb.strength(), kb.x(), kb.z(), kb.horizontalScale());
+                    applyKnockbackWithScale(kb.strength(), kb.x(), kb.z(), kb.horizontalScale(),
+                            kb.source(), kb.damage(), kb.extra());
                     return true;
                 }
                 return false;
@@ -562,27 +564,29 @@ public class BotPlayer extends ServerPlayer {
     }
 
     @Override
-    public void knockback(double strength, double x, double z) {
+    public void knockback(double strength, double x, double z, DamageSource source, float damage, boolean extra) {
         if (this.getAbilities().invulnerable) return;
-        scaledKnockback(strength, x, z, 1.0);
+        scaledKnockback(strength, x, z, 1.0, source, damage, extra);
     }
 
-    private void scaledKnockback(double strength, double x, double z, double horizontalScale) {
+    private void scaledKnockback(double strength, double x, double z, double horizontalScale,
+                                 DamageSource source, float damage, boolean extra) {
         int delayTicks = knockbackDelayTicks();
         if (delayTicks <= 0) {
-            applyKnockbackWithScale(strength, x, z, horizontalScale);
+            applyKnockbackWithScale(strength, x, z, horizontalScale, source, damage, extra);
         } else {
             long executeAt = this.level().getServer().getTickCount() + delayTicks;
-            pendingKnockbacks.add(new DelayedKnockback(executeAt, strength, x, z, horizontalScale));
+            pendingKnockbacks.add(new DelayedKnockback(executeAt, strength, x, z, horizontalScale, source, damage, extra));
         }
         if (pathFollower != null && !pathFollower.isDone()) {
             pathFollower.recalcPath();
         }
     }
 
-    private void applyKnockbackWithScale(double strength, double x, double z, double horizontalScale) {
+    private void applyKnockbackWithScale(double strength, double x, double z, double horizontalScale,
+                                         DamageSource source, float damage, boolean extra) {
         if (horizontalScale >= 1.0) {
-            super.knockback(strength, x, z);
+            super.knockback(strength, x, z, source, damage, extra);
             return;
         }
         double d = strength * (1.0 - this.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE));
@@ -673,7 +677,7 @@ public class BotPlayer extends ServerPlayer {
                 return false;
             }
 
-            if (damageSource.is(DamageTypeTags.IS_FREEZING) && this.getType().is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES)) {
+            if (damageSource.is(DamageTypeTags.IS_FREEZING) && this.typeHolder().is(EntityTypeTags.FREEZE_HURTS_EXTRA_TYPES)) {
                 finalDamage *= 5.0F;
             }
 
@@ -741,7 +745,7 @@ public class BotPlayer extends ServerPlayer {
                                 && shieldDisabledTick >= 0
                                 && (currentTick - shieldDisabledTick) <= HeroBotSettings.shieldStunningWindow;
                         double horizontalScale = recentShieldDisable ? 0.4d : 1.0d;
-                        this.scaledKnockback(0.4d, kb_x, kb_z, horizontalScale);
+                        this.scaledKnockback(0.4d, kb_x, kb_z, horizontalScale, damageSource, finalDamage, false);
                         this.indicateDamage(kb_x, kb_z);
                     }
                 }
@@ -872,7 +876,8 @@ public class BotPlayer extends ServerPlayer {
     }
 
     @Override
-    protected void blockUsingItem(@NonNull ServerLevel serverLevel, LivingEntity livingEntity) {
+    protected void blockUsingItem(@NonNull ServerLevel serverLevel, LivingEntity livingEntity,
+                                  @NonNull DamageSource damageSource, float damage) {
         ItemStack itemStack = this.getItemBlockingWith();
         BlocksAttacks blocksAttacks = itemStack != null ? itemStack.get(DataComponents.BLOCKS_ATTACKS) : null;
         float f = livingEntity.getSecondsToDisableBlocking();

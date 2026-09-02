@@ -16,7 +16,7 @@ import hero.bane.herobot.mod.client.screen.ai.starfield.PixelBatch;
 import hero.bane.herobot.mod.client.screen.ai.starfield.StarField;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayDeque;
@@ -206,7 +206,7 @@ public final class ScriptCanvas {
         shiftRightSpawn = false;
     }
 
-    public void render(GuiGraphics g, int mouseX, int mouseY) {
+    public void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         frameLayouts.clear();
         caching = true;
         try {
@@ -217,7 +217,7 @@ public final class ScriptCanvas {
         }
     }
 
-    private void renderInner(GuiGraphics g, int mouseX, int mouseY) {
+    private void renderInner(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.fill(left, top, right, bottom, 0xFF12131A);
         g.enableScissor(left, top, right, bottom);
         drawGrid(g);
@@ -503,7 +503,7 @@ public final class ScriptCanvas {
     private static final double GRID_WARP_STRENGTH = 5.0;
     private static final int GRID_DOT_ALPHA = 0x20;
 
-    private void drawGrid(GuiGraphics g) {
+    private void drawGrid(GuiGraphicsExtractor g) {
         int alpha = (int) Math.round(GRID_DOT_ALPHA * StarField.gridVisibility(zoom));
         if (alpha <= 0) return;
         int argb = (alpha << 24) | 0xFFFFFF;
@@ -552,17 +552,17 @@ public final class ScriptCanvas {
         gridBatch.submit(g);
     }
 
-    private void drawWire(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+    private void drawWire(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int color) {
         drawWire(g, x1, y1, x2, y2, (y1 + y2) / 2, color);
     }
 
-    private void drawWire(GuiGraphics g, int x1, int y1, int x2, int y2, int midY, int color) {
+    private void drawWire(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int midY, int color) {
         fillV(g, x1, y1, midY, color);
         fillH(g, x1, x2, midY, color);
         fillV(g, x2, midY, y2, color);
     }
 
-    private void drawWireH(GuiGraphics g, int x1, int y1, int x2, int y2) {
+    private void drawWireH(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2) {
         int midX = (x1 + x2) / 2;
         int color = 0xFFFFFF66;
         fillH(g, x1, midX, y1, color);
@@ -570,11 +570,11 @@ public final class ScriptCanvas {
         fillH(g, midX, x2, y2, color);
     }
 
-    private static void fillV(GuiGraphics g, int x, int ya, int yb, int color) {
+    private static void fillV(GuiGraphicsExtractor g, int x, int ya, int yb, int color) {
         g.fill(x - 1, Math.min(ya, yb) - 1, x + 1, Math.max(ya, yb) + 1, color);
     }
 
-    private static void fillH(GuiGraphics g, int xa, int xb, int y, int color) {
+    private static void fillH(GuiGraphicsExtractor g, int xa, int xb, int y, int color) {
         g.fill(Math.min(xa, xb) - 1, y - 1, Math.max(xa, xb) + 1, y + 1, color);
     }
 
@@ -621,7 +621,7 @@ public final class ScriptCanvas {
         return lane != null ? lane : (y1 + y2) / 2;
     }
 
-    private static void drawSpliceBorder(GuiGraphics g, BlockRenderer.Layout L, boolean valid) {
+    private static void drawSpliceBorder(GuiGraphicsExtractor g, BlockRenderer.Layout L, boolean valid) {
         int c = valid ? SPLICE_OK : SPLICE_BAD;
         g.fill(L.x - 2, L.y - 2, L.x + L.w + 2, L.y - 1, c);
         g.fill(L.x - 2, L.y + L.h + 1, L.x + L.w + 2, L.y + L.h + 2, c);
@@ -629,25 +629,25 @@ public final class ScriptCanvas {
         g.fill(L.x + L.w + 1, L.y - 1, L.x + L.w + 2, L.y + L.h + 1, c);
     }
 
-    private void drawThickWire(GuiGraphics g, int x1, int y1, int x2, int y2) {
+    private void drawThickWire(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2) {
         int midY = (y1 + y2) / 2;
         fillThickV(g, x1, y1, midY, PAIR_WIRE_COLOR);
         fillThickH(g, x1, x2, midY, PAIR_WIRE_COLOR);
         fillThickV(g, x2, midY, y2, PAIR_WIRE_COLOR);
     }
 
-    private void drawThickWireH(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+    private void drawThickWireH(GuiGraphicsExtractor g, int x1, int y1, int x2, int y2, int color) {
         int midX = (x1 + x2) / 2;
         fillThickH(g, x1, midX, y1, color);
         fillThickV(g, midX, y1, y2, color);
         fillThickH(g, midX, x2, y2, color);
     }
 
-    private static void fillThickV(GuiGraphics g, int x, int ya, int yb, int color) {
+    private static void fillThickV(GuiGraphicsExtractor g, int x, int ya, int yb, int color) {
         g.fill(x - 2, Math.min(ya, yb) - 2, x + 3, Math.max(ya, yb) + 2, color);
     }
 
-    private static void fillThickH(GuiGraphics g, int xa, int xb, int y, int color) {
+    private static void fillThickH(GuiGraphicsExtractor g, int xa, int xb, int y, int color) {
         g.fill(Math.min(xa, xb) - 2, y - 2, Math.max(xa, xb) + 2, y + 3, color);
     }
 
@@ -1149,7 +1149,7 @@ public final class ScriptCanvas {
         script().putBlock(child);
     }
 
-    private void drawSlotHighlight(GuiGraphics g, BlockInstance target, String slot, boolean valid) {
+    private void drawSlotHighlight(GuiGraphicsExtractor g, BlockInstance target, String slot, boolean valid) {
         for (BlockRenderer.ChipRect c : nestedLayoutOf(target).chips) {
             if (!c.name().equals(slot)) continue;
             int col = valid ? 0xFFE6E600 : 0xFFFF3030;
@@ -2212,7 +2212,7 @@ public final class ScriptCanvas {
         return new int[]{sx(cX(editing)), sy(cY(editing)) - FMT_BTN - 2};
     }
 
-    private void renderFormatBar(GuiGraphics g, double mx, double my) {
+    private void renderFormatBar(GuiGraphicsExtractor g, double mx, double my) {
         int[] r = formatBarRect();
         int bx = r[0], by = r[1];
         g.fill(bx - 1, by - 1, bx + FMT_BTN * FMT_FLAGS.length + 1, by + FMT_BTN + 1, 0xFF000000);
@@ -2222,7 +2222,7 @@ public final class ScriptCanvas {
             boolean hover = mx >= x && mx < x + FMT_BTN && my >= by && my < by + FMT_BTN;
             g.fill(x, by, x + FMT_BTN - 1, by + FMT_BTN, on ? 0xFF3A7AE0 : hover ? 0xFF555555 : 0xFF2A2A2A);
             int tw = font.width(FMT_LABELS[i]);
-            g.drawString(font, FMT_LABELS[i], x + (FMT_BTN - tw) / 2,
+            g.text(font, FMT_LABELS[i], x + (FMT_BTN - tw) / 2,
                     by + (FMT_BTN - font.lineHeight) / 2 + 1, 0xFFFFFFFF, false);
         }
     }

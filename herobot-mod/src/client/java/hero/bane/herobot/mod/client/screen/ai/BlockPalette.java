@@ -8,7 +8,7 @@ import hero.bane.herobot.common.ai.block.BlockDefRegistry;
 import hero.bane.herobot.common.ai.block.BlockType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -137,12 +137,12 @@ public final class BlockPalette {
         return Math.max(0, visibleRows().size() * ROW_H - (h - SEARCH_H) + 4);
     }
 
-    public void render(GuiGraphics g, int mouseX, int mouseY) {
+    public void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.fill(x, y, x + w, y + h, 0xF01A1A1A);
         g.fill(x + w - 1, y, x + w, y + h, 0xFF000000);
 
         g.fill(x, y, x + w, y + SEARCH_H, 0xFF101010);
-        if (searchBox != null) searchBox.render(g, mouseX, mouseY, 0f);
+        if (searchBox != null) searchBox.extractRenderState(g, mouseX, mouseY, 0f);
 
         boolean bulkHover = shiftHeld() && hoveredHeader(mouseX, mouseY);
         g.enableScissor(x, y + SEARCH_H, x + w, y + h);
@@ -155,12 +155,12 @@ public final class BlockPalette {
                     g.fill(x, ry, x + w, ry + ROW_H,
                             held ? 0xFF242424 : (hover || bulkHover) ? 0xFF151515 : 0xFF000000);
                     String arrow = collapsed.contains(row.cat()) ? "▸ " : "▾ ";
-                    g.drawString(font, arrow + row.label(), x + 4, ry + 3, row.color(), false);
+                    g.text(font, arrow + row.label(), x + 4, ry + 3, row.color(), false);
                 } else {
                     if (hover) g.fill(x, ry, x + w - 1, ry + ROW_H, 0x66FFFFFF);
                     g.fill(x + 3, ry + 3, x + 9, ry + ROW_H - 2, row.color());
                     String label = trim(row.label(), w - 16);
-                    g.drawString(font, label, x + 12, ry + 3, 0xFFE0E0E0, false);
+                    g.text(font, label, x + 12, ry + 3, 0xFFE0E0E0, false);
                 }
             }
             ry += ROW_H;
@@ -169,7 +169,7 @@ public final class BlockPalette {
         g.disableScissor();
     }
 
-    private void renderDropLine(GuiGraphics g) {
+    private void renderDropLine(GuiGraphicsExtractor g) {
         int idx = dropIndex(dragY);
         int ry = rowsTop() - scroll;
         for (int i = 0; i < idx; i++) ry += categorySpan(order.get(i));

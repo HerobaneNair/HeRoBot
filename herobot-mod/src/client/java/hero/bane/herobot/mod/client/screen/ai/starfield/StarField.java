@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai.starfield;
 
 import hero.bane.herobot.mod.client.EditorPrefs;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -144,7 +144,7 @@ public final class StarField {
         if (count >= BLACK_HOLE_THRESHOLD && blackHole == null) blackHole = new BlackHole(cx, cy);
     }
 
-    public void render(GuiGraphics g, int left, int top, int right, int bottom,
+    public void render(GuiGraphicsExtractor g, int left, int top, int right, int bottom,
                        double panX, double panY, double zoom, double mouseX, double mouseY,
                        List<double[]> blocks, List<double[]> wires) {
         double dt = elapsedSeconds();

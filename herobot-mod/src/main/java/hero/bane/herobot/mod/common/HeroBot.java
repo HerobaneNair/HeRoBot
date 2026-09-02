@@ -57,11 +57,11 @@ public class HeroBot implements ModInitializer {
         HeroBotSelectorOptions.register();
         ModVoice.init();
 
-        PayloadTypeRegistry.playS2C().register(HeroBotSyncPayload.TYPE, HeroBotSyncPayload.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(HeroBotSyncPayload.TYPE, HeroBotSyncPayload.STREAM_CODEC);
 
-        PayloadTypeRegistry.playS2C().register(ControlPlayerPayload.TYPE, ControlPlayerPayload.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ControlPlayerPayload.TYPE, ControlPlayerPayload.STREAM_CODEC);
 
-        PayloadTypeRegistry.playC2S().register(PathDonePayload.TYPE, PathDonePayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(PathDonePayload.TYPE, PathDonePayload.STREAM_CODEC);
         ServerPlayNetworking.registerGlobalReceiver(PathDonePayload.TYPE, (payload, context) ->
                 RemotePathState.finish(context.player(), payload.seq()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
@@ -78,13 +78,13 @@ public class HeroBot implements ModInitializer {
             PingDelays.forget(handler.player.getUUID());
         });
 
-        PayloadTypeRegistry.playC2S().register(AiUploadPayload.TYPE, AiUploadPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(AiDownloadRequestPayload.TYPE, AiDownloadRequestPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(AiListRequestPayload.TYPE, AiListRequestPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playC2S().register(AiDeleteRequestPayload.TYPE, AiDeleteRequestPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playS2C().register(AiDownloadPayload.TYPE, AiDownloadPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playS2C().register(AiListPayload.TYPE, AiListPayload.STREAM_CODEC);
-        PayloadTypeRegistry.playS2C().register(AiDownloadFailedPayload.TYPE, AiDownloadFailedPayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AiUploadPayload.TYPE, AiUploadPayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AiDownloadRequestPayload.TYPE, AiDownloadRequestPayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AiListRequestPayload.TYPE, AiListRequestPayload.STREAM_CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AiDeleteRequestPayload.TYPE, AiDeleteRequestPayload.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(AiDownloadPayload.TYPE, AiDownloadPayload.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(AiListPayload.TYPE, AiListPayload.STREAM_CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(AiDownloadFailedPayload.TYPE, AiDownloadFailedPayload.STREAM_CODEC);
 
         registerAiNetworkHandlers();
 

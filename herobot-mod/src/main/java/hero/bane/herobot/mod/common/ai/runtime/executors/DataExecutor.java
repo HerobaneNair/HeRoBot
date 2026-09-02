@@ -1,16 +1,15 @@
 package hero.bane.herobot.mod.common.ai.runtime.executors;
 
-import hero.bane.herobot.mod.common.ai.SelectorValidation;
+import com.mojang.brigadier.StringReader;
 import hero.bane.herobot.common.ai.VarType;
 import hero.bane.herobot.common.ai.block.BlockType;
+import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
+import hero.bane.herobot.common.ai.runtime.StepResult;
+import hero.bane.herobot.mod.common.ai.SelectorValidation;
 import hero.bane.herobot.mod.common.ai.runtime.Executor;
 import hero.bane.herobot.mod.common.ai.runtime.ParamEval;
 import hero.bane.herobot.mod.common.ai.runtime.Reporter;
-import hero.bane.herobot.common.ai.runtime.RuntimeVariable;
 import hero.bane.herobot.mod.common.ai.runtime.ScriptRunner;
-import hero.bane.herobot.common.ai.runtime.StepResult;
-import com.mojang.brigadier.StringReader;
-import net.minecraft.commands.arguments.item.ItemInput;
 import net.minecraft.commands.arguments.item.ItemParser;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -126,9 +125,9 @@ public final class DataExecutor {
         String s = ParamEval.asString(value).trim();
         if (s.isEmpty()) return ItemStack.EMPTY;
         try {
-            ItemParser.ItemResult res = new ItemParser(r.player().level().registryAccess())
-                    .parse(new StringReader(s));
-            return new ItemInput(res.item(), res.components()).createItemStack(1, false);
+            return new ItemParser(r.player().level().registryAccess())
+                    .parse(new StringReader(s))
+                    .createItemStack(1);
         } catch (Exception e) {
             return ItemStack.EMPTY;
         }

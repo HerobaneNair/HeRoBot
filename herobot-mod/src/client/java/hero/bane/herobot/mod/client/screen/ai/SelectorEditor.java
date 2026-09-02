@@ -2,7 +2,7 @@ package hero.bane.herobot.mod.client.screen.ai;
 
 import hero.bane.herobot.mod.common.ai.SelectorValidation;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -74,7 +74,7 @@ public final class SelectorEditor {
         return allowUuid && SelectorValidation.isUuid(v);
     }
 
-    public void render(GuiGraphics g, int mouseX, int mouseY, float pt) {
+    public void render(GuiGraphicsExtractor g, int mouseX, int mouseY, float pt) {
         if (!active) return;
         g.fill(0, 0, 100000, 100000, 0x99000000);
         g.fill(px, py, px + W, py + H, 0xFF1E1E1E);
@@ -82,9 +82,9 @@ public final class SelectorEditor {
         int outline = valid ? VALID : INVALID;
         g.fill(px - 1, py - 1, px + W + 1, py, outline);
         g.fill(px - 1, py + H, px + W + 1, py + H + 1, outline);
-        g.drawString(font, title, px + 8, py + 6, 0xFFFFFFFF, false);
+        g.text(font, title, px + 8, py + 6, 0xFFFFFFFF, false);
         if (box != null) {
-            box.render(g, mouseX, mouseY, pt);
+            box.extractRenderState(g, mouseX, mouseY, pt);
             int bx0 = px + 8, by0 = py + 34, bx1 = px + W - 8, by1 = py + 34 + BOX_H;
             int edge = valid ? VALID : INVALID;
             g.fill(bx0, by0, bx1, by0 + 1, edge);
@@ -95,12 +95,12 @@ public final class SelectorEditor {
 
         String help1 = "Must select exactly one entity";
         String help2 = "Use @n, @p, @r, @s - or @e/@a with limit=1";
-        g.drawString(font, help1, px + 8, py + 70, 0xFFCBA6FF, false);
-        g.drawString(font, help2, px + 8, py + 82, 0xFFCBA6FF, false);
+        g.text(font, help1, px + 8, py + 70, 0xFFCBA6FF, false);
+        g.text(font, help2, px + 8, py + 82, 0xFFCBA6FF, false);
         if (allowUuid) {
-            g.drawString(font, "A dashed UUID is also accepted", px + 8, py + 94, 0xFFCBA6FF, false);
+            g.text(font, "A dashed UUID is also accepted", px + 8, py + 94, 0xFFCBA6FF, false);
         }
-        g.drawString(font, "Enter = OK   Esc = Cancel", px + 8, py + H - 11, 0xFF909090, false);
+        g.text(font, "Enter = OK   Esc = Cancel", px + 8, py + H - 11, 0xFF909090, false);
     }
 
     public boolean mouseClicked(MouseButtonEvent e, boolean doubled) {

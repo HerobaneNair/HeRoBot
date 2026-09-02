@@ -59,7 +59,7 @@ public final class SensorExecutor {
             return (double) ("pitch".equals(axis) ? e.getXRot() : e.getYRot());
         });
 
-        reporter.put(BlockType.TIME_OF_DAY, (b, r, br) -> r.player().level().getDayTime() % 24000L);
+        reporter.put(BlockType.TIME_OF_DAY, (b, r, br) -> r.player().level().getOverworldClockTime() % 24000L);
 
         reporter.put(BlockType.EVERY_X_TICKS, (b, r, br) -> {
             int n = Math.max(1, ParamEval.evalInt(b, "ticks", r, br));
@@ -156,7 +156,7 @@ public final class SensorExecutor {
             Object sel = ParamEval.raw(b, "target", r, br);
             String tag = ParamEval.evalString(b, "tag", r, br);
             Entity e = SelectorExecutor.resolveFirstEntity(sel, r);
-            return e != null && e.getTags().contains(tag);
+            return e != null && e.entityTags().contains(tag);
         });
 
         reporter.put(BlockType.DISTANCE_TO, (b, r, br) -> {

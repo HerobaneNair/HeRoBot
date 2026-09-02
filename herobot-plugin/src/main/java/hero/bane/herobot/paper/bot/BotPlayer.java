@@ -569,9 +569,10 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     @Override
-    public void knockback(double strength, double x, double z, Entity attacker, EntityKnockbackEvent.Cause cause) {
+    public void knockback(double strength, double x, double z, DamageSource source, float damage, boolean extra,
+                          Entity attacker, EntityKnockbackEvent.Cause cause) {
         if (this.getAbilities().invulnerable) return;
-        super.knockback(strength, x, z, attacker, cause);
+        super.knockback(strength, x, z, source, damage, extra, attacker, cause);
     }
 
     @Override

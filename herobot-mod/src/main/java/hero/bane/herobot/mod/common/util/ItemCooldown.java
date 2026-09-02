@@ -47,7 +47,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         int last = 0;
@@ -76,7 +76,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         for (var p : players) {
@@ -93,7 +93,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         for (var p : players) {
@@ -116,7 +116,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         int ticks = IntegerArgumentType.getInteger(ctx, "ticks");
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 

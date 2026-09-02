@@ -3,7 +3,7 @@ package hero.bane.herobot.mod.common.mixin;
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import com.llamalad7.mixinextras.sugar.Local;
 import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
-import net.minecraft.advancements.criterion.MinMaxBounds;
+import net.minecraft.advancements.predicates.MinMaxBounds;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.server.level.ServerPlayer;
@@ -72,7 +72,7 @@ public class EntitySelectorMixin implements EntitySelectorSharedState {
 
     @ModifyReturnValue(method = "getPredicate", at = @At("RETURN"))
     private Predicate<Entity> addCustomFilters(Predicate<Entity> original,
-                                               @Local(argsOnly = true) Vec3 origin) {
+                                               @Local(argsOnly = true, name = "pos") Vec3 origin) {
         if (horizontalDistance == null && verticalDistance == null && self == null) return original;
 
         CommandSourceStack source = this.herobot$currentSource;

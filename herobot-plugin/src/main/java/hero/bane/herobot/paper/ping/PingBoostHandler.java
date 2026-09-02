@@ -1,21 +1,13 @@
 package hero.bane.herobot.paper.ping;
 
+import hero.bane.herobot.common.ping.PingDelayOptions;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
 import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
-import hero.bane.herobot.common.ping.PingDelayOptions;
-import net.minecraft.network.protocol.game.ServerboundChatAckPacket;
-import net.minecraft.network.protocol.game.ServerboundChatPacket;
-import net.minecraft.network.protocol.game.ServerboundInteractPacket;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
-import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.phys.Vec3;
-import org.jspecify.annotations.NonNull;
+import net.minecraft.network.protocol.game.*;
 
 import java.util.Arrays;
 import java.util.Map;
@@ -306,33 +298,13 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
         if (packet instanceof ServerboundMovePlayerPacket move && move.hasRotation()) {
             return PingDelayOptions.Category.LOOK;
         }
-        if (packet instanceof ServerboundInteractPacket interact) {
-            return attackOrUse(interact);
+        if (packet instanceof ServerboundAttackPacket) {
+            return PingDelayOptions.Category.ATTACK;
+        }
+        if (packet instanceof ServerboundInteractPacket) {
+            return PingDelayOptions.Category.USE;
         }
         return null;
-    }
-
-    private static PingDelayOptions.Category attackOrUse(ServerboundInteractPacket interact) {
-        InteractionKind kind = new InteractionKind();
-        interact.dispatch(kind);
-        return kind.attack ? PingDelayOptions.Category.ATTACK : PingDelayOptions.Category.USE;
-    }
-
-    private static final class InteractionKind implements ServerboundInteractPacket.Handler {
-        boolean attack;
-
-        @Override
-        public void onInteraction(@NonNull InteractionHand hand) {
-        }
-
-        @Override
-        public void onInteraction(@NonNull InteractionHand hand, @NonNull Vec3 pos) {
-        }
-
-        @Override
-        public void onAttack() {
-            attack = true;
-        }
     }
 
     private boolean delays(Packet<?> packet) {

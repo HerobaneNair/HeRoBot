@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -83,7 +83,7 @@ public final class PopupMenu {
         return true;
     }
 
-    public void render(GuiGraphics g, double mx, double my) {
+    public void render(GuiGraphicsExtractor g, double mx, double my) {
         g.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF000000);
         g.fill(x, y, x + w, y + h, 0xFF2A2A2A);
         int hi = hitTest(mx, my);
@@ -93,12 +93,12 @@ public final class PopupMenu {
             int ry = y + 1 + local * ROW_H;
             boolean on = enabled.get(i);
             if (i == hi && on) g.fill(x, ry, x + w, ry + ROW_H, 0xFF3A5A8A);
-            g.drawString(font, labels.get(i), x + 6, ry + 3, on ? 0xFFE0E0E0 : 0xFF707070, false);
+            g.text(font, labels.get(i), x + 6, ry + 3, on ? 0xFFE0E0E0 : 0xFF707070, false);
         }
         if (labels.size() > MAX_VISIBLE) renderScrollbar(g);
     }
 
-    private void renderScrollbar(GuiGraphics g) {
+    private void renderScrollbar(GuiGraphicsExtractor g) {
         int trackX = x + w - 3;
         g.fill(trackX, y + 1, trackX + 2, y + h - 1, 0xFF1A1A1A);
         int trackH = h - 2;

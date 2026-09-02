@@ -19,6 +19,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import net.minecraft.world.entity.EntityTypes;
 
 @Mixin(Entity.class)
 public abstract class EntityMixin {
@@ -75,7 +76,7 @@ public abstract class EntityMixin {
         if (!HeroBotSettings.editablePlayerNbt)
             return original.call(type);
 
-        if (type == EntityType.PLAYER)
+        if (type == EntityTypes.PLAYER)
             return true;
 
         return original.call(type);

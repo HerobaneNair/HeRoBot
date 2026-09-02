@@ -107,7 +107,7 @@ public abstract class LivingEntityMixin extends Entity {
     }
 
     @ModifyExpressionValue(
-            method = "knockback(DDD)V",
+            method = "knockback(DDDLnet/minecraft/world/damagesource/DamageSource;FZ)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;getDeltaMovement()Lnet/minecraft/world/phys/Vec3;")
     )
     private Vec3 knockbackIgnoreVerticalVelocity(Vec3 original) {
@@ -116,7 +116,7 @@ public abstract class LivingEntityMixin extends Entity {
     }
 
     @ModifyExpressionValue(
-            method = "knockback(DDD)V",
+            method = "knockback(DDDLnet/minecraft/world/damagesource/DamageSource;FZ)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;onGround()Z")
     )
     private boolean knockbackAlwaysGrounded(boolean original) {

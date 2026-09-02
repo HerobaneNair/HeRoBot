@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 plugins {
     alias(libs.plugins.fabric.loom)
     id("herobot.java")
@@ -37,27 +39,60 @@ val shadeClasspath = configurations.resolvable("shadeClasspath") {
     extendsFrom(shade.get())
 }
 
+val voicechatMod = configurations.dependencyScope("voicechatMod")
+val voicechatModClasspath = configurations.resolvable("voicechatModClasspath") {
+    extendsFrom(voicechatMod.get())
+}
+
 dependencies {
     minecraft(libs.minecraft)
-    mappings(loom.officialMojangMappings())
-    modImplementation(libs.fabric.loader)
+    implementation(libs.fabric.loader)
 
-    modImplementation(libs.fabric.api)
+    implementation(libs.fabric.api)
 
-    modCompileOnly(libs.carpet)
+    compileOnly(libs.carpet)
 
     compileOnly(libs.voicechat.api)
     "clientCompileOnly"(libs.voicechat.api)
 
     implementation(projects.herobotCommon)
     add(shade.name, projects.herobotCommon)
+
+    add(voicechatMod.name, "maven.modrinth:simple-voice-chat:fabric-${libs.versions.voicechat.mod.get()}+${libs.versions.minecraft.get()}") {
+        isTransitive = false
+    }
+}
+
+val installRunMods = tasks.register<Sync>("installRunMods") {
+    group = "herobot"
+    description = "Installs the mods the dev runs need alongside HeroBot into run/mods."
+
+    from(voicechatModClasspath)
+    into(layout.projectDirectory.dir("run/mods"))
+}
+
+val acceptServerEula = tasks.register("acceptServerEula") {
+    group = "herobot"
+    description = "Agrees to the Minecraft EULA for the dev server, as the Paper run does inline."
+
+    val eula = layout.projectDirectory.file("run/eula.txt")
+    outputs.file(eula)
+
+    doLast {
+        eula.asFile.parentFile.mkdirs()
+        eula.asFile.writeText("eula=true" + System.lineSeparator())
+    }
 }
 
 tasks {
+    named("runClient") { dependsOn(installRunMods) }
+    named("runServer") { dependsOn(installRunMods, acceptServerEula) }
+
     processResources {
         val props = mapOf(
             "version" to project.version,
             "minecraft_version" to libs.versions.minecraft.get(),
+            "minecraft_range" to libs.versions.compat.range.get(),
             "loader_version" to libs.versions.fabric.loader.get(),
         )
 
@@ -69,12 +104,13 @@ tasks {
         }
     }
 
-    // shadowJar assembles its own copy of both source sets plus the bundled dependencies, then
-    // remapJar consumes it in place of Loom's `jar`. Both un-remapped jars sit in devlibs so
-    // only the final remapped artifact lands in build/libs.
-    shadowJar {
-        archiveClassifier = "dev-shadow"
+    jar {
+        archiveClassifier = "thin"
         destinationDirectory = layout.buildDirectory.dir("devlibs")
+    }
+
+    shadowJar {
+        archiveClassifier = ""
 
         configurations = listOf(shadeClasspath.get())
 
@@ -85,14 +121,9 @@ tasks {
             rename { "${it}_${base.archivesName.get()}" }
         }
     }
-
-    remapJar {
-        inputFile = shadowJar.flatMap { it.archiveFile }
-    }
 }
 
 java {
-    // Loom attaches sourcesJar to a RemapSourcesJar task and to `build` when present.
     withSourcesJar()
 }
 

@@ -11,11 +11,11 @@ import hero.bane.herobot.mod.client.screen.ai.ScriptTransfer;
 import hero.bane.herobot.mod.common.networking.*;
 import hero.bane.herobot.mod.common.rule.RuleConfigIO;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -107,14 +107,14 @@ public class HeroBotClient implements ClientModInitializer {
 
         KeyMapping.Category category =
                 KeyMapping.Category.register(Identifier.fromNamespaceAndPath("herobot", "general"));
-        openAiEditorKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        openAiEditorKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.herobot.open_ai_editor",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_BRACKET,
                 category));
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            if (client.screen instanceof AiEditorScreen editor) editor.persistDraft();
+            if (client.gui.screen() instanceof AiEditorScreen editor) editor.persistDraft();
         });
 
         ClientTickEvents.START_CLIENT_TICK.register(client -> MovementRecorder.INSTANCE.sampleTick());
@@ -123,8 +123,8 @@ public class HeroBotClient implements ClientModInitializer {
             while (openAiEditorKey.consumeClick()) {
                 if (MovementRecorder.INSTANCE.isRecording()) {
                     MovementRecorder.INSTANCE.stop();
-                } else if (client.screen == null && client.player != null) {
-                    client.setScreen(new AiEditorScreen());
+                } else if (client.gui.screen() == null && client.player != null) {
+                    client.gui.setScreen(new AiEditorScreen());
                 }
             }
 
@@ -149,16 +149,16 @@ public class HeroBotClient implements ClientModInitializer {
             int width = font.width(recIndicatorText);
             graphics.pose().pushMatrix();
             graphics.pose().translate((float) graphics.guiWidth() / 2, graphics.guiHeight() - 68);
-            graphics.drawStringWithBackdrop(font, recIndicatorText, -width / 2, -4, width, ARGB.white(alpha));
+            graphics.textWithBackdrop(font, recIndicatorText, -width / 2, -4, width, ARGB.white(alpha));
             graphics.pose().popMatrix();
         });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(ClientCommandManager.literal("herorecord")
+                dispatcher.register(ClientCommands.literal("herorecord")
                 .executes(ctx -> stopRecording(false))
-                .then(ClientCommandManager.literal("stop")
+                .then(ClientCommands.literal("stop")
                         .executes(ctx -> stopRecording(false)))
-                .then(ClientCommandManager.literal("cancel")
+                .then(ClientCommands.literal("cancel")
                         .executes(ctx -> stopRecording(true)))));
     }
 

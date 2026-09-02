@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -90,7 +90,7 @@ public final class ParamEditor {
         if (cb != null) cb.accept(value);
     }
 
-    public void render(GuiGraphics g, int mouseX, int mouseY, float pt) {
+    public void render(GuiGraphicsExtractor g, int mouseX, int mouseY, float pt) {
         if (!active) return;
         g.fill(0, 0, 100000, 100000, 0x99000000);
         g.fill(px, py, px + W, py + dialogH, 0xFF1E1E1E);
@@ -98,8 +98,8 @@ public final class ParamEditor {
         int outline = validator == null ? 0xFFFFFFFF : valid ? 0xFF44BB44 : 0xFFFF5555;
         g.fill(px - 1, py - 1, px + W + 1, py, outline);
         g.fill(px - 1, py + dialogH, px + W + 1, py + dialogH + 1, outline);
-        g.drawString(font, title, px + 8, py + 6, 0xFFFFFFFF, false);
-        g.drawString(font, "Enter = OK   Esc = Cancel", px + 8, py + dialogH - 10, 0xFF909090, false);
+        g.text(font, title, px + 8, py + 6, 0xFFFFFFFF, false);
+        g.text(font, "Enter = OK   Esc = Cancel", px + 8, py + dialogH - 10, 0xFF909090, false);
         if (actionLabel != null) {
             boolean hov = mouseX >= btnX0() && mouseX < btnX1() && mouseY >= btnY0() && mouseY < btnY1();
             int col = hov ? 0xFFFFCC22 : 0xFFDD9900;
@@ -108,11 +108,11 @@ public final class ParamEditor {
             g.fill(btnX0(), btnY0(), btnX0() + 1, btnY1(), col);
             g.fill(btnX1() - 1, btnY0(), btnX1(), btnY1(), col);
             int tw = font.width(actionLabel);
-            g.drawString(font, actionLabel, px + (W - tw) / 2, btnY0() + 4,
+            g.text(font, actionLabel, px + (W - tw) / 2, btnY0() + 4,
                     hov ? 0xFFFFFFFF : 0xFFD0D0D0, false);
         }
         if (box != null) {
-            box.render(g, mouseX, mouseY, pt);
+            box.extractRenderState(g, mouseX, mouseY, pt);
             if (!valid) {
                 int bx0 = px + 7, by0 = py + 21, bx1 = px + W - 7, by1 = py + 39;
                 g.fill(bx0, by0, bx1, by0 + 1, 0xFFFF5555);

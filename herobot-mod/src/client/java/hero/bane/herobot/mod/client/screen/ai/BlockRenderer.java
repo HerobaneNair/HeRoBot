@@ -3,7 +3,7 @@ package hero.bane.herobot.mod.client.screen.ai;
 import hero.bane.herobot.common.ai.AiScript;
 import hero.bane.herobot.common.ai.VarType;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -379,7 +379,7 @@ public final class BlockRenderer {
     public static final int INPUT_OK = 1;
     public static final int INPUT_BAD = 2;
 
-    public static void draw(GuiGraphics g, Font font, BlockDef def, BlockInstance inst,
+    public static void draw(GuiGraphicsExtractor g, Font font, BlockDef def, BlockInstance inst,
                             Layout L, int selectedId, int hoveredId, int hoverPort, int litPort,
                             int targetPort, boolean targetOk, int inputHighlight, boolean conflict, AiScript script) {
         int base = def.category().color();
@@ -441,20 +441,20 @@ public final class BlockRenderer {
 
         int labelColor = def.type() == BlockType.ELSE_IF ? 0xFFFFFFBB : 0xFFFFFFFF;
         if (def.type() == BlockType.ELSE_IF) {
-            g.drawString(font, "else", L.labelX, L.labelY, 0xFFFFFFFF, false);
+            g.text(font, "else", L.labelX, L.labelY, 0xFFFFFFFF, false);
             int restX = L.labelX + font.width("else");
-            g.drawString(font, blockLabel(def, inst).substring("else".length()), restX, L.labelY, labelColor, false);
+            g.text(font, blockLabel(def, inst).substring("else".length()), restX, L.labelY, labelColor, false);
         } else {
-            g.drawString(font, blockLabel(def, inst), L.labelX, L.labelY, labelColor, false);
+            g.text(font, blockLabel(def, inst), L.labelX, L.labelY, labelColor, false);
         }
         if (L.suffix != null) {
-            g.drawString(font, L.suffix, L.suffixX, L.labelY, labelColor, false);
+            g.text(font, L.suffix, L.suffixX, L.labelY, labelColor, false);
         }
         if (L.infix != null) {
-            g.drawString(font, L.infix, L.infixX, L.labelY, labelColor, false);
+            g.text(font, L.infix, L.infixX, L.labelY, labelColor, false);
         }
         for (Word wd : L.words) {
-            g.drawString(font, wd.text(), wd.x(), L.labelY, labelColor, false);
+            g.text(font, wd.text(), wd.x(), L.labelY, labelColor, false);
         }
         if (L.plus != null) {
             int px = L.plus[0], py = L.plus[1], pw = L.plus[2], ph = L.plus[3];
@@ -473,13 +473,13 @@ public final class BlockRenderer {
         if (L.iterChip != null) {
             int px = L.iterChip[0], py = L.iterChip[1], pw = L.iterChip[2], ph = L.iterChip[3];
             g.fill(px, py, px + pw, py + ph, darken(base, 0.3f));
-            g.drawString(font, iterTag(L.iterId), px + 2, py + 1, labelColor, false);
+            g.text(font, iterTag(L.iterId), px + 2, py + 1, labelColor, false);
         }
         if (L.msgChip != null) {
             int px = L.msgChip[0], py = L.msgChip[1], pw = L.msgChip[2], ph = L.msgChip[3];
             g.fill(px - 1, py - 1, px + pw + 1, py + ph + 1, darken(base, 0.15f));
             g.fill(px, py, px + pw, py + ph, base);
-            g.drawString(font, "message", px + 4, py + 2, labelColor, false);
+            g.text(font, "message", px + 4, py + 2, labelColor, false);
         }
         if (L.cycleButton != null) {
             int px = L.cycleButton[0], py = L.cycleButton[1], pw = L.cycleButton[2], ph = L.cycleButton[3];
@@ -489,7 +489,7 @@ public final class BlockRenderer {
             g.pose().pushMatrix();
             g.pose().translate(px + (pw - gw * s) / 2f + 1f, py + (ph - gh * s) / 2f);
             g.pose().scale(s, s);
-            g.drawString(font, CYCLE_GLYPH, 0, 0, labelColor, false);
+            g.text(font, CYCLE_GLYPH, 0, 0, labelColor, false);
             g.pose().popMatrix();
         }
 
@@ -501,19 +501,19 @@ public final class BlockRenderer {
 
             g.fill(c.x() - 1, c.y() - 1, c.x() + c.w() + 1, c.y() + c.h() + 1, darken(base, 0.3f));
             g.fill(c.x(), c.y(), c.x() + c.w(), c.y() + c.h(), darken(base, 0.45f));
-            g.drawString(font, chipText(v), c.x() + 4, c.y() + 2, 0xFFFFFFFF, false);
+            g.text(font, chipText(v), c.x() + 4, c.y() + 2, 0xFFFFFFFF, false);
         }
 
         for (ParamRow p : L.paramRows) {
             int[] t = p.typeRect();
             g.fill(t[0] - 1, t[1] - 1, t[0] + t[2] + 1, t[1] + t[3] + 1, darken(base, 0.3f));
             g.fill(t[0], t[1], t[0] + t[2], t[1] + t[3], darken(base, 0.45f));
-            g.drawString(font, p.typeLabel(), t[0] + 4, t[1] + 2, 0xFFFFFFFF, false);
+            g.text(font, p.typeLabel(), t[0] + 4, t[1] + 2, 0xFFFFFFFF, false);
 
             int[] c = p.dragRect();
             g.fill(c[0] - 1, c[1] - 1, c[0] + c[2] + 1, c[1] + c[3] + 1, darken(base, 0.15f));
             g.fill(c[0], c[1], c[0] + c[2], c[1] + c[3], base);
-            g.drawString(font, p.chipLabel(), c[0] + 4, c[1] + 2, labelColor, false);
+            g.text(font, p.chipLabel(), c[0] + 4, c[1] + 2, labelColor, false);
         }
 
         for (Nested ns : L.nested) {
@@ -532,7 +532,7 @@ public final class BlockRenderer {
         }
     }
 
-    private static void drawSideInputPort(GuiGraphics g, int left, int cy, int halfW, int bcol) {
+    private static void drawSideInputPort(GuiGraphicsExtractor g, int left, int cy, int halfW, int bcol) {
         int by0 = cy - halfW, by1 = cy + halfW;
         int bx0 = left - PORT_H;
         int bgy0 = by0 + PORT_NOTCH, bgy1 = by1 - PORT_NOTCH;
@@ -541,7 +541,7 @@ public final class BlockRenderer {
         g.fill(bx0 + PORT_H / 2, bgy0, left, bgy1, bcol);
     }
 
-    private static void drawInputPort(GuiGraphics g, int cx, int top, int halfW, int bcol) {
+    private static void drawInputPort(GuiGraphicsExtractor g, int cx, int top, int halfW, int bcol) {
         int bx0 = cx - halfW, bx1 = cx + halfW;
         int by0 = top - PORT_H;
         int bgx0 = bx0 + PORT_NOTCH, bgx1 = bx1 - PORT_NOTCH;
@@ -550,7 +550,7 @@ public final class BlockRenderer {
         g.fill(bgx0, by0 + PORT_H / 2, bgx1, top, bcol);
     }
 
-    private static void drawCShape(GuiGraphics g, Layout L, int body, int base, int border) {
+    private static void drawCShape(GuiGraphicsExtractor g, Layout L, int body, int base, int border) {
         List<int[]> arms = L.arms;
         int x0 = L.x, x1 = L.x + L.w;
         int sx = x0 + L.spineW;

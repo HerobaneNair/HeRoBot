@@ -16,7 +16,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.CraftingMenu;
 import net.minecraft.world.inventory.MerchantMenu;
 import net.minecraft.world.item.Item;
@@ -70,11 +70,11 @@ public final class InventoryExecutor {
             String mode = ParamEval.evalString(b, "mode", r, br);
             ServerPlayer p = r.player();
             switch (mode == null ? "click" : mode) {
-                case "rightClick" -> menu.clicked(slot, 1, ClickType.PICKUP, p);
-                case "shiftClick" -> menu.clicked(slot, 0, ClickType.QUICK_MOVE, p);
-                case "throw" -> menu.clicked(slot, 0, ClickType.THROW, p);
-                case "throwAll" -> menu.clicked(slot, 1, ClickType.THROW, p);
-                default -> menu.clicked(slot, 0, ClickType.PICKUP, p);
+                case "rightClick" -> menu.clicked(slot, 1, ContainerInput.PICKUP, p);
+                case "shiftClick" -> menu.clicked(slot, 0, ContainerInput.QUICK_MOVE, p);
+                case "throw" -> menu.clicked(slot, 0, ContainerInput.THROW, p);
+                case "throwAll" -> menu.clicked(slot, 1, ContainerInput.THROW, p);
+                default -> menu.clicked(slot, 0, ContainerInput.PICKUP, p);
             }
             menu.broadcastChanges();
             return StepResult.continueVia(0);
@@ -86,7 +86,7 @@ public final class InventoryExecutor {
             if (menu == null || !validSlot(menu, slot)) return StepResult.continueVia(0);
             String with = ParamEval.evalString(b, "with", r, br);
             int button = "offhand".equalsIgnoreCase(with) ? 40 : Math.clamp(ParamEval.asInt(with), 1, 9) - 1;
-            menu.clicked(slot, button, ClickType.SWAP, r.player());
+            menu.clicked(slot, button, ContainerInput.SWAP, r.player());
             menu.broadcastChanges();
             return StepResult.continueVia(0);
         });
@@ -94,7 +94,7 @@ public final class InventoryExecutor {
         flow.put(BlockType.INV_HELD_THROW, (b, r, br) -> {
             AbstractContainerMenu menu = menuFor(r, ParamEval.evalString(b, "menu", r, br));
             if (menu == null) return StepResult.continueVia(0);
-            menu.clicked(-999, 0, ClickType.PICKUP, r.player());
+            menu.clicked(-999, 0, ContainerInput.PICKUP, r.player());
             menu.broadcastChanges();
             return StepResult.continueVia(0);
         });
@@ -123,7 +123,7 @@ public final class InventoryExecutor {
                 if (slotItem.isEmpty() || !ItemStack.isSameItemSameComponents(slotItem, reference)) continue;
                 boolean isContainerSlot = !(menu.getSlot(i).container instanceof Inventory);
                 if (fromContainer == isContainerSlot) {
-                    menu.clicked(i, 0, ClickType.QUICK_MOVE, p);
+                    menu.clicked(i, 0, ContainerInput.QUICK_MOVE, p);
                 }
             }
             menu.broadcastChanges();

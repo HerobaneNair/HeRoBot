@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.common.mixin;
 
 import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
-import net.minecraft.advancements.criterion.MinMaxBounds;
+import net.minecraft.advancements.predicates.MinMaxBounds;
 import net.minecraft.commands.arguments.selector.EntitySelector;
 import net.minecraft.commands.arguments.selector.EntitySelectorParser;
 import org.spongepowered.asm.mixin.Mixin;

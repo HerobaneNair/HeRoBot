@@ -1,7 +1,7 @@
 package hero.bane.herobot.mod.client.screen.ai;
 
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,7 +102,7 @@ public final class Toolbar {
         if (sortFlash > 0) sortFlash--;
     }
 
-    public void render(GuiGraphics g, int width, int mouseX, int mouseY) {
+    public void render(GuiGraphicsExtractor g, int width, int mouseX, int mouseY) {
         layout(width);
         g.fill(0, 0, width, HEIGHT, 0xFF2A2A2A);
         g.fill(0, HEIGHT, width, HEIGHT + 1, 0xFF000000);
@@ -121,16 +121,16 @@ public final class Toolbar {
                     : 0xFFFFFFFF;
             g.fill(e.x, 2, e.x + e.w, 20, fill);
             g.fill(e.x, 2, e.x + e.w, 3, brighten(fill));
-            g.drawString(font, e.label, e.x + 6, 7, label, false);
+            g.text(font, e.label, e.x + 6, 7, label, false);
         }
 
         String status = "Script: " + host.script().name();
-        g.drawString(font, status, width - font.width(status) - 8, 7, 0xFFB0FFB0, false);
+        g.text(font, status, width - font.width(status) - 8, 7, 0xFFB0FFB0, false);
 
         if (openMenu >= 0) renderMenu(g, mouseX, mouseY);
     }
 
-    private void renderMenu(GuiGraphics g, int mouseX, int mouseY) {
+    private void renderMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         Entry e = entries.get(openMenu);
         int mw = menuWidth(e);
         int top = HEIGHT + 1;
@@ -148,7 +148,7 @@ public final class Toolbar {
             boolean enabled = it.enabled().getAsBoolean();
             boolean hover = enabled && mouseX >= e.x && mouseX < e.x + mw && mouseY >= ry && mouseY < ry + ROW_H;
             if (hover) g.fill(e.x + 2, ry, e.x + mw, ry + ROW_H, 0xFF333333);
-            g.drawString(font, it.label(), e.x + 6, ry + 2, enabled ? 0xFFE0E0E0 : 0xFF606060, false);
+            g.text(font, it.label(), e.x + 6, ry + 2, enabled ? 0xFFE0E0E0 : 0xFF606060, false);
         }
     }
 

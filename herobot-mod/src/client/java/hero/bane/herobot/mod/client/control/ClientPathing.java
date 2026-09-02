@@ -793,7 +793,7 @@ public class ClientPathing {
 
     private void message(String text) {
         LocalPlayer p = player();
-        if (p != null) p.displayClientMessage(Component.literal(text), true);
+        if (p != null) p.sendOverlayMessage(Component.literal(text));
     }
 
     private void initDebugNodes(List<BlockPos> pathNodes) {

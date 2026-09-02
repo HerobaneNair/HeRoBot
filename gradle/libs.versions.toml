@@ -1,20 +1,24 @@
 [versions]
-java = "21"
-minecraft = "1.21.11"
+java = "25"
+minecraft = "26.2"
+
+compat-range = ">=26 <27"
+compat-api = "26.1"
 
 # Fabric (mod)
-loom = "1.15.4"
-fabric-loader = "0.18.3"
-fabric-api = "0.141.3+1.21.11"
-carpet = "1.4.194"
+loom = "1.17.20"
+fabric-loader = "0.19.3"
+fabric-api = "0.158.0+26.2"
+carpet = "26.2"
 
 # Paper (plugin)
-paper = "1.21.11-R0.1-SNAPSHOT"
-paperweight = "2.0.0-beta.21"
+paper = "26.2.build.121-stable"
+paperweight = "2.0.0-beta.23"
 
 # Shared libraries
 pathetic = "5.5.2"
-voicechat = "2.6.20"
+voicechat-mod = "2.6.21"
+voicechat-api = "2.6.20"
 
 jetbrains-annotations = "26.0.2-1"
 slf4j = "2.0.16"
@@ -22,7 +26,7 @@ gson = "2.13.2"
 
 # Build plugins resolved through build-logic
 shadow = "9.6.1"
-run-paper = "3.0.2"
+run-paper = "3.1.0"
 plugin-yml = "0.9.0"
 
 [libraries]
@@ -35,7 +39,7 @@ carpet = { group = "maven.modrinth", name = "carpet", version.ref = "carpet" }
 pathetic-api = { group = "de.bsommerfeld.pathetic", name = "api", version.ref = "pathetic" }
 pathetic-engine = { group = "de.bsommerfeld.pathetic", name = "engine", version.ref = "pathetic" }
 
-voicechat-api = { group = "de.maxhenkel.voicechat", name = "voicechat-api", version.ref = "voicechat" }
+voicechat-api = { group = "de.maxhenkel.voicechat", name = "voicechat-api", version.ref = "voicechat-api" }
 
 jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrains-annotations" }
 slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
@@ -47,5 +51,5 @@ plugin-run-paper = { group = "xyz.jpenilla.run-paper", name = "xyz.jpenilla.run-
 plugin-yml-paper = { group = "de.eldoria.plugin-yml.paper", name = "de.eldoria.plugin-yml.paper.gradle.plugin", version.ref = "plugin-yml" }
 
 [plugins]
-fabric-loom = { id = "fabric-loom", version.ref = "loom" }
+fabric-loom = { id = "net.fabricmc.fabric-loom", version.ref = "loom" }
 paperweight-userdev = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight" }

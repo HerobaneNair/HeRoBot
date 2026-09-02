@@ -4,7 +4,7 @@ import hero.bane.herobot.common.rule.HeroBotSettings;
 import hero.bane.herobot.common.rule.Rule;
 import hero.bane.herobot.common.rule.RuleRegistry;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -25,7 +25,7 @@ public final class ModRules {
         RuleRegistry.register(ModRules.class);
         RuleConfigIO.initClient(CONFIG_FILE);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> RuleConfigIO.clearWorld());
-        ServerWorldEvents.LOAD.register((server, world) -> RuleConfigIO.initWorld(server));
+        ServerLevelEvents.LOAD.register((server, world) -> RuleConfigIO.initWorld(server));
     }
 
     public static boolean isCreativeNoClipFlying(Entity entity) {

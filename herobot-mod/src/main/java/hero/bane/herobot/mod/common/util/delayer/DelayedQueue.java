@@ -16,6 +16,7 @@ import net.minecraft.world.phys.Vec2;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.world.phys.Vec3;
 
 public final class DelayedQueue {
 
@@ -94,7 +95,7 @@ public final class DelayedQueue {
 
                 source = new CommandSourceStack(
                         server,
-                        executor.pos.getCenter(),
+                        Vec3.atCenterOf(executor.pos),
                         Vec2.ZERO,
                         level,
                         PermissionSet.ALL_PERMISSIONS,

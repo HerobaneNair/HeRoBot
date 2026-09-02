@@ -9,6 +9,7 @@ import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.storage.LevelDataAndDimensions;
 import net.minecraft.world.level.storage.WorldData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -45,9 +46,10 @@ public abstract class WorldOpenFlowsMixin {
             Runnable runnable,
             CallbackInfo ci
     ) {
-        WorldData worldData = worldStem.worldData();
+        LevelDataAndDimensions.WorldDataAndGenSettings settings = worldStem.worldDataAndGenSettings();
+        WorldData worldData = settings.data();
 
-        boolean customized = worldData.worldGenOptions().isOldCustomizedWorld();
+        boolean customized = settings.genSettings().options().isOldCustomizedWorld();
         boolean experimental = worldData.worldGenSettingsLifecycle() != Lifecycle.stable();
 
         if (!customized && !experimental) return;

@@ -17,7 +17,7 @@ public abstract class EntityRenderDispatcherMixin {
     private void herobot$hideTaggedMinecarts(Entity entity, Frustum frustum, double camX, double camY, double camZ,
                                              CallbackInfoReturnable<Boolean> cir) {
         if (entity instanceof AbstractMinecart cart
-                && (cart.isInvisible() || cart.getTags().contains("invisible"))) {
+                && (cart.isInvisible() || cart.entityTags().contains("invisible"))) {
             LocalPlayer viewer = Minecraft.getInstance().player;
             if (viewer == null || !viewer.isSpectator()) {
                 cir.setReturnValue(false);

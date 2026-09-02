@@ -19,6 +19,9 @@ import net.minecraft.world.item.component.BlocksAttacks;
 import net.minecraft.world.item.component.UseCooldown;
 
 import java.util.List;
+import java.util.Set;
+import java.util.Map;
+import java.lang.reflect.Field;
 
 public final class ItemCooldown {
 
@@ -45,7 +48,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         int last = 0;
@@ -74,7 +77,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         for (var p : players) {
@@ -91,7 +94,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
         for (var p : players) {
@@ -114,7 +117,7 @@ public final class ItemCooldown {
             throws CommandSyntaxException {
 
         var players = EntityArgument.getPlayers(ctx, "targets");
-        var item = ItemArgument.getItem(ctx, "item").getItem();
+        var item = ItemArgument.getItem(ctx, "item").item().value();
         int ticks = IntegerArgumentType.getInteger(ctx, "ticks");
         String itemName = BuiltInRegistries.ITEM.getKey(item).getPath();
 
@@ -133,7 +136,7 @@ public final class ItemCooldown {
         int c = 0;
         ItemCooldowns cooldowns = player.getCooldowns();
         try {
-            for (Identifier id : List.copyOf(cooldowns.cooldowns.keySet())) {
+            for (Identifier id : List.copyOf(activeCooldownIds(cooldowns))) {
                 c++;
                 cooldowns.removeCooldown(id);
             }
@@ -149,12 +152,7 @@ public final class ItemCooldown {
     }
 
     private static int getRemaining(ServerPlayer player, Item item) {
-        ItemCooldowns cooldowns = player.getCooldowns();
-
-        ItemCooldowns.CooldownInstance instance = cooldowns.cooldowns.get(group(item));
-        if (instance == null) return 0;
-
-        return Math.max(0, instance.endTime() - cooldowns.tickCount);
+        return player.getCooldowns().getRemainingCooldown(group(item));
     }
 
     private static boolean setDefault(ServerPlayer player, Item item) {
@@ -202,4 +200,12 @@ public final class ItemCooldown {
     private static Identifier group(Item item) {
         return BuiltInRegistries.ITEM.getKey(item);
     }
+
+    @SuppressWarnings("unchecked")
+    private static Set<Identifier> activeCooldownIds(ItemCooldowns cooldowns) throws ReflectiveOperationException {
+        Field field = ItemCooldowns.class.getDeclaredField("cooldowns");
+        field.setAccessible(true);
+        return Set.copyOf(((Map<Identifier, ?>) field.get(cooldowns)).keySet());
+    }
+
 }

@@ -2,12 +2,13 @@ package hero.bane.herobot.mod.client.screen.ai.starfield;
 
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.render.TextureSetup;
-import net.minecraft.client.gui.render.state.GuiElementRenderState;
+import net.minecraft.client.renderer.state.gui.GuiElementRenderState;
 import net.minecraft.client.renderer.RenderPipelines;
 import org.joml.Matrix3x2f;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 public final class PixelBatch implements GuiElementRenderState {
@@ -23,7 +24,7 @@ public final class PixelBatch implements GuiElementRenderState {
     public PixelBatch() {
     }
 
-    public void begin(GuiGraphics g, int left, int top, int right, int bottom) {
+    public void begin(GuiGraphicsExtractor g, int left, int top, int right, int bottom) {
         count = 0;
         pose = new Matrix3x2f(g.pose());
         scissor = new ScreenRectangle(left, top, right - left, bottom - top).transformAxisAligned(pose);
@@ -54,7 +55,7 @@ public final class PixelBatch implements GuiElementRenderState {
         rect(x, y, x + 1, y + 1, argb);
     }
 
-    public void submit(GuiGraphics g) {
+    public void submit(GuiGraphicsExtractor g) {
         if (count == 0) return;
         ScreenRectangle box = new ScreenRectangle(minX, minY, maxX - minX, maxY - minY).transformMaxBounds(pose);
         bounds = scissor == null ? box : scissor.intersection(box);
@@ -62,7 +63,7 @@ public final class PixelBatch implements GuiElementRenderState {
             count = 0;
             return;
         }
-        g.guiRenderState.submitGuiElement(this);
+        g.guiRenderState.addGuiElement(this);
     }
 
     private void grow() {
@@ -72,7 +73,7 @@ public final class PixelBatch implements GuiElementRenderState {
     }
 
     @Override
-    public void buildVertices(VertexConsumer vc) {
+    public void buildVertices(@NonNull VertexConsumer vc) {
         for (int i = 0; i < count; i++) {
             int j = i * 4;
             int x0 = coords[j], y0 = coords[j + 1], x1 = coords[j + 2], y1 = coords[j + 3];
@@ -85,12 +86,12 @@ public final class PixelBatch implements GuiElementRenderState {
     }
 
     @Override
-    public RenderPipeline pipeline() {
+    public @NonNull RenderPipeline pipeline() {
         return RenderPipelines.GUI;
     }
 
     @Override
-    public TextureSetup textureSetup() {
+    public @NonNull TextureSetup textureSetup() {
         return TextureSetup.noTexture();
     }
 

@@ -1,8 +1,7 @@
 package hero.bane.herobot.mod.common.mixin;
 
 import hero.bane.herobot.mod.common.util.EntitySelectorSharedState;
-import net.fabricmc.fabric.mixin.command.EntitySelectorOptionsAccessor;
-import net.minecraft.advancements.criterion.MinMaxBounds;
+import net.minecraft.advancements.predicates.MinMaxBounds;
 import net.minecraft.commands.arguments.selector.options.EntitySelectorOptions;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,7 +14,7 @@ public class EntitySelectorOptionsMixin {
 
     @Inject(method = "bootStrap", at = @At("TAIL"))
     private static void registerAxesDistanceOptions(CallbackInfo ci) {
-        EntitySelectorOptionsAccessor.callPutOption(
+        EntitySelectorOptionsAccessor.invokeRegister(
                 "distanceH",
                 parser -> {
                     int cursor = parser.getReader().getCursor();
@@ -35,7 +34,7 @@ public class EntitySelectorOptionsMixin {
                 parser -> ((EntitySelectorSharedState) parser).getHorizontalDistance() == null,
                 Component.literal("Horizontal distance")
         );
-        EntitySelectorOptionsAccessor.callPutOption(
+        EntitySelectorOptionsAccessor.invokeRegister(
                 "distanceV",
                 parser -> {
                     int cursor = parser.getReader().getCursor();
@@ -55,7 +54,7 @@ public class EntitySelectorOptionsMixin {
                 parser -> ((EntitySelectorSharedState) parser).getVerticalDistance() == null,
                 Component.literal("Vertical distance")
         );
-        EntitySelectorOptionsAccessor.callPutOption(
+        EntitySelectorOptionsAccessor.invokeRegister(
                 "isSelf",
                 parser -> {
                     boolean wanted = parser.getReader().readBoolean();

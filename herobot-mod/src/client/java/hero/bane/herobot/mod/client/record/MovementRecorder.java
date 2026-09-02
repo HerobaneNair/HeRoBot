@@ -9,7 +9,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -86,7 +86,7 @@ public final class MovementRecorder {
         startY = p != null ? p.getY() : 0;
         startZ = p != null ? p.getZ() : 0;
         recording = true;
-        Minecraft.getInstance().setScreen(null);
+        Minecraft.getInstance().gui.setScreen(null);
     }
 
     private void bindKeys(Options o) {
@@ -131,7 +131,7 @@ public final class MovementRecorder {
             pendingTarget = null;
             pendingFrames = null;
             pendingInvActions = null;
-            Minecraft.getInstance().setScreen(target);
+            Minecraft.getInstance().gui.setScreen(target);
             if (captured != null) target.finishRecording(captured, capturedInv, px, py, pz);
         }
     }
@@ -154,8 +154,8 @@ public final class MovementRecorder {
     }
 
     private void sampleScreens(Minecraft mc) {
-        boolean invScreen = mc.screen instanceof InventoryScreen;
-        boolean menuOpen = mc.screen instanceof AbstractContainerScreen<?>;
+        boolean invScreen = mc.gui.screen() instanceof InventoryScreen;
+        boolean menuOpen = mc.gui.screen() instanceof AbstractContainerScreen<?>;
         if (invScreen && !prevInvScreen) {
             invActions.add(new InvAction(frames.size(), BlockType.OPEN_INVENTORY, Map.of()));
         }
@@ -166,7 +166,7 @@ public final class MovementRecorder {
         prevMenuOpen = menuOpen;
     }
 
-    public void onSlotClick(int containerId, int slotId, int button, ClickType type) {
+    public void onSlotClick(int containerId, int slotId, int button, ContainerInput type) {
         if (!recording) return;
         int tick = frames.size();
         String menu = containerId == 0 ? "inventory" : "container";

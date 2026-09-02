@@ -23,11 +23,11 @@ tasks.register<Delete>("clean") {
 }
 
 // ./gradlew buildAll -> both platform jars, in build/libs/<generation>/.
-val buildAll by tasks.registering(Sync::class) {
+tasks.register<Sync>("buildAll") {
     group = "herobot"
     description = "Builds the Fabric mod and the Paper plugin into a build/libs generation folder."
 
-    from(project(":herobot-mod").tasks.named("remapJar"))
+    from(project(":herobot-mod").tasks.named("shadowJar"))
     from(project(":herobot-plugin").tasks.named("shadowJar"))
     into(layout.buildDirectory.dir("libs/$generation"))
 

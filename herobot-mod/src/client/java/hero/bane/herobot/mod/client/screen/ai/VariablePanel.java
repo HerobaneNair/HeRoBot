@@ -9,7 +9,7 @@ import hero.bane.herobot.common.ai.block.BlockDefRegistry;
 import hero.bane.herobot.common.ai.block.BlockDescriptions;
 import hero.bane.herobot.common.ai.block.BlockType;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -120,12 +120,12 @@ public final class VariablePanel {
         return Math.clamp(s, 0, max);
     }
 
-    public void render(GuiGraphics g, int mouseX, int mouseY) {
+    public void render(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int descTop = viewBottom();
         g.fill(x, y, x + w, y + h, 0xF01A1A1A);
         g.fill(x, y, x + 1, y + h, 0xFF000000);
         g.fill(x, y, x + w, y + HEADER_H, 0xFF2A2A2A);
-        g.drawString(font, "Variables & functions", x + 5, y + 4, 0xFFFFFFFF, false);
+        g.text(font, "Variables & functions", x + 5, y + 4, 0xFFFFFFFF, false);
 
         List<Row> rows = buildRows();
         scroll = clampScroll(scroll, rows);
@@ -145,45 +145,45 @@ public final class VariablePanel {
         if (typeMenu.open) typeMenu.render(g, mouseX, mouseY);
     }
 
-    private void renderRow(GuiGraphics g, Row row, int ry, int mouseX, int mouseY) {
+    private void renderRow(GuiGraphicsExtractor g, Row row, int ry, int mouseX, int mouseY) {
         boolean hover = mouseX >= x && mouseX < x + w && mouseY >= ry && mouseY < ry + ROW_H;
         switch (row.kind()) {
             case K_FOLDER -> {
                 boolean dropTarget = dragging && dragY >= ry && dragY < ry + ROW_H;
                 g.fill(x + 1, ry, x + w, ry + ROW_H, dropTarget ? 0x556AB0FF : (hover ? 0xFF262626 : 0xFF1C1C1C));
                 String arrow = collapsed.contains(row.folder()) ? "▸ " : "▾ ";
-                g.drawString(font, arrow + trim(row.folder(), w - 30), x + 4, ry + 3, 0xFFFFD080, false);
-                g.drawString(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
+                g.text(font, arrow + trim(row.folder(), w - 30), x + 4, ry + 3, 0xFFFFD080, false);
+                g.text(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
             }
             case K_UNGROUPED -> {
                 boolean dropTarget = dragging && dragY >= ry && dragY < ry + ROW_H;
                 if (dropTarget) g.fill(x + 1, ry, x + w, ry + ROW_H, 0x556AB0FF);
-                g.drawString(font, "Ungrouped", x + 4, ry + 3, 0xFF808080, false);
+                g.text(font, "Ungrouped", x + 4, ry + 3, 0xFF808080, false);
             }
             case K_VAR -> {
                 VarDecl v = script().variables().get(row.varIndex());
                 int indent = row.folder().isEmpty() ? 0 : 8;
                 if (hover) g.fill(x + 1, ry, x + w - 1, ry + ROW_H, 0x22FFFFFF);
                 if (indent > 0) g.fill(x + 3, ry, x + 4, ry + ROW_H, 0x33FFD080);
-                g.drawString(font, trim(v.name(), w - 80 - indent), x + 4 + indent, ry + 3, 0xFFE0E0E0, false);
+                g.text(font, trim(v.name(), w - 80 - indent), x + 4 + indent, ry + 3, 0xFFE0E0E0, false);
 
                 int tcx = x + w - 62;
                 g.fill(tcx, ry + 1, x + w - 14, ry + ROW_H - 1, 0xFF2A2A2A);
-                g.drawString(font, v.type().chipLabel(), tcx + 3, ry + 3, 0xFFE0E0E0, false);
+                g.text(font, v.type().chipLabel(), tcx + 3, ry + 3, 0xFFE0E0E0, false);
 
-                g.drawString(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
+                g.text(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
             }
             case K_ADD_VAR -> {
                 g.fill(x + 4, ry + 1, x + w - 4, ry + ROW_H - 1, hover ? 0x66FFFFFF : 0x33FFFFFF);
-                g.drawString(font, "+ Add variable", x + 8, ry + 3, 0xFFFFFFFF, false);
+                g.text(font, "+ Add variable", x + 8, ry + 3, 0xFFFFFFFF, false);
             }
             case K_ADD_FOLDER -> {
                 g.fill(x + 4, ry + 1, x + w - 4, ry + ROW_H - 1, hover ? 0x66FFD080 : 0x33FFD080);
-                g.drawString(font, "+ New folder", x + 8, ry + 3, 0xFFFFD080, false);
+                g.text(font, "+ New folder", x + 8, ry + 3, 0xFFFFD080, false);
             }
             case K_ADD_FUNC -> {
                 g.fill(x + 4, ry + 1, x + w - 4, ry + ROW_H - 1, hover ? 0x669B6BEF : 0x339B6BEF);
-                g.drawString(font, "+ Add function", x + 8, ry + 3, FUNC_TEXT, false);
+                g.text(font, "+ Add function", x + 8, ry + 3, FUNC_TEXT, false);
             }
             case K_FUNC -> {
                 FuncDecl f = script().functions().get(row.varIndex());
@@ -191,14 +191,14 @@ public final class VariablePanel {
                 if (hover) g.fill(x + 1, ry, x + w - 1, ry + ROW_H, 0x22FFFFFF);
                 if (indent > 0) g.fill(x + 3, ry, x + 4, ry + ROW_H, 0x339B6BEF);
                 String label = f.name() + " (" + f.numParams() + ")";
-                g.drawString(font, trim(label, w - 24 - indent), x + 4 + indent, ry + 3, FUNC_TEXT, false);
-                g.drawString(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
+                g.text(font, trim(label, w - 24 - indent), x + 4 + indent, ry + 3, FUNC_TEXT, false);
+                g.text(font, "✕", x + w - 10, ry + 3, 0xFFFF6060, false);
             }
             default -> {}
         }
     }
 
-    private void renderScrollbar(GuiGraphics g, List<Row> rows, int descTop) {
+    private void renderScrollbar(GuiGraphicsExtractor g, List<Row> rows, int descTop) {
         int viewH = descTop - viewTop();
         int contentH = contentHeight(rows);
         if (contentH <= viewH) return;
@@ -209,7 +209,7 @@ public final class VariablePanel {
         g.fill(x + w - 3, barY, x + w - 1, barY + barH, 0x88FFFFFF);
     }
 
-    private void renderDragGhost(GuiGraphics g) {
+    private void renderDragGhost(GuiGraphicsExtractor g) {
         if (!dragging) return;
         String nm;
         int accent;
@@ -226,25 +226,25 @@ public final class VariablePanel {
         int gx = (int) dragX + 6, gy = (int) dragY - 6;
         g.fill(gx, gy, gx + gw, gy + 13, 0xEE303030);
         g.fill(gx, gy, gx + gw, gy + 1, accent);
-        g.drawString(font, nm, gx + 4, gy + 3, 0xFFFFFFFF, false);
+        g.text(font, nm, gx + 4, gy + 3, 0xFFFFFFFF, false);
     }
 
-    private void renderDescription(GuiGraphics g, int descTop) {
+    private void renderDescription(GuiGraphicsExtractor g, int descTop) {
         g.fill(x + 1, descTop, x + w, descTop + 1, 0xFF000000);
         g.fill(x + 1, descTop + 1, x + w, descTop + 1 + HEADER_H, 0xFF2A2A2A);
-        g.drawString(font, "Description", x + 5, descTop + 5, 0xFFFFFFFF, false);
+        g.text(font, "Description", x + 5, descTop + 5, 0xFFFFFFFF, false);
 
         int bodyTop = descTop + HEADER_H + 5;
         BlockType infoType = infoType();
         if (infoType == null) return;
 
         BlockDef def = BlockDefRegistry.get(infoType);
-        g.drawString(font, def.label(), x + 5, bodyTop, def.category().color() | 0xFF000000, false);
+        g.text(font, def.label(), x + 5, bodyTop, def.category().color() | 0xFF000000, false);
 
         int ty = bodyTop + font.lineHeight + 3;
         g.enableScissor(x + 1, ty, x + w, y + h);
         for (String line : wrap(BlockDescriptions.get(infoType), w - 10)) {
-            g.drawString(font, line, x + 5, ty, 0xFFC8C8C8, false);
+            g.text(font, line, x + 5, ty, 0xFFC8C8C8, false);
             ty += font.lineHeight;
         }
         g.disableScissor();

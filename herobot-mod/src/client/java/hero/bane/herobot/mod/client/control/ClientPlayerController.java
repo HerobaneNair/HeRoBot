@@ -6,7 +6,7 @@ import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.ActionType;
 import hero.bane.herobot.mod.client.mixin.KeyboardHandlerInvoker;
 import hero.bane.herobot.mod.client.mixin.MouseHandlerInvoker;
 import hero.bane.herobot.mod.common.control.PlayerController;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
@@ -163,8 +163,8 @@ public final class ClientPlayerController implements PlayerController {
     @SuppressWarnings("resource")
     private static void sendKey(KeyMapping mapping, boolean down) {
         Minecraft mc = mc();
-        if (mc.screen != null || mc.getOverlay() != null) return;
-        InputConstants.Key key = KeyBindingHelper.getBoundKeyOf(mapping);
+        if (mc.gui.screen() != null || mc.gui.overlay() != null) return;
+        InputConstants.Key key = KeyMappingHelper.getBoundKeyOf(mapping);
         if (key.equals(InputConstants.UNKNOWN)) return;
         long window = mc.getWindow().handle();
         int action = down ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE;

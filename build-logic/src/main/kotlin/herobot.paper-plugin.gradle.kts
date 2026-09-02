@@ -22,7 +22,7 @@ paper {
     version = project.version.toString()
     description = rootProject.description
 
-    apiVersion = minecraftVersion
+    apiVersion = libs.versions.compat.api.get()
     authors = listOf("HerobaneNair")
 }
 
@@ -45,7 +45,7 @@ tasks {
         pluginJars(named<Jar>("shadowJar").flatMap { it.archiveFile })
 
         downloadPlugins {
-            modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.get()}")
+            modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.mod.get()}")
         }
     }
 }

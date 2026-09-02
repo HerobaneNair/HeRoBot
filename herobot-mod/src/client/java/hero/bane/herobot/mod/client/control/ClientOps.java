@@ -61,11 +61,11 @@ public final class ClientOps {
             }
             case ControlOp.OPEN_INVENTORY -> {
                 Minecraft mc = Minecraft.getInstance();
-                if (mc.player != null && mc.screen == null) mc.setScreen(new InventoryScreen(mc.player));
+                if (mc.player != null && mc.gui.screen() == null) mc.gui.setScreen(new InventoryScreen(mc.player));
             }
             case ControlOp.CLOSE_SCREEN -> {
                 Minecraft mc = Minecraft.getInstance();
-                if (mc.screen instanceof AbstractContainerScreen<?>) mc.setScreen(null);
+                if (mc.gui.screen() instanceof AbstractContainerScreen<?>) mc.gui.setScreen(null);
             }
             case ControlOp.SET_MAIN_HAND -> {
                 Minecraft mc = Minecraft.getInstance();
