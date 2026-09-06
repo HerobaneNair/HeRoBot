@@ -1,6 +1,7 @@
 package hero.bane.herobot.paper.bot;
 
 import hero.bane.herobot.paper.HeroBot;
+import hero.bane.herobot.paper.sched.Sched;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -24,6 +25,7 @@ public final class BotRegistry {
         }
     }
 
+    private static final Object LOCK = new Object();
     private static final Map<String, BotPlayer> BOTS = new LinkedHashMap<>();
     private static final Set<String> REMOVING = new HashSet<>();
     private static final List<Listener> LISTENERS = new CopyOnWriteArrayList<>();
@@ -40,12 +42,16 @@ public final class BotRegistry {
     }
 
     static void add(BotPlayer bot) {
-        BOTS.put(key(bot), bot);
+        synchronized (LOCK) {
+            BOTS.put(key(bot), bot);
+        }
         fire(bot, true);
     }
 
     public static BotPlayer get(String name) {
-        return BOTS.get(name.toLowerCase(Locale.ROOT));
+        synchronized (LOCK) {
+            return BOTS.get(name.toLowerCase(Locale.ROOT));
+        }
     }
 
     public static boolean isBot(ServerPlayer player) {
@@ -53,34 +59,41 @@ public final class BotRegistry {
     }
 
     public static Collection<BotPlayer> all() {
-        return new ArrayList<>(BOTS.values());
+        synchronized (LOCK) {
+            return new ArrayList<>(BOTS.values());
+        }
     }
 
     public static void despawn(BotPlayer bot) {
         String key = key(bot);
-        if (!REMOVING.add(key)) return;
+        synchronized (LOCK) {
+            if (!REMOVING.add(key)) return;
+        }
         try {
-            bot.level().getServer().getPlayerList().remove(bot);
+            Sched.entity(bot, () -> bot.level().getServer().getPlayerList().remove(bot));
         } finally {
-            BOTS.remove(key);
-            REMOVING.remove(key);
+            synchronized (LOCK) {
+                BOTS.remove(key);
+                REMOVING.remove(key);
+            }
         }
         fire(bot, false);
     }
 
     public static void forget(UUID id) {
         List<BotPlayer> removed = new ArrayList<>();
-        BOTS.values().removeIf(bot -> {
-            if (!bot.getUUID().equals(id) || REMOVING.contains(key(bot))) return false;
-            removed.add(bot);
-            return true;
-        });
+        synchronized (LOCK) {
+            BOTS.values().removeIf(bot -> {
+                if (!bot.getUUID().equals(id) || REMOVING.contains(key(bot))) return false;
+                removed.add(bot);
+                return true;
+            });
+        }
         for (BotPlayer bot : removed) fire(bot, false);
     }
 
     public static void despawnAll() {
-        List<BotPlayer> bots = new ArrayList<>(BOTS.values());
-        for (BotPlayer bot : bots) despawn(bot);
+        for (BotPlayer bot : all()) despawn(bot);
     }
 
     public static int despawnMatching(UUID id, String name) {

@@ -8,6 +8,7 @@ import hero.bane.herobot.paper.bot.BotPlayer;
 import hero.bane.herobot.paper.bot.BotPlayerActionPack;
 import hero.bane.herobot.paper.control.PlayerController;
 import hero.bane.herobot.paper.control.PlayerControllers;
+import hero.bane.herobot.paper.sched.Sched;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
@@ -70,7 +71,7 @@ public final class CommandHelper {
         for (ServerPlayer player : requireControllableTargets(context)) {
             if (player instanceof BotPlayer bot)
                 InventorySubtree.requireNoScreen(bot);
-            action.accept(PlayerControllers.of(player));
+            Sched.entity(player, () -> action.accept(PlayerControllers.of(player)));
         }
         return 1;
     }
@@ -85,9 +86,9 @@ public final class CommandHelper {
         for (ServerPlayer player : requireControllableTargets(context)) {
             if (player instanceof BotPlayer bot) {
                 InventorySubtree.requireNoScreen(bot);
-                bot.clearPathFollower();
+                Sched.entity(bot, bot::clearPathFollower);
             }
-            action.accept(PlayerControllers.of(player));
+            Sched.entity(player, () -> action.accept(PlayerControllers.of(player)));
         }
         return 1;
     }

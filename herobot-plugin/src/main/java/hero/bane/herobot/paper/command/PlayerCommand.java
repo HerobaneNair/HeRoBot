@@ -28,6 +28,7 @@ import hero.bane.herobot.paper.control.PlayerController;
 import hero.bane.herobot.paper.control.PlayerControllers;
 import hero.bane.herobot.paper.ping.PingBoostHandler;
 import hero.bane.herobot.paper.ping.PingBoosters;
+import hero.bane.herobot.paper.sched.Sched;
 import hero.bane.herobot.paper.util.BlockBreakTasks;
 import hero.bane.herobot.paper.util.BlockBreaker;
 import hero.bane.herobot.paper.util.BlockPlacer;
@@ -71,7 +72,7 @@ public final class PlayerCommand {
                                         .executes(c -> {
                                             AiSubtree.stopQuietly(c);
                                             for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
-                                                BlockBreakTasks.cancel(p);
+                                                Sched.entity(p, () -> BlockBreakTasks.cancel(p));
                                             }
                                             return CommandHelper.control(c, PlayerController::stopAll);
                                         }))
@@ -323,21 +324,21 @@ public final class PlayerCommand {
     private static int message(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         String message = StringArgumentType.getString(context, "msg");
         for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
-            BotChat.send(bot, message, true);
+            Sched.entity(bot, () -> BotChat.send(bot, message, true));
         }
         return 1;
     }
 
     private static int kill(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         for (BotPlayer bot : CommandHelper.requireBotTargets(context))
-            bot.kill(bot.level());
+            Sched.entity(bot, () -> bot.kill(bot.level()));
         return 1;
     }
 
     private static int disconnect(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         for (BotPlayer bot : CommandHelper.requireBotTargets(context)) {
             bot.ping = 0;
-            BotRegistry.despawn(bot);
+            Sched.entity(bot, () -> BotRegistry.despawn(bot));
         }
         return 1;
     }

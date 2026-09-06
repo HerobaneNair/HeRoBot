@@ -26,6 +26,7 @@ dependencies {
 
 paper {
     main = "hero.bane.herobot.paper.HeroBotPlugin"
+    foliaSupported = true
 
     serverDependencies {
         register("voicechat") {

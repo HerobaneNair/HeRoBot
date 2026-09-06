@@ -5,6 +5,7 @@ import hero.bane.herobot.common.bot.Shadows;
 import hero.bane.herobot.paper.HeroBot;
 import hero.bane.herobot.paper.ai.AiScriptRegistry;
 import hero.bane.herobot.paper.api.HeroBotApi;
+import hero.bane.herobot.paper.sched.Sched;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -53,7 +54,8 @@ public final class ShadowSpawner {
         GameType gamemode = leaving.gameMode.getGameModeForPlayer();
         SNAPSHOTS.put(key(name), snapshot(leaving));
 
-        server.execute(() -> spawn(server, name, shadow.scriptName(), gamemode));
+        Sched.region(leaving.level(), leaving.position(),
+                () -> spawn(server, name, shadow.scriptName(), gamemode));
     }
 
     private static void spawn(MinecraftServer server, String name, String scriptName, GameType gamemode) {
@@ -64,7 +66,7 @@ public final class ShadowSpawner {
                 return;
             }
             if (scriptName == null) return;
-            server.execute(() -> startScript(server, bot, scriptName));
+            Sched.entity(bot, () -> startScript(server, bot, scriptName));
         });
     }
 

@@ -26,26 +26,37 @@ paper {
     authors = listOf("HerobaneNair")
 }
 
+// Shared setup for every dev server flavour: same toolchain, same HeroBot jar,
+// same companion plugins. Each flavour still picks its own run directory so the
+// worlds do not clash.
+fun RunServer.configureHeroBotRun(flavour: String, directory: String) {
+    group = "herobot"
+    description = "Runs a $flavour $minecraftVersion dev server with HeroBot installed."
+
+    minecraftVersion(minecraftVersion)
+    runDirectory = layout.projectDirectory.dir(directory)
+    javaLauncher = toolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
+    }
+
+    jvmArgs("-Dcom.mojang.eula.agree=true")
+    pluginJars(tasks.named<Jar>("shadowJar").flatMap { it.archiveFile })
+
+    downloadPlugins {
+        modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.mod.get()}")
+    }
+}
+
 tasks {
     named<Jar>("jar") {
         archiveClassifier = "thin"
     }
 
     named<RunServer>("runServer") {
-        group = "herobot"
-        description = "Runs a Paper $minecraftVersion dev server with HeroBot installed."
-
-        minecraftVersion(minecraftVersion)
-        runDirectory = layout.projectDirectory.dir("run")
-        javaLauncher = toolchains.launcherFor {
-            languageVersion = JavaLanguageVersion.of(libs.versions.java.get().toInt())
-        }
-
-        jvmArgs("-Dcom.mojang.eula.agree=true")
-        pluginJars(named<Jar>("shadowJar").flatMap { it.archiveFile })
-
-        downloadPlugins {
-            modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.mod.get()}")
-        }
+        configureHeroBotRun("Paper", "run")
     }
+}
+
+runPaper.folia.registerTask {
+    configureHeroBotRun("Folia", "run-folia")
 }

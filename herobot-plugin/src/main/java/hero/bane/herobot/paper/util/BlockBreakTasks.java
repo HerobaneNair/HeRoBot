@@ -5,15 +5,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.bukkit.Bukkit;
 
-import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,29 +47,32 @@ public final class BlockBreakTasks {
 
     public static void cancel(ServerPlayer player) {
         Task task = TASKS.remove(player.getUUID());
-        if (task != null && task.started) abort(player, task);
+        if (task != null && task.started && owns(player, task)) abort(player, task);
     }
 
     public static void clear(UUID id) {
         TASKS.remove(id);
     }
 
-    public static void tick(MinecraftServer server) {
-        if (TASKS.isEmpty()) return;
-        for (Iterator<Map.Entry<UUID, Task>> it = TASKS.entrySet().iterator(); it.hasNext(); ) {
-            Map.Entry<UUID, Task> entry = it.next();
-            ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
-            if (player == null || player.isRemoved() || player.isDeadOrDying()) {
-                it.remove();
-                continue;
-            }
-            if (!step(player, entry.getValue())) it.remove();
+    public static void tickPlayer(ServerPlayer player) {
+        Task task = TASKS.get(player.getUUID());
+        if (task == null) return;
+        if (player.isRemoved() || player.isDeadOrDying()) {
+            TASKS.remove(player.getUUID());
+            return;
         }
+        if (!owns(player, task)) return;
+        if (!step(player, task)) TASKS.remove(player.getUUID());
+    }
+
+    private static boolean owns(ServerPlayer player, Task task) {
+        ServerLevel world = player.level();
+        if (world.dimension() != task.dimension) return false;
+        return Bukkit.isOwnedByCurrentRegion(world.getWorld(), task.pos.getX() >> 4, task.pos.getZ() >> 4);
     }
 
     private static boolean step(ServerPlayer player, Task task) {
         ServerLevel world = player.level();
-        if (world.dimension() != task.dimension) return false;
         BlockState state = world.getBlockState(task.pos);
         if (state.isAir()) {
             world.destroyBlockProgress(BREAKER_ID, task.pos, -1);
