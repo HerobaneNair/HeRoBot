@@ -19,6 +19,7 @@ import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
@@ -34,6 +35,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 import net.minecraft.server.players.OldUsersConverter;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
@@ -48,6 +50,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.level.storage.LevelData;
+import net.minecraft.world.level.storage.TagValueInput;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
@@ -401,6 +404,11 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
         connection.setOwner(bot);
         server.getPlayerList().placeNewPlayer(connection, bot, cookie);
         bot.connection = new BotPlayerNetHandler(server, connection, bot, cookie);
+
+        CompoundTag snapshot = ShadowSpawner.takeSnapshot(profile.name());
+        if (snapshot != null) {
+            bot.load(TagValueInput.create(ProblemReporter.DISCARDING, bot.registryAccess(), snapshot));
+        }
 
         bot.teleportTo(level, pos.x, pos.y, pos.z, Set.of(), yaw, pitch, true);
         bot.setHealth(20.0F);

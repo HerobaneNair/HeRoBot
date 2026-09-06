@@ -24,6 +24,7 @@ import hero.bane.herobot.mod.common.util.BlockBreakTasks;
 import hero.bane.herobot.mod.common.bot.BotVision;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.bot.BotRegistry;
+import hero.bane.herobot.common.bot.Shadows;
 import hero.bane.herobot.mod.common.bot.ShadowSpawner;
 import hero.bane.herobot.common.bot.PlayerLogouts;
 import hero.bane.herobot.mod.common.ping.PingBoosters;
@@ -117,6 +118,8 @@ public class HeroBot implements ModInitializer {
             if (!(handler.player instanceof BotPlayer)) {
                 BotRegistry.despawnMatching(server, handler.player.getUUID(),
                         handler.player.getGameProfile().name());
+                Shadows.disarm(handler.player.getUUID());
+                ShadowSpawner.forget(handler.player.getGameProfile().name());
             }
             syncSettingsToPlayer(handler.player);
         });
