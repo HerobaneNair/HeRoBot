@@ -20,6 +20,8 @@ import hero.bane.herobot.paper.ping.TabListPing;
 import hero.bane.herobot.common.ping.PingDelays;
 import hero.bane.herobot.common.bot.PlayerLogouts;
 import hero.bane.herobot.paper.rule.RuleConfigIO;
+import hero.bane.herobot.paper.sched.PlayerTicker;
+import hero.bane.herobot.paper.sched.Sched;
 import hero.bane.herobot.paper.util.BlockBreakTasks;
 import hero.bane.herobot.paper.voice.PluginVoice;
 import hero.bane.herobot.paper.voice.VoiceOps;
@@ -53,6 +55,8 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
         CraftServer craftServer = (CraftServer) Bukkit.getServer();
         MinecraftServer server = craftServer.getServer();
 
+        Sched.init(this);
+
         if (!getDataFolder().isDirectory() && !getDataFolder().mkdirs()) {
             getLogger().warning("Could not create the plugin data folder; bot name suggestions will not persist");
         }
@@ -83,17 +87,28 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(new ExplosionRules(), this);
         Bukkit.getPluginManager().registerEvents(new WorldRules(), this);
 
-        Bukkit.getScheduler().runTaskTimer(this, () -> {
-            BlockBreakTasks.tick(server);
-            AiScriptRegistry.tickAll(server);
-            PingBoosters.tick(server);
+        BotRegistry.addListener(new BotRegistry.Listener() {
+            @Override
+            public void onBotSpawn(BotPlayer bot) {
+                PlayerTicker.start(bot);
+            }
+
+            @Override
+            public void onBotDespawn(BotPlayer bot) {
+                PlayerTicker.stop(bot.getUUID());
+                BotVision.forget(bot.getUUID());
+            }
+        });
+
+        Sched.globalTimer(() -> {
             TabListPing.tick(server);
-            BotVision.tick(server);
             PluginVoice.tick();
-            RuleEffects.tick(server);
-            CombatRules.tick(server);
             TickRateRules.tick(server);
         }, 1L, 1L);
+
+        for (ServerPlayer online : server.getPlayerList().getPlayers()) {
+            PlayerTicker.start(online);
+        }
     }
 
     @EventHandler
@@ -121,6 +136,7 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         ServerPlayer joining = ((CraftPlayer) event.getPlayer()).getHandle();
         if (joining instanceof BotPlayer) return;
+        PlayerTicker.start(joining);
         BotRegistry.despawnMatching(joining.getUUID(), joining.getGameProfile().name());
         Shadows.disarm(joining.getUUID());
         ShadowSpawner.forget(joining.getGameProfile().name());
@@ -134,6 +150,9 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
                 leaving.getX(), leaving.getY(), leaving.getZ(), leaving.getYRot(), leaving.getXRot());
         ShadowSpawner.onLogout(leaving.level().getServer(), leaving);
         java.util.UUID id = event.getPlayer().getUniqueId();
+        PlayerTicker.stop(id);
+        AiScriptRegistry.forget(id);
+        BotVision.forget(id);
         BotRegistry.forget(id);
         HeroBotNetwork.forget(id);
         RemotePathState.clear(id);
@@ -149,14 +168,17 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
+        PlayerTicker.stopAll();
+        BotVision.reset();
         TickRateRules.restore(server);
         PingBoosters.shutdown(server);
         RuleConfigIO.onSettingsChanged = null;
         HeroBotNetwork.shutdown(this);
         AiScriptRegistry.reset();
         PluginVoice.shutdown();
-        BotRegistry.despawnAll();
+        if (!Bukkit.isStopping()) BotRegistry.despawnAll();
         RuleConfigIO.clearWorld();
         PaperRules.shutdown();
+        Sched.shutdown();
     }
 }

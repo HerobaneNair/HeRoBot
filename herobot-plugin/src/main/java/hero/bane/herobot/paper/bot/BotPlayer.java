@@ -1,20 +1,16 @@
 package hero.bane.herobot.paper.bot;
 
-import hero.bane.herobot.common.ping.BurstClock;
-import hero.bane.herobot.common.ping.PingBurstSpec;
-import hero.bane.herobot.common.ping.PingDelayOptions;
-import hero.bane.herobot.common.ping.PingDelaySpec;
-import hero.bane.herobot.common.ping.PingMode;
-import hero.bane.herobot.common.ping.PingRange;
-import hero.bane.herobot.common.ping.PingDelays;
 import com.mojang.authlib.GameProfile;
-import hero.bane.herobot.paper.HeroBot;
+import hero.bane.herobot.common.ping.*;
 import hero.bane.herobot.common.rule.HeroBotSettings;
+import hero.bane.herobot.paper.HeroBot;
 import hero.bane.herobot.paper.bot.connection.BotClientConnection;
 import hero.bane.herobot.paper.bot.connection.BotPlayerNetHandler;
 import hero.bane.herobot.paper.bot.connection.ServerPlayerInterface;
 import hero.bane.herobot.paper.bot.pathing.PathSettings;
 import hero.bane.herobot.paper.bot.pathing.traversal.BotPathing;
+import hero.bane.herobot.paper.sched.Sched;
+import hero.bane.herobot.paper.sched.Ticks;
 import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -23,12 +19,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
-import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -62,12 +57,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
@@ -306,7 +296,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     public long releaseTick(int delayTicks) {
-        long now = this.level().getServer().getTickCount();
+        long now = Ticks.current();
         long scheduled = now + Math.max(0, delayTicks);
         if (!burstClock.isBursting()) return scheduled;
         return Math.max(scheduled, now + burstClock.ticksUntilRelease());
@@ -318,7 +308,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
 
         int delay = held ? 0 : delayTicks();
         long tick = releaseTick(delay);
-        long now = this.level().getServer().getTickCount();
+        long now = Ticks.current();
         if (tick <= now) return false;
 
         ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(tick - now, action);
@@ -370,7 +360,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
                         } finally {
                             SPAWNING.remove(username);
                         }
-                    }, server);
+                    }, Sched.regionExecutor(level, pos));
             scheduled = true;
         } catch (Throwable t) {
             HeroBot.LOGGER.error("Failed to resolve profile for bot '{}'", username, t);
@@ -410,7 +400,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             bot.load(TagValueInput.create(ProblemReporter.DISCARDING, bot.registryAccess(), snapshot));
         }
 
-        bot.teleportTo(level, pos.x, pos.y, pos.z, Set.of(), yaw, pitch, true);
+        bot.snapTo(pos.x, pos.y, pos.z, yaw, pitch);
         bot.setHealth(20.0F);
         bot.gameMode.changeGameModeForPlayer(gameType);
         bot.unsetRemoved();
@@ -460,10 +450,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     public void botPlayerDisconnect(Component reason) {
-        MinecraftServer server = this.level().getServer();
-        if (server == null) return;
-        server.schedule(new TickTask(server.getTickCount(),
-                () -> this.connection.onDisconnect(new DisconnectionDetails(reason))));
+        Sched.entityLater(this, () -> this.connection.onDisconnect(new DisconnectionDetails(reason)), 1L);
     }
 
     @Override
@@ -478,9 +465,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             return;
         }
 
-        MinecraftServer server = this.level().getServer();
-        if (server == null) return;
-        server.execute(this::performRespawn);
+        Sched.entityLater(this, this::performRespawn, 1L);
     }
 
     private void shakeOff() {
@@ -579,7 +564,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             this.setDeltaMovement(heldMovement);
             heldMovement = null;
         }
-        if (this.level().getServer().getTickCount() % 10 == 0) {
+        if (Ticks.current() % 10 == 0) {
             this.connection.resetPosition();
             this.level().getChunkSource().move(this);
             if (this.connection.latency() != this.ping) applyPing();

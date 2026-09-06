@@ -123,52 +123,50 @@ public final class PingBoosters {
         return pipeline.get(PingBoostHandler.HANDLER_NAME) instanceof PingBoostHandler handler ? handler : null;
     }
 
-    public static void tick(MinecraftServer server) {
-        if (boosts.isEmpty()) return;
-        for (Map.Entry<UUID, Boost> entry : boosts.entrySet()) {
-            ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
-            if (player == null || player instanceof BotPlayer) continue;
+    public static void tickPlayer(ServerPlayer player) {
+        if (boosts.isEmpty() || player instanceof BotPlayer) return;
+        UUID id = player.getUUID();
+        Boost boost = boosts.get(id);
+        if (boost == null) return;
 
-            Boost boost = entry.getValue();
-            PingProfile profile = PingDelays.profile(entry.getKey());
-            PingBoostHandler handler = ensureHandler(player);
-            if (handler == null) continue;
+        PingProfile profile = PingDelays.profile(id);
+        PingBoostHandler handler = ensureHandler(player);
+        if (handler == null) return;
 
-            handler.reactivate();
-            handler.setOptions(profile.options());
-            handler.seedBase(boost.realMs);
-            handler.setDelaySpec(profile.delay());
-            handler.setBurstSpec(profile.burst());
+        handler.reactivate();
+        handler.setOptions(profile.options());
+        handler.seedBase(boost.realMs);
+        handler.setDelaySpec(profile.delay());
+        handler.setBurstSpec(profile.burst());
 
-            switch (boost.clock.tick()) {
-                case START_BURST -> handler.beginBurst();
-                case END_BURST -> handler.releaseBurst();
-                default -> {
-                }
+        switch (boost.clock.tick()) {
+            case START_BURST -> handler.beginBurst();
+            case END_BURST -> handler.releaseBurst();
+            default -> {
             }
-
-            if (boost.clock.isFinished() && profile.burst().isActive() && !profile.burst().repeats()) {
-                profile.setBurst(PingBurstSpec.NONE);
-                handler.setBurstSpec(PingBurstSpec.NONE);
-                boost.settled = false;
-                if (!profile.delay().isActive()) {
-                    clear(player);
-                    continue;
-                }
-            }
-
-            if (boost.settled) continue;
-
-            int display = handler.displayPingMs();
-            int measured = player.connection.latency();
-            if (measured == boost.lastWritten) continue;
-            if (Math.abs(measured - display) <= tolerance(display)) {
-                boost.settled = true;
-                continue;
-            }
-            applyDisplayedPing(player, display);
-            boost.lastWritten = display;
         }
+
+        if (boost.clock.isFinished() && profile.burst().isActive() && !profile.burst().repeats()) {
+            profile.setBurst(PingBurstSpec.NONE);
+            handler.setBurstSpec(PingBurstSpec.NONE);
+            boost.settled = false;
+            if (!profile.delay().isActive()) {
+                clear(player);
+                return;
+            }
+        }
+
+        if (boost.settled) return;
+
+        int display = handler.displayPingMs();
+        int measured = player.connection.latency();
+        if (measured == boost.lastWritten) return;
+        if (Math.abs(measured - display) <= tolerance(display)) {
+            boost.settled = true;
+            return;
+        }
+        applyDisplayedPing(player, display);
+        boost.lastWritten = display;
     }
 
     public static void shutdown(MinecraftServer server) {

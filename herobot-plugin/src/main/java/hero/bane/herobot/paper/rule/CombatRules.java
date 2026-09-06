@@ -1,11 +1,11 @@
 package hero.bane.herobot.paper.rule;
 
 import hero.bane.herobot.common.rule.HeroBotSettings;
+import hero.bane.herobot.paper.sched.Ticks;
 import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.player.PlayerShieldDisableEvent;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.BlocksAttacks;
@@ -18,7 +18,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.util.Vector;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -26,14 +26,12 @@ public final class CombatRules implements Listener {
 
     private static final double STUNNED_KNOCKBACK_SCALE = 0.4;
 
-    private static final Map<UUID, Long> SHIELD_DISABLED_TICK = new HashMap<>();
+    private static final Map<UUID, Long> SHIELD_DISABLED_TICK = new ConcurrentHashMap<>();
 
-    public static void tick(MinecraftServer server) {
+    public static void tickPlayer(ServerPlayer player) {
         int wanted = HeroBotSettings.shieldDelayTicks;
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            applyBlockDelay(player.getMainHandItem(), wanted);
-            applyBlockDelay(player.getOffhandItem(), wanted);
-        }
+        applyBlockDelay(player.getMainHandItem(), wanted);
+        applyBlockDelay(player.getOffhandItem(), wanted);
     }
 
     public static void forget(UUID playerId) {
@@ -46,9 +44,7 @@ public final class CombatRules implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onShieldDisable(PlayerShieldDisableEvent event) {
-        MinecraftServer server = MinecraftServer.getServer();
-        if (server == null) return;
-        SHIELD_DISABLED_TICK.put(event.getPlayer().getUniqueId(), (long) server.getTickCount());
+        SHIELD_DISABLED_TICK.put(event.getPlayer().getUniqueId(), Ticks.current());
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -91,10 +87,7 @@ public final class CombatRules implements Listener {
         Long disabledTick = SHIELD_DISABLED_TICK.get(player.getUniqueId());
         if (disabledTick == null) return 1.0;
 
-        MinecraftServer server = MinecraftServer.getServer();
-        if (server == null) return 1.0;
-
-        long elapsed = server.getTickCount() - disabledTick;
+        long elapsed = Ticks.current() - disabledTick;
         if (elapsed < 0 || elapsed > HeroBotSettings.shieldStunningWindow) return 1.0;
         return STUNNED_KNOCKBACK_SCALE;
     }

@@ -3,7 +3,6 @@ package hero.bane.herobot.paper.rule;
 import com.destroystokyo.paper.event.entity.EntityAddToWorldEvent;
 import hero.bane.herobot.common.rule.HeroBotSettings;
 import io.papermc.paper.event.player.PlayerFailMoveEvent;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Entity;
@@ -19,12 +18,10 @@ public final class RuleEffects implements Listener {
 
     private static final float VANILLA_FLY_SPEED = 0.1F;
 
-    public static void tick(MinecraftServer server) {
-        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            Player bukkitPlayer = player.getBukkitEntity();
-            applyFlySpeed(bukkitPlayer);
-            applyDamageTicks(bukkitPlayer);
-        }
+    public static void tickPlayer(ServerPlayer player) {
+        Player bukkitPlayer = player.getBukkitEntity();
+        applyFlySpeed(bukkitPlayer);
+        applyDamageTicks(bukkitPlayer);
     }
 
     @EventHandler(priority = EventPriority.LOW)

@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
+import org.bukkit.Bukkit;
 
 public final class BlockCache {
     private static final byte VALID = 1;
@@ -16,6 +17,10 @@ public final class BlockCache {
     private static final byte WATER = 8;
     private static final byte BUBBLE = 16;
     private static final byte BUBBLE_DOWN = 32;
+
+    // Anything the snapshot does not cover: neither passable nor walkable, so the
+    // search simply will not route through it.
+    private static final byte OUTSIDE = VALID | AVOIDED;
 
     private final Level level;
     private final PathSettings settings;
@@ -26,11 +31,41 @@ public final class BlockCache {
     private int mask;
     private int size;
     private int growAt;
+    private boolean sealed;
 
     public BlockCache(Level level, PathSettings settings) {
         this.level = level;
         this.settings = settings;
         allocate(1 << 14);
+    }
+
+    /**
+     * Reads every block in the box into the cache and then seals it. Must run on the
+     * thread that owns those chunks - on Folia {@code Level.getBlockState} dereferences
+     * a region-local field and throws anywhere else. Chunks this thread does not own,
+     * or that are not loaded, are left uncovered and read back as {@link #OUTSIDE}.
+     */
+    public void capture(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        org.bukkit.World world = level.getWorld();
+        for (int cx = minX >> 4; cx <= (maxX >> 4); cx++) {
+            for (int cz = minZ >> 4; cz <= (maxZ >> 4); cz++) {
+                if (!Bukkit.isOwnedByCurrentRegion(world, cx, cz)) continue;
+                if (!level.hasChunk(cx, cz)) continue;
+
+                int x0 = Math.max(minX, cx << 4);
+                int x1 = Math.min(maxX, (cx << 4) + 15);
+                int z0 = Math.max(minZ, cz << 4);
+                int z1 = Math.min(maxZ, (cz << 4) + 15);
+                for (int x = x0; x <= x1; x++) {
+                    for (int z = z0; z <= z1; z++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            flags(x, y, z);
+                        }
+                    }
+                }
+            }
+        }
+        sealed = true;
     }
 
     public PathSettings settings() {
@@ -94,6 +129,8 @@ public final class BlockCache {
             if (keys[idx] == key) return f;
             idx = (idx + 1) & mask;
         }
+
+        if (sealed) return OUTSIDE;
 
         byte computed = compute(x, y, z);
         keys[idx] = key;

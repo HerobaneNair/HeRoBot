@@ -1,5 +1,6 @@
 package hero.bane.herobot.paper.bot.pathing.placement;
 
+import hero.bane.herobot.paper.HeroBot;
 import hero.bane.herobot.paper.bot.pathing.PathSettings;
 import hero.bane.herobot.common.bot.pathing.PathStats;
 import de.bsommerfeld.pathetic.api.pathing.Pathfinder;
@@ -36,6 +37,9 @@ public class PathFinder {
     private static final int MIN_ITERATIONS = 4000;
     private static final int ITERATIONS_PER_BLOCK = 150;
 
+    private static final int SNAPSHOT_MARGIN = 24;
+    private static final int SNAPSHOT_MAX_VOLUME = 3_000_000;
+
     private static final AStarPathfinderFactory FACTORY = new AStarPathfinderFactory();
 
     private static int getMaxFallDistance(Player player) {
@@ -71,17 +75,65 @@ public class PathFinder {
         return findPath(world, start, target, settings, player, maxIterations, null);
     }
 
+    /**
+     * Snapshots the world on the calling thread and then searches off it. The search
+     * pool may not read the level directly: on Folia only the region owning a chunk
+     * may do that, and on Paper the main thread can be mutating it mid-search.
+     * Callers must therefore invoke this from the thread that owns the bot.
+     */
     public static CompletableFuture<List<BlockPos>> findPathAsync(Level world, BlockPos start, Vec3 target, PathSettings settings, Player player, int maxIterations, PathStats stats) {
+        BlockCache blocks;
+        try {
+            blocks = snapshot(world, settings, start, target);
+        } catch (Throwable t) {
+            HeroBot.LOGGER.warn("Could not snapshot the world for pathfinding", t);
+            return CompletableFuture.completedFuture(null);
+        }
+
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return findPath(world, start, target, settings, player, maxIterations, stats);
+                return findPath(blocks, world, start, target, settings, player, maxIterations, stats);
             } catch (Throwable t) {
+                HeroBot.LOGGER.warn("Pathfinding failed", t);
                 return null;
             }
         }, PathingExecutor.get());
     }
 
+    private static BlockCache snapshot(Level world, PathSettings settings, BlockPos start, Vec3 target) {
+        BlockPos goal = BlockPos.containing(target);
+
+        int minY = Math.max(world.getMinY(), Math.min(start.getY(), goal.getY()) - SNAPSHOT_MARGIN);
+        int maxY = Math.min(world.getMaxY(), Math.max(start.getY(), goal.getY()) + SNAPSHOT_MARGIN);
+
+        int minX = Math.min(start.getX(), goal.getX()) - SNAPSHOT_MARGIN;
+        int maxX = Math.max(start.getX(), goal.getX()) + SNAPSHOT_MARGIN;
+        int minZ = Math.min(start.getZ(), goal.getZ()) - SNAPSHOT_MARGIN;
+        int maxZ = Math.max(start.getZ(), goal.getZ()) + SNAPSHOT_MARGIN;
+
+        // A far target would snapshot more of the world than is worth reading in one
+        // tick. Keep the window around the bot; the follower re-paths as it advances.
+        int span = Math.max(1, maxY - minY + 1);
+        int maxSide = Math.max(2 * SNAPSHOT_MARGIN + 1, (int) Math.sqrt((double) SNAPSHOT_MAX_VOLUME / span));
+        if (maxX - minX + 1 > maxSide) {
+            if (goal.getX() >= start.getX()) maxX = minX + maxSide - 1;
+            else minX = maxX - maxSide + 1;
+        }
+        if (maxZ - minZ + 1 > maxSide) {
+            if (goal.getZ() >= start.getZ()) maxZ = minZ + maxSide - 1;
+            else minZ = maxZ - maxSide + 1;
+        }
+
+        BlockCache blocks = new BlockCache(world, settings);
+        blocks.capture(minX, minY, minZ, maxX, maxY, maxZ);
+        return blocks;
+    }
+
     public static List<BlockPos> findPath(Level world, BlockPos start, Vec3 target, PathSettings settings, Player player, int maxIterations, PathStats stats) {
+        return findPath(snapshot(world, settings, start, target), world, start, target, settings, player, maxIterations, stats);
+    }
+
+    private static List<BlockPos> findPath(BlockCache blocks, Level world, BlockPos start, Vec3 target, PathSettings settings, Player player, int maxIterations, PathStats stats) {
         long startNs = System.nanoTime();
         if (stats != null) stats.reset();
 
@@ -92,7 +144,6 @@ public class PathFinder {
         boolean dolphinsGrace = player.hasEffect(MobEffects.DOLPHINS_GRACE);
         settings.calculateSwimCost(waterEfficiency, dolphinsGrace);
 
-        BlockCache blocks = new BlockCache(world, settings);
         EnvironmentContext env = new EnvironmentContext(world, settings, player, maxJump, maxFall, blocks);
 
         BlockPos goal = snapGoal(blocks, target);

@@ -113,23 +113,19 @@ public final class AiScriptRegistry {
         if (r != null) r.markPathFailed();
     }
 
-    public static void tickAll(MinecraftServer server) {
-        if (RUNNERS.isEmpty()) return;
-        var it = RUNNERS.entrySet().iterator();
-        while (it.hasNext()) {
-            var e = it.next();
-            ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
-            if (p == null) {
-                e.getValue().stop();
-                it.remove();
-                continue;
-            }
-            try {
-                e.getValue().tick(p);
-            } catch (Throwable t) {
-                HeroBot.LOGGER.warn("ScriptRunner tick failed for {}: {}", p.getGameProfile().name(), t.toString());
-            }
+    public static void tickPlayer(ServerPlayer player) {
+        ScriptRunner runner = RUNNERS.get(player.getUUID());
+        if (runner == null) return;
+        try {
+            runner.tick(player);
+        } catch (Throwable t) {
+            HeroBot.LOGGER.warn("ScriptRunner tick failed for {}: {}", player.getGameProfile().name(), t.toString());
         }
+    }
+
+    public static void forget(UUID id) {
+        ScriptRunner runner = RUNNERS.remove(id);
+        if (runner != null) runner.stop();
     }
 
 }

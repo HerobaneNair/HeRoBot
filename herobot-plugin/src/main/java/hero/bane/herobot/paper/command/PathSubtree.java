@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import hero.bane.herobot.paper.bot.pathing.traversal.BotPathing;
 import hero.bane.herobot.paper.bot.BotPlayer;
+import hero.bane.herobot.paper.sched.Sched;
 import hero.bane.herobot.common.bot.pathing.DebugChannel;
 import hero.bane.herobot.paper.bot.pathing.PathSettingOps;
 import hero.bane.herobot.paper.bot.pathing.PathSettings;
@@ -158,7 +159,8 @@ public final class PathSubtree {
                 RemoteOps.send(t.player(), ControlOp.pathGotoPos(target, seq));
             } else {
                 BotPlayer bot = (BotPlayer) t.player();
-                bot.setPathFollower(new BotPathing(bot, target, context.getSource(), settings));
+                CommandSourceStack source = context.getSource();
+                Sched.entity(bot, () -> bot.setPathFollower(new BotPathing(bot, target, source, settings)));
             }
             context.getSource().sendSuccess(() -> Component.literal(t.name() + " is pathing to " +
                     String.format("%.1f, %.1f, %.1f", target.x, target.y, target.z)), false);
@@ -184,7 +186,8 @@ public final class PathSubtree {
                 RemoteOps.send(t.player(), ControlOp.pathGotoEntity(target.getId(), seq));
             } else {
                 BotPlayer bot = (BotPlayer) t.player();
-                bot.setPathFollower(new BotPathing(bot, target, context.getSource(), t.settings()));
+                CommandSourceStack source = context.getSource();
+                Sched.entity(bot, () -> bot.setPathFollower(new BotPathing(bot, target, source, t.settings())));
             }
             String targetName = target.getName().getString();
             context.getSource().sendSuccess(() -> Component.literal(t.name() + " is following " + targetName), false);
@@ -198,7 +201,8 @@ public final class PathSubtree {
                 RemotePathState.deactivate(t.player());
                 RemoteOps.send(t.player(), ControlOp.pathStop());
             } else {
-                ((BotPlayer) t.player()).clearPathFollower();
+                BotPlayer stopping = (BotPlayer) t.player();
+                Sched.entity(stopping, stopping::clearPathFollower);
             }
             context.getSource().sendSuccess(() -> Component.literal(t.name() + " stopped pathing"), false);
         }
