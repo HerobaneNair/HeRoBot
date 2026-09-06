@@ -11,5 +11,15 @@ public final class PaperRules {
     public static void init(MinecraftServer server) {
         RuleRegistry.register(HeroBotSettings.class);
         RuleConfigIO.initWorld(server);
+        apply();
+    }
+
+    public static void apply() {
+        PaperConfigRules.apply();
+    }
+
+    public static void shutdown() {
+        PaperConfigRules.restore();
+        CombatRules.clear();
     }
 }

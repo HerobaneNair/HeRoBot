@@ -24,8 +24,10 @@ import hero.bane.herobot.mod.common.util.BlockBreakTasks;
 import hero.bane.herobot.mod.common.bot.BotVision;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.bot.BotRegistry;
+import hero.bane.herobot.mod.common.bot.ShadowSpawner;
 import hero.bane.herobot.common.bot.PlayerLogouts;
 import hero.bane.herobot.mod.common.ping.PingBoosters;
+import hero.bane.herobot.mod.common.ping.TabListPing;
 import hero.bane.herobot.common.ping.PingDelays;
 import hero.bane.herobot.mod.common.voice.ModVoice;
 import hero.bane.herobot.mod.common.voice.VoiceOps;
@@ -69,6 +71,7 @@ public class HeroBot implements ModInitializer {
             PlayerLogouts.record(leaving.getUUID(), leaving.getGameProfile().name(),
                     leaving.level().dimension().identifier().toString(),
                     leaving.getX(), leaving.getY(), leaving.getZ(), leaving.getYRot(), leaving.getXRot());
+            ShadowSpawner.onLogout(server, leaving);
             if (handler.player instanceof BotPlayer bot) BotRegistry.fireDespawn(bot);
             RemotePathState.clear(handler.player.getUUID());
             RemotePathSettings.clear(handler.player.getUUID());
@@ -124,6 +127,7 @@ public class HeroBot implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(BlockBreakTasks::tick);
         ServerTickEvents.END_SERVER_TICK.register(AiScriptRegistry::tickAll);
         ServerTickEvents.END_SERVER_TICK.register(PingBoosters::tick);
+        ServerTickEvents.END_SERVER_TICK.register(TabListPing::tick);
         ServerTickEvents.END_SERVER_TICK.register(BotVision::tick);
         ServerTickEvents.END_SERVER_TICK.register(ModVoice::tick);
     }

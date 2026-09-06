@@ -3,6 +3,7 @@ package hero.bane.herobot.paper;
 import hero.bane.herobot.paper.ai.AiScriptRegistry;
 import hero.bane.herobot.paper.bot.BotPlayer;
 import hero.bane.herobot.paper.bot.BotRegistry;
+import hero.bane.herobot.paper.bot.ShadowSpawner;
 import hero.bane.herobot.paper.bot.BotVision;
 import hero.bane.herobot.paper.command.HeroBotCommand;
 import hero.bane.herobot.paper.command.HeroBotSelectorOptions;
@@ -14,6 +15,7 @@ import hero.bane.herobot.paper.control.RemotePathSettings;
 import hero.bane.herobot.paper.control.RemotePathState;
 import hero.bane.herobot.paper.networking.HeroBotNetwork;
 import hero.bane.herobot.paper.ping.PingBoosters;
+import hero.bane.herobot.paper.ping.TabListPing;
 import hero.bane.herobot.common.ping.PingDelays;
 import hero.bane.herobot.common.bot.PlayerLogouts;
 import hero.bane.herobot.paper.rule.RuleConfigIO;
@@ -36,8 +38,12 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import hero.bane.herobot.paper.rule.CombatRules;
+import hero.bane.herobot.paper.rule.ExplosionRules;
 import hero.bane.herobot.paper.rule.PaperRules;
 import hero.bane.herobot.paper.rule.RuleEffects;
+import hero.bane.herobot.paper.rule.TickRateRules;
+import hero.bane.herobot.paper.rule.WorldRules;
 
 public final class HeroBotPlugin extends JavaPlugin implements Listener {
 
@@ -58,7 +64,10 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
         PluginVoice.init(this, server);
 
         HeroBotNetwork.init(this, server);
-        RuleConfigIO.onSettingsChanged = HeroBotNetwork::sendSettingsToAll;
+        RuleConfigIO.onSettingsChanged = () -> {
+            PaperRules.apply();
+            HeroBotNetwork.sendSettingsToAll();
+        };
 
         CommandBuildContext buildContext = Commands.createValidationContext(server.registryAccess());
         PlayerCommand.register(server.getCommands().getDispatcher(), buildContext);
@@ -69,14 +78,20 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
 
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(new RuleEffects(), this);
+        Bukkit.getPluginManager().registerEvents(new CombatRules(), this);
+        Bukkit.getPluginManager().registerEvents(new ExplosionRules(), this);
+        Bukkit.getPluginManager().registerEvents(new WorldRules(), this);
 
         Bukkit.getScheduler().runTaskTimer(this, () -> {
             BlockBreakTasks.tick(server);
             AiScriptRegistry.tickAll(server);
             PingBoosters.tick(server);
+            TabListPing.tick(server);
             BotVision.tick(server);
             PluginVoice.tick();
             RuleEffects.tick(server);
+            CombatRules.tick(server);
+            TickRateRules.tick(server);
         }, 1L, 1L);
     }
 
@@ -114,12 +129,15 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
         PlayerLogouts.record(leaving.getUUID(), leaving.getGameProfile().name(),
                 leaving.level().dimension().identifier().toString(),
                 leaving.getX(), leaving.getY(), leaving.getZ(), leaving.getYRot(), leaving.getXRot());
+        ShadowSpawner.onLogout(leaving.level().getServer(), leaving);
         java.util.UUID id = event.getPlayer().getUniqueId();
         BotRegistry.forget(id);
         HeroBotNetwork.forget(id);
         RemotePathState.clear(id);
         RemotePathSettings.clear(id);
         BlockBreakTasks.clear(id);
+        CombatRules.forget(id);
+        TickRateRules.forget(id);
         VoiceOps.forget(id);
         PingBoosters.forget(id);
         PingDelays.forget(id);
@@ -127,12 +145,15 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        PingBoosters.shutdown(((CraftServer) Bukkit.getServer()).getServer());
+        MinecraftServer server = ((CraftServer) Bukkit.getServer()).getServer();
+        TickRateRules.restore(server);
+        PingBoosters.shutdown(server);
         RuleConfigIO.onSettingsChanged = null;
         HeroBotNetwork.shutdown(this);
         AiScriptRegistry.reset();
         PluginVoice.shutdown();
         BotRegistry.despawnAll();
         RuleConfigIO.clearWorld();
+        PaperRules.shutdown();
     }
 }
