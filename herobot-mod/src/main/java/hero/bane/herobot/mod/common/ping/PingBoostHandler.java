@@ -1,6 +1,9 @@
 package hero.bane.herobot.mod.common.ping;
 
+import hero.bane.herobot.common.ping.PingBurstSpec;
 import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelaySpec;
+import hero.bane.herobot.common.ping.PingMode;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -8,6 +11,8 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
 import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
 import net.minecraft.network.protocol.game.*;
+import net.minecraft.network.protocol.ping.ClientboundPongResponsePacket;
+import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
 
 import java.util.Arrays;
 import java.util.Map;
@@ -15,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class PingBoostHandler extends ChannelDuplexHandler {
 
@@ -27,19 +34,43 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
     private static final long MIN_RESCHEDULE_NANOS = TimeUnit.MICROSECONDS.toNanos(250);
     private static final long KEEP_ALIVE_MAX_AGE_NANOS = TimeUnit.SECONDS.toNanos(60);
 
+    private static final long HELD_BY_BURST = Long.MAX_VALUE;
+    private static final int MAX_QUEUED = 4096;
+
     private volatile PingDelayOptions options = new PingDelayOptions();
 
-    private record Outbound(Object msg, ChannelPromise promise, long sendAtNanos) {
+    private static final class Outbound {
+        final Object msg;
+        final ChannelPromise promise;
+        volatile long releaseAtNanos;
+
+        Outbound(Object msg, ChannelPromise promise, long releaseAtNanos) {
+            this.msg = msg;
+            this.promise = promise;
+            this.releaseAtNanos = releaseAtNanos;
+        }
     }
 
-    private record Inbound(Object msg, long deliverAtNanos) {
+    private static final class Inbound {
+        final Object msg;
+        volatile long releaseAtNanos;
+
+        Inbound(Object msg, long releaseAtNanos) {
+            this.msg = msg;
+            this.releaseAtNanos = releaseAtNanos;
+        }
     }
 
     private final ConcurrentLinkedQueue<Outbound> outboundQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Inbound> inboundQueue = new ConcurrentLinkedQueue<>();
+    private final AtomicInteger outboundCount = new AtomicInteger();
+    private final AtomicInteger inboundCount = new AtomicInteger();
     private final AtomicBoolean drainingOutbound = new AtomicBoolean();
     private final AtomicBoolean drainingInbound = new AtomicBoolean();
     private final Map<Long, Long> pendingKeepAlives = new ConcurrentHashMap<>();
+
+    private final AtomicLong lastOutboundRelease = new AtomicLong(Long.MIN_VALUE);
+    private final AtomicLong lastInboundRelease = new AtomicLong(Long.MIN_VALUE);
 
     private final int[] baseWindow = new int[BASE_FILTER_WINDOW];
     private int baseCount;
@@ -48,22 +79,31 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
     private volatile ChannelHandlerContext savedContext;
     private volatile boolean active = true;
     private volatile boolean suspendAfterDrain;
-    private volatile int targetPingMs;
-    private volatile int delayMs;
+    private volatile boolean bursting;
+    private volatile PingDelaySpec spec = PingDelaySpec.NONE;
+    private volatile PingBurstSpec burstSpec = PingBurstSpec.NONE;
     private volatile double smoothedBaseMs = -1;
     private volatile int lastSampleMs = -1;
+    private volatile int lastAddedMs;
 
-    public void setTarget(int targetMs) {
-        this.targetPingMs = Math.max(0, targetMs);
-        recomputeDelay();
+    public void setDelaySpec(PingDelaySpec value) {
+        this.spec = value == null ? PingDelaySpec.NONE : value;
     }
 
-    public int target() {
-        return targetPingMs;
+    public PingDelaySpec delaySpec() {
+        return spec;
     }
 
-    public int addedDelayMs() {
-        return delayMs;
+    public void setBurstSpec(PingBurstSpec value) {
+        this.burstSpec = value == null ? PingBurstSpec.NONE : value;
+    }
+
+    public PingBurstSpec burstSpec() {
+        return burstSpec;
+    }
+
+    public boolean isActive() {
+        return spec.isActive() || burstSpec.isActive();
     }
 
     public int baseMs() {
@@ -75,14 +115,21 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
         return lastSampleMs >= 0;
     }
 
+    public int averageAddedMs() {
+        return addedFor(spec.isActive() ? spec.averageMs() : 0);
+    }
+
+    public int lastAddedMs() {
+        return lastAddedMs;
+    }
+
     public int displayPingMs() {
-        return baseMs() + delayMs;
+        return baseMs() + averageAddedMs() + burstSpec.averageAddedMs();
     }
 
     public void seedBase(int estimateMs) {
         if (estimateMs < 0 || smoothedBaseMs >= 0) return;
         smoothedBaseMs = estimateMs;
-        recomputeDelay();
     }
 
     public void reactivate() {
@@ -93,30 +140,72 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
     }
 
     public void shutdown() {
-        targetPingMs = 0;
-        delayMs = 0;
+        spec = PingDelaySpec.NONE;
+        burstSpec = PingBurstSpec.NONE;
+        bursting = false;
         active = false;
         flushEverything();
     }
 
-    private void recomputeDelay() {
-        int target = targetPingMs;
-        if (target <= 0) {
-            delayMs = 0;
+    public boolean isBursting() {
+        return bursting;
+    }
+
+    public void beginBurst() {
+        bursting = true;
+    }
+
+    public void releaseBurst() {
+        if (!bursting) return;
+
+        ChannelHandlerContext ctx = savedContext;
+        if (ctx == null) {
+            bursting = false;
             return;
         }
-        double smoothed = smoothedBaseMs;
-        int base = smoothed < 0 ? 0 : (int) Math.round(smoothed);
-        delayMs = Math.clamp(target - base, 0, MAX_ADDED_DELAY_MS);
+        if (ctx.executor().inEventLoop()) {
+            doReleaseBurst(ctx);
+        } else {
+            ctx.executor().execute(() -> doReleaseBurst(ctx));
+        }
     }
 
-    private long outboundDelayMs() {
-        return delayMs / 2L;
+    private void doReleaseBurst(ChannelHandlerContext ctx) {
+        if (!bursting) return;
+        bursting = false;
+
+        long now = System.nanoTime();
+        for (Outbound task : outboundQueue) {
+            if (task.releaseAtNanos == HELD_BY_BURST) task.releaseAtNanos = now;
+        }
+        for (Inbound task : inboundQueue) {
+            if (task.releaseAtNanos == HELD_BY_BURST) task.releaseAtNanos = now;
+        }
+        lastOutboundRelease.accumulateAndGet(now, Math::max);
+        lastInboundRelease.accumulateAndGet(now, Math::max);
+
+        drainOutbound(ctx);
+        drainInbound(ctx);
     }
 
-    private long inboundDelayMs() {
-        long total = delayMs;
-        return total - (total / 2L);
+    private int addedFor(int targetMs) {
+        PingDelaySpec current = spec;
+        if (!current.isActive()) return 0;
+        int added = current.mode() == PingMode.ADD ? targetMs : targetMs - baseMs();
+        return Math.clamp(added, 0, MAX_ADDED_DELAY_MS);
+    }
+
+    private int rollAddedMs() {
+        PingDelaySpec current = spec;
+        if (!current.isActive()) return 0;
+        int added = addedFor(current.roll());
+        lastAddedMs = added;
+        return added;
+    }
+
+    private long nextRelease(AtomicLong cursor, long delayMs) {
+        long candidate = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delayMs);
+        return cursor.accumulateAndGet(candidate, Math::max);
     }
 
     @Override
@@ -133,8 +222,8 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         active = false;
-        outboundQueue.clear();
-        inboundQueue.clear();
+        bursting = false;
+        clearQueues();
         pendingKeepAlives.clear();
         super.channelInactive(ctx);
     }
@@ -149,13 +238,28 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
         boolean terminal = packet.isTerminal();
         if (terminal) suspendAfterDrain = true;
 
-        if (terminal || !(packet instanceof ClientboundKeepAlivePacket)) {
+        boolean keepAlive = packet instanceof ClientboundKeepAlivePacket;
+        boolean paced = keepAlive || packet instanceof ClientboundPongResponsePacket;
+
+        if (terminal || (keepAlive && bursting)) {
+            if (keepAlive) stampKeepAlive(msg);
             super.write(ctx, msg, promise);
             maybeSuspend();
             return;
         }
 
-        long delay = outboundDelayMs();
+        if (bursting) {
+            offerOutbound(ctx, new Outbound(msg, promise, HELD_BY_BURST));
+            return;
+        }
+
+        if (!paced) {
+            super.write(ctx, msg, promise);
+            maybeSuspend();
+            return;
+        }
+
+        long delay = rollAddedMs() / 2L;
         if (delay <= 0 && outboundQueue.isEmpty()) {
             stampKeepAlive(msg);
             super.write(ctx, msg, promise);
@@ -163,8 +267,7 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
             return;
         }
 
-        outboundQueue.offer(new Outbound(msg, promise, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay)));
-        drainOutbound(ctx);
+        offerOutbound(ctx, new Outbound(msg, promise, nextRelease(lastOutboundRelease, delay)));
     }
 
     @Override
@@ -174,14 +277,20 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
             return;
         }
 
-        if (packet instanceof ServerboundKeepAlivePacket keepAlive) {
-            observeKeepAlive(keepAlive.getId());
-        }
+        boolean keepAlive = packet instanceof ServerboundKeepAlivePacket;
+        if (keepAlive) observeKeepAlive(((ServerboundKeepAlivePacket) packet).getId());
+        boolean paced = keepAlive || packet instanceof ServerboundPingRequestPacket;
 
         boolean terminal = packet.isTerminal();
         if (terminal) suspendAfterDrain = true;
 
-        if (terminal || !(delays(packet) || packet instanceof ServerboundKeepAlivePacket)) {
+        if (terminal || (keepAlive && bursting)) {
+            super.channelRead(ctx, msg);
+            maybeSuspend();
+            return;
+        }
+
+        if (!bursting && !(delays(packet) || paced)) {
             super.channelRead(ctx, msg);
             maybeSuspend();
             return;
@@ -196,14 +305,39 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
                     move.getYRot(0), move.getXRot(0), move.isOnGround(), move.horizontalCollision());
         }
 
-        long delay = inboundDelayMs();
+        if (bursting) {
+            offerInbound(ctx, new Inbound(delayed, HELD_BY_BURST));
+            return;
+        }
+
+        int added = rollAddedMs();
+        long delay = added - added / 2L;
         if (delay <= 0 && inboundQueue.isEmpty()) {
             super.channelRead(ctx, delayed);
             maybeSuspend();
             return;
         }
 
-        inboundQueue.offer(new Inbound(delayed, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(delay)));
+        offerInbound(ctx, new Inbound(delayed, nextRelease(lastInboundRelease, delay)));
+    }
+
+    private void offerOutbound(ChannelHandlerContext ctx, Outbound task) {
+        outboundQueue.offer(task);
+        if (outboundCount.incrementAndGet() > MAX_QUEUED) {
+            releaseBurst();
+            flushEverything();
+            return;
+        }
+        drainOutbound(ctx);
+    }
+
+    private void offerInbound(ChannelHandlerContext ctx, Inbound task) {
+        inboundQueue.offer(task);
+        if (inboundCount.incrementAndGet() > MAX_QUEUED) {
+            releaseBurst();
+            flushEverything();
+            return;
+        }
         drainInbound(ctx);
     }
 
@@ -229,7 +363,14 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
                     return;
                 }
 
-                long remaining = task.sendAtNanos() - System.nanoTime();
+                long releaseAt = task.releaseAtNanos;
+                if (releaseAt == HELD_BY_BURST) {
+                    if (wrote && ctx.channel().isOpen()) ctx.flush();
+                    drainingOutbound.set(false);
+                    return;
+                }
+
+                long remaining = releaseAt - System.nanoTime();
                 if (remaining > 0) {
                     if (wrote && ctx.channel().isOpen()) ctx.flush();
                     long wait = Math.max(remaining, MIN_RESCHEDULE_NANOS);
@@ -239,8 +380,9 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
                 }
 
                 outboundQueue.poll();
-                stampKeepAlive(task.msg());
-                ctx.write(task.msg(), task.promise());
+                outboundCount.decrementAndGet();
+                stampKeepAlive(task.msg);
+                ctx.write(task.msg, task.promise);
                 wrote = true;
             }
         } catch (RuntimeException e) {
@@ -269,7 +411,13 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
                     return;
                 }
 
-                long remaining = task.deliverAtNanos() - System.nanoTime();
+                long releaseAt = task.releaseAtNanos;
+                if (releaseAt == HELD_BY_BURST) {
+                    drainingInbound.set(false);
+                    return;
+                }
+
+                long remaining = releaseAt - System.nanoTime();
                 if (remaining > 0) {
                     long wait = Math.max(remaining, MIN_RESCHEDULE_NANOS);
                     ctx.executor().schedule(() -> drainInbound(ctx), wait, TimeUnit.NANOSECONDS);
@@ -278,7 +426,8 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
                 }
 
                 inboundQueue.poll();
-                ctx.fireChannelRead(task.msg());
+                inboundCount.decrementAndGet();
+                ctx.fireChannelRead(task.msg);
             }
         } catch (RuntimeException e) {
             drainingInbound.set(false);
@@ -310,12 +459,13 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
     }
 
     private boolean delays(Packet<?> packet) {
+        if (!spec.isActive()) return false;
         PingDelayOptions.Category category = categoryOf(packet);
         return category != null && options.isEnabled(category);
     }
 
     private void maybeSuspend() {
-        if (!suspendAfterDrain) return;
+        if (!suspendAfterDrain || bursting) return;
         if (!outboundQueue.isEmpty() || !inboundQueue.isEmpty()) return;
         suspendAfterDrain = false;
         active = false;
@@ -355,14 +505,19 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
         smoothedBaseMs = smoothedBaseMs < 0
                 ? median
                 : smoothedBaseMs * (1.0 - BASE_PING_ALPHA) + median * BASE_PING_ALPHA;
-        recomputeDelay();
+    }
+
+    private void clearQueues() {
+        outboundQueue.clear();
+        inboundQueue.clear();
+        outboundCount.set(0);
+        inboundCount.set(0);
     }
 
     private void flushEverything() {
         ChannelHandlerContext ctx = savedContext;
         if (ctx == null) {
-            outboundQueue.clear();
-            inboundQueue.clear();
+            clearQueues();
             drainingOutbound.set(false);
             drainingInbound.set(false);
             return;
@@ -379,8 +534,9 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
         boolean wrote = false;
         Outbound out;
         while ((out = outboundQueue.poll()) != null) {
+            outboundCount.decrementAndGet();
             if (open) {
-                ctx.write(out.msg(), out.promise());
+                ctx.write(out.msg, out.promise);
                 wrote = true;
             }
         }
@@ -389,7 +545,8 @@ public final class PingBoostHandler extends ChannelDuplexHandler {
 
         Inbound in;
         while ((in = inboundQueue.poll()) != null) {
-            if (open) ctx.fireChannelRead(in.msg());
+            inboundCount.decrementAndGet();
+            if (open) ctx.fireChannelRead(in.msg);
         }
         drainingInbound.set(false);
     }

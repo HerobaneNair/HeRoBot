@@ -1,6 +1,11 @@
 package hero.bane.herobot.mod.common.bot;
 
+import hero.bane.herobot.common.ping.BurstClock;
+import hero.bane.herobot.common.ping.PingBurstSpec;
 import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelaySpec;
+import hero.bane.herobot.common.ping.PingMode;
+import hero.bane.herobot.common.ping.PingRange;
 import hero.bane.herobot.common.ping.PingDelays;
 import com.mojang.authlib.GameProfile;
 import hero.bane.herobot.mod.common.HeroBot;
@@ -82,6 +87,17 @@ public class BotPlayer extends ServerPlayer {
 
     public int ping = 0;
 
+    private PingDelaySpec pingSpec = PingDelaySpec.NONE;
+
+    private final BurstClock burstClock = new BurstClock();
+
+    private Vec3 heldMovement;
+
+    private static final Set<PingDelayOptions.Category> BURST_CATEGORIES = EnumSet.of(
+            PingDelayOptions.Category.ATTACK,
+            PingDelayOptions.Category.USE,
+            PingDelayOptions.Category.KNOCKBACK);
+
     public void applyPing() {
         if (this.connection == null) return;
         ((ServerCommonPacketListenerImplAccessor) this.connection).setLatency(this.ping);
@@ -92,8 +108,53 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public void setPing(int value) {
-        this.ping = value;
+        setPingSpec(PingDelaySpec.of(value));
+    }
+
+    public void setPingSpec(PingDelaySpec spec) {
+        this.pingSpec = spec == null ? PingDelaySpec.NONE : spec;
+        this.ping = this.pingSpec.averageMs();
         applyPing();
+    }
+
+    public PingDelaySpec pingSpec() {
+        return pingSpec;
+    }
+
+    public PingBurstSpec burstSpec() {
+        return burstClock.spec();
+    }
+
+    public void setBurstSpec(PingBurstSpec spec) {
+        burstClock.setSpec(spec);
+    }
+
+    public boolean isBursting() {
+        return burstClock.isBursting();
+    }
+
+    @Override
+    public boolean isPushable() {
+        return !burstClock.isBursting() && super.isPushable();
+    }
+
+    @Override
+    protected void pushEntities() {
+        if (burstClock.isBursting()) return;
+        super.pushEntities();
+    }
+
+    @Override
+    public void travel(Vec3 relative) {
+        if (burstClock.isBursting()) return;
+        super.travel(relative);
+    }
+
+    public long releaseTick(int delayTicks) {
+        long now = this.level().getServer().getTickCount();
+        long scheduled = now + Math.max(0, delayTicks);
+        if (!burstClock.isBursting()) return scheduled;
+        return Math.max(scheduled, now + burstClock.ticksUntilRelease());
     }
 
     private record DelayedKnockback(long tick, double strength, double x, double z, double horizontalScale,
@@ -459,6 +520,16 @@ public class BotPlayer extends ServerPlayer {
 
     @Override
     public void tick() {
+        if (burstClock.tick() == BurstClock.Transition.START_BURST) {
+            heldMovement = this.getDeltaMovement();
+        }
+        boolean burstFrozen = burstClock.isBursting();
+        if (burstFrozen) {
+            this.setDeltaMovement(Vec3.ZERO);
+        } else if (heldMovement != null) {
+            this.setDeltaMovement(heldMovement);
+            heldMovement = null;
+        }
         if (this.level().getServer().getTickCount() % 10 == 0) {
             this.connection.resetPosition();
             this.level().getChunkSource().move(this);
@@ -468,6 +539,7 @@ public class BotPlayer extends ServerPlayer {
             double startX = this.getX();
             double startY = this.getY();
             double startZ = this.getZ();
+            double startFallDistance = this.fallDistance;
 
             super.tick();
 
@@ -487,6 +559,12 @@ public class BotPlayer extends ServerPlayer {
                 if (pathFollower.isDone()) {
                     pathFollower = null;
                 }
+            }
+
+            if (burstFrozen) {
+                this.setPos(startX, startY, startZ);
+                this.setDeltaMovement(Vec3.ZERO);
+                this.fallDistance = startFallDistance;
             }
 
             Vec3 movement = new Vec3(this.getX() - startX, this.getY() - startY, this.getZ() - startZ);
@@ -554,11 +632,10 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public void delayedExplosionKB(Vec3 vec3) {
-        int delayTicks = knockbackDelayTicks();
-        if (delayTicks <= 0) {
+        long executeAt = releaseTick(knockbackDelayTicks());
+        if (executeAt <= this.level().getServer().getTickCount()) {
             super.push(vec3);
         } else {
-            long executeAt = this.level().getServer().getTickCount() + delayTicks;
             pendingExplosionKB.add(new DelayedExplosionKB(executeAt, vec3));
         }
     }
@@ -571,11 +648,10 @@ public class BotPlayer extends ServerPlayer {
 
     private void scaledKnockback(double strength, double x, double z, double horizontalScale,
                                  DamageSource source, float damage, boolean extra) {
-        int delayTicks = knockbackDelayTicks();
-        if (delayTicks <= 0) {
+        long executeAt = releaseTick(knockbackDelayTicks());
+        if (executeAt <= this.level().getServer().getTickCount()) {
             applyKnockbackWithScale(strength, x, z, horizontalScale, source, damage, extra);
         } else {
-            long executeAt = this.level().getServer().getTickCount() + delayTicks;
             pendingKnockbacks.add(new DelayedKnockback(executeAt, strength, x, z, horizontalScale, source, damage, extra));
         }
         if (pathFollower != null && !pathFollower.isDone()) {
@@ -608,18 +684,24 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public boolean deferByPing(PingDelayOptions.Category category, Runnable action) {
-        if (!PingDelays.enabled(this.getUUID(), category)) return false;
-        int delay = delayTicks();
-        if (delay <= 0) return false;
-        ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(delay, action);
+        boolean held = burstClock.isBursting() && BURST_CATEGORIES.contains(category);
+        if (!held && !PingDelays.enabled(this.getUUID(), category)) return false;
+
+        int delay = held ? 0 : delayTicks();
+        long tick = releaseTick(delay);
+        long now = this.level().getServer().getTickCount();
+        if (tick <= now) return false;
+
+        ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(tick - now, action);
         return true;
     }
 
     public int delayTicks() {
         int pingToTicks = HeroBotSettings.botPingToTicks;
         if (pingToTicks <= 0) return 0;
-        int whole = ping / pingToTicks;
-        int remainder = ping % pingToTicks;
+        int rolled = pingSpec.isActive() ? pingSpec.roll() : ping;
+        int whole = rolled / pingToTicks;
+        int remainder = rolled % pingToTicks;
         if (remainder == 0) return whole;
         return ThreadLocalRandom.current().nextInt(pingToTicks) < remainder ? whole + 1 : whole;
     }
@@ -866,13 +948,19 @@ public class BotPlayer extends ServerPlayer {
     @Override
     public void addAdditionalSaveData(@NonNull ValueOutput output) {
         super.addAdditionalSaveData(output);
-        output.putInt("botPlayerPing", this.ping);
+        output.putInt("botPlayerPing", this.pingSpec.range().min());
+        output.putInt("botPlayerPingMax", this.pingSpec.range().max());
+        output.putString("botPlayerPingMode", this.pingSpec.mode().id());
     }
 
     @Override
     public void readAdditionalSaveData(@NonNull ValueInput input) {
         super.readAdditionalSaveData(input);
-        this.ping = input.getIntOr("botPlayerPing", 0);
+        int min = input.getIntOr("botPlayerPing", 0);
+        int max = input.getIntOr("botPlayerPingMax", min);
+        PingMode mode = PingMode.byId(input.getStringOr("botPlayerPingMode", PingMode.BALANCE.id()));
+        this.pingSpec = new PingDelaySpec(new PingRange(min, max), mode);
+        this.ping = this.pingSpec.averageMs();
     }
 
     @Override

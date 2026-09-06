@@ -41,13 +41,21 @@ public class PathSettings {
         avoidedBlocks.add(Blocks.MAGMA_BLOCK);
         avoidedBlocks.add(Blocks.FIRE);
         avoidedBlocks.add(Blocks.SOUL_FIRE);
+        avoidedBlocks.add(Blocks.CAMPFIRE);
+        avoidedBlocks.add(Blocks.SOUL_CAMPFIRE);
+        avoidedBlocks.add(Blocks.POWDER_SNOW);
 
         avoidedBlocks.add(Blocks.CACTUS);
         avoidedBlocks.add(Blocks.SWEET_BERRY_BUSH);
         avoidedBlocks.add(Blocks.WITHER_ROSE);
+        avoidedBlocks.add(Blocks.POINTED_DRIPSTONE);
 
         avoidedBlocks.add(Blocks.COBWEB);
         avoidedBlocks.add(Blocks.SCULK_SHRIEKER);
+
+        avoidedBlocks.add(Blocks.NETHER_PORTAL);
+        avoidedBlocks.add(Blocks.END_PORTAL);
+        avoidedBlocks.add(Blocks.END_GATEWAY);
 
         avoidedBlocks.add(Blocks.RAIL);
         avoidedBlocks.add(Blocks.POWERED_RAIL);

@@ -1,6 +1,10 @@
 package hero.bane.herobot.mod.common.ping;
 
+import hero.bane.herobot.common.ping.BurstClock;
+import hero.bane.herobot.common.ping.PingBurstSpec;
+import hero.bane.herobot.common.ping.PingDelaySpec;
 import hero.bane.herobot.common.ping.PingDelays;
+import hero.bane.herobot.common.ping.PingProfile;
 import hero.bane.herobot.mod.common.HeroBot;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.mixin.ConnectionAccessor;
@@ -22,13 +26,12 @@ public final class PingBoosters {
     private static final String PACKET_HANDLER = "packet_handler";
 
     private static final class Boost {
-        final int targetMs;
         final int realMs;
+        final BurstClock clock = new BurstClock();
         int lastWritten = Integer.MIN_VALUE;
         boolean settled;
 
-        Boost(int targetMs, int realMs) {
-            this.targetMs = targetMs;
+        Boost(int realMs) {
             this.realMs = realMs;
         }
     }
@@ -38,24 +41,49 @@ public final class PingBoosters {
     private PingBoosters() {}
 
     public static boolean set(ServerPlayer player, int targetMs) {
+        return setDelay(player, PingDelaySpec.of(targetMs));
+    }
+
+    public static boolean setDelay(ServerPlayer player, PingDelaySpec spec) {
         if (player instanceof BotPlayer) return false;
-        if (targetMs <= 0) {
+        PingDelays.profile(player.getUUID()).setDelay(spec);
+        return apply(player);
+    }
+
+    public static boolean setBurst(ServerPlayer player, PingBurstSpec spec) {
+        if (player instanceof BotPlayer) return false;
+        PingDelays.profile(player.getUUID()).setBurst(spec);
+        return apply(player);
+    }
+
+    public static void reset(ServerPlayer player) {
+        PingDelays.profile(player.getUUID()).reset();
+        clear(player);
+    }
+
+    private static boolean apply(ServerPlayer player) {
+        UUID id = player.getUUID();
+        PingProfile profile = PingDelays.profile(id);
+
+        if (!profile.delay().isActive() && !profile.burst().isActive()) {
             clear(player);
             return true;
         }
 
-        UUID id = player.getUUID();
         int real = knownRealPing(player, id);
 
         PingBoostHandler handler = ensureHandler(player);
         if (handler == null) return false;
 
-        Boost boost = new Boost(targetMs, real);
-        boosts.put(id, boost);
+        Boost boost = boosts.computeIfAbsent(id, key -> new Boost(real));
+        boost.settled = false;
+        boost.clock.setSpec(profile.burst());
+
         handler.reactivate();
-        handler.setOptions(PingDelays.of(player.getUUID()));
+        handler.setOptions(profile.options());
         handler.seedBase(real);
-        handler.setTarget(targetMs);
+        handler.setDelaySpec(profile.delay());
+        handler.setBurstSpec(profile.burst());
 
         int display = handler.displayPingMs();
         applyDisplayedPing(player, display);
@@ -78,9 +106,12 @@ public final class PingBoosters {
         boosts.remove(id);
     }
 
-    public static int target(ServerPlayer player) {
-        Boost boost = boosts.get(player.getUUID());
-        return boost == null ? 0 : boost.targetMs;
+    public static PingDelaySpec delayOf(ServerPlayer player) {
+        return PingDelays.profile(player.getUUID()).delay();
+    }
+
+    public static PingBurstSpec burstOf(ServerPlayer player) {
+        return PingDelays.profile(player.getUUID()).burst();
     }
 
     public static PingBoostHandler handlerOf(ServerPlayer player) {
@@ -97,13 +128,32 @@ public final class PingBoosters {
             if (player == null || player instanceof BotPlayer) continue;
 
             Boost boost = entry.getValue();
+            PingProfile profile = PingDelays.profile(entry.getKey());
             PingBoostHandler handler = ensureHandler(player);
             if (handler == null) continue;
 
             handler.reactivate();
-            handler.setOptions(PingDelays.of(player.getUUID()));
+            handler.setOptions(profile.options());
             handler.seedBase(boost.realMs);
-            handler.setTarget(boost.targetMs);
+            handler.setDelaySpec(profile.delay());
+            handler.setBurstSpec(profile.burst());
+
+            switch (boost.clock.tick()) {
+                case START_BURST -> handler.beginBurst();
+                case END_BURST -> handler.releaseBurst();
+                default -> {
+                }
+            }
+
+            if (boost.clock.isFinished() && profile.burst().isActive() && !profile.burst().repeats()) {
+                profile.setBurst(PingBurstSpec.NONE);
+                handler.setBurstSpec(PingBurstSpec.NONE);
+                boost.settled = false;
+                if (!profile.delay().isActive()) {
+                    clear(player);
+                    continue;
+                }
+            }
 
             if (boost.settled) continue;
 

@@ -1,6 +1,11 @@
 package hero.bane.herobot.paper.bot;
 
+import hero.bane.herobot.common.ping.BurstClock;
+import hero.bane.herobot.common.ping.PingBurstSpec;
 import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelaySpec;
+import hero.bane.herobot.common.ping.PingMode;
+import hero.bane.herobot.common.ping.PingRange;
 import hero.bane.herobot.common.ping.PingDelays;
 import com.mojang.authlib.GameProfile;
 import hero.bane.herobot.paper.HeroBot;
@@ -69,6 +74,17 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     private final BotPlayerActionPack actionPack;
 
     public int ping = 0;
+
+    private PingDelaySpec pingSpec = PingDelaySpec.NONE;
+
+    private final BurstClock burstClock = new BurstClock();
+
+    private Vec3 heldMovement;
+
+    private static final Set<PingDelayOptions.Category> BURST_CATEGORIES = EnumSet.of(
+            PingDelayOptions.Category.ATTACK,
+            PingDelayOptions.Category.USE,
+            PingDelayOptions.Category.KNOCKBACK);
 
     private static final Set<String> SPAWNING = ConcurrentHashMap.newKeySet();
 
@@ -244,23 +260,74 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     public void setPing(int value) {
-        this.ping = value;
+        setPingSpec(PingDelaySpec.of(value));
+    }
+
+    public void setPingSpec(PingDelaySpec spec) {
+        this.pingSpec = spec == null ? PingDelaySpec.NONE : spec;
+        this.ping = this.pingSpec.averageMs();
         applyPing();
     }
 
+    public PingDelaySpec pingSpec() {
+        return pingSpec;
+    }
+
+    public PingBurstSpec burstSpec() {
+        return burstClock.spec();
+    }
+
+    public void setBurstSpec(PingBurstSpec spec) {
+        burstClock.setSpec(spec);
+    }
+
+    public boolean isBursting() {
+        return burstClock.isBursting();
+    }
+
+    @Override
+    public boolean isPushable() {
+        return !burstClock.isBursting() && super.isPushable();
+    }
+
+    @Override
+    protected void pushEntities() {
+        if (burstClock.isBursting()) return;
+        super.pushEntities();
+    }
+
+    @Override
+    public void travel(Vec3 relative) {
+        if (burstClock.isBursting()) return;
+        super.travel(relative);
+    }
+
+    public long releaseTick(int delayTicks) {
+        long now = this.level().getServer().getTickCount();
+        long scheduled = now + Math.max(0, delayTicks);
+        if (!burstClock.isBursting()) return scheduled;
+        return Math.max(scheduled, now + burstClock.ticksUntilRelease());
+    }
+
     public boolean deferByPing(PingDelayOptions.Category category, Runnable action) {
-        if (!PingDelays.enabled(this.getUUID(), category)) return false;
-        int delay = delayTicks();
-        if (delay <= 0) return false;
-        ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(delay, action);
+        boolean held = burstClock.isBursting() && BURST_CATEGORIES.contains(category);
+        if (!held && !PingDelays.enabled(this.getUUID(), category)) return false;
+
+        int delay = held ? 0 : delayTicks();
+        long tick = releaseTick(delay);
+        long now = this.level().getServer().getTickCount();
+        if (tick <= now) return false;
+
+        ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(tick - now, action);
         return true;
     }
 
     public int delayTicks() {
         int pingToTicks = HeroBotSettings.botPingToTicks;
         if (pingToTicks <= 0) return 0;
-        int whole = ping / pingToTicks;
-        int remainder = ping % pingToTicks;
+        int rolled = pingSpec.isActive() ? pingSpec.roll() : ping;
+        int whole = rolled / pingToTicks;
+        int remainder = rolled % pingToTicks;
         if (remainder == 0) return whole;
         return ThreadLocalRandom.current().nextInt(pingToTicks) < remainder ? whole + 1 : whole;
     }
@@ -471,23 +538,39 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
 
     @Override
     public boolean allowsListing() {
-        return true;
+        return HeroBotSettings.allowListingBotPlayers;
     }
 
     @Override
     public void addAdditionalSaveData(ValueOutput output) {
         super.addAdditionalSaveData(output);
-        output.putInt("botPlayerPing", this.ping);
+        output.putInt("botPlayerPing", this.pingSpec.range().min());
+        output.putInt("botPlayerPingMax", this.pingSpec.range().max());
+        output.putString("botPlayerPingMode", this.pingSpec.mode().id());
     }
 
     @Override
     public void readAdditionalSaveData(ValueInput input) {
         super.readAdditionalSaveData(input);
-        this.ping = input.getIntOr("botPlayerPing", 0);
+        int min = input.getIntOr("botPlayerPing", 0);
+        int max = input.getIntOr("botPlayerPingMax", min);
+        PingMode mode = PingMode.byId(input.getStringOr("botPlayerPingMode", PingMode.BALANCE.id()));
+        this.pingSpec = new PingDelaySpec(new PingRange(min, max), mode);
+        this.ping = this.pingSpec.averageMs();
     }
 
     @Override
     public void tick() {
+        if (burstClock.tick() == BurstClock.Transition.START_BURST) {
+            heldMovement = this.getDeltaMovement();
+        }
+        boolean burstFrozen = burstClock.isBursting();
+        if (burstFrozen) {
+            this.setDeltaMovement(Vec3.ZERO);
+        } else if (heldMovement != null) {
+            this.setDeltaMovement(heldMovement);
+            heldMovement = null;
+        }
         if (this.level().getServer().getTickCount() % 10 == 0) {
             this.connection.resetPosition();
             this.level().getChunkSource().move(this);
@@ -497,6 +580,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             double startX = this.getX();
             double startY = this.getY();
             double startZ = this.getZ();
+            double startFallDistance = this.fallDistance;
 
             actionPack.onUpdate();
             super.tick();
@@ -513,6 +597,12 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             if (pathFollower != null) {
                 pathFollower.tick();
                 if (pathFollower.isDone()) pathFollower = null;
+            }
+
+            if (burstFrozen) {
+                this.setPos(startX, startY, startZ);
+                this.setDeltaMovement(Vec3.ZERO);
+                this.fallDistance = startFallDistance;
             }
 
             Vec3 movement = new Vec3(this.getX() - startX, this.getY() - startY, this.getZ() - startZ);

@@ -29,6 +29,8 @@ import java.util.function.Predicate;
 
 public final class SourceAwareSelectorNodes {
 
+    private static final String DATA_COMMAND = "data";
+
     private static Field childrenField;
     private static Field literalsField;
     private static Field argumentsField;
@@ -43,7 +45,13 @@ public final class SourceAwareSelectorNodes {
                 literalsField = field("literals");
                 argumentsField = field("arguments");
             }
-            patch(dispatcher.getRoot(), Collections.newSetFromMap(new IdentityHashMap<>()));
+            CommandNode<CommandSourceStack> root = dispatcher.getRoot();
+            Set<CommandNode<CommandSourceStack>> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            seen.add(root);
+
+            for (CommandNode<CommandSourceStack> child : List.copyOf(root.getChildren())) {
+                walk(root, child, seen, DATA_COMMAND.equals(child.getName()));
+            }
         } catch (Throwable t) {
             HeroBot.LOGGER.warn("Could not enable HeroBot selector options outside HeroBot commands: {}", t.toString());
         }
@@ -56,33 +64,42 @@ public final class SourceAwareSelectorNodes {
     }
 
     private static void patch(CommandNode<CommandSourceStack> parent,
-                              Set<CommandNode<CommandSourceStack>> seen) throws ReflectiveOperationException {
+                              Set<CommandNode<CommandSourceStack>> seen,
+                              boolean dataTarget) throws ReflectiveOperationException {
         if (!seen.add(parent)) return;
 
         for (CommandNode<CommandSourceStack> child : List.copyOf(parent.getChildren())) {
-            CommandNode<CommandSourceStack> current = child;
-
-            if (child instanceof ArgumentCommandNode<CommandSourceStack, ?> argument
-                    && !(child instanceof SourceAware)
-                    && argument.getType() instanceof EntityArgument type) {
-                current = swap(parent, argument, type);
-            }
-
-            patch(current, seen);
-            if (current.getRedirect() != null) patch(current.getRedirect(), seen);
+            walk(parent, child, seen, dataTarget);
         }
+    }
+
+    private static void walk(CommandNode<CommandSourceStack> parent,
+                             CommandNode<CommandSourceStack> child,
+                             Set<CommandNode<CommandSourceStack>> seen,
+                             boolean dataTarget) throws ReflectiveOperationException {
+        CommandNode<CommandSourceStack> current = child;
+
+        if (child instanceof ArgumentCommandNode<CommandSourceStack, ?> argument
+                && !(child instanceof SourceAware)
+                && argument.getType() instanceof EntityArgument type) {
+            current = swap(parent, argument, type, dataTarget);
+        }
+
+        patch(current, seen, dataTarget);
+        if (current.getRedirect() != null) patch(current.getRedirect(), seen, dataTarget);
     }
 
     @SuppressWarnings("unchecked")
     private static CommandNode<CommandSourceStack> swap(CommandNode<CommandSourceStack> parent,
                                                         ArgumentCommandNode<CommandSourceStack, ?> old,
-                                                        EntityArgument type) throws ReflectiveOperationException {
+                                                        EntityArgument type,
+                                                        boolean dataTarget) throws ReflectiveOperationException {
         ArgumentCommandNode<CommandSourceStack, EntitySelector> typed =
                 (ArgumentCommandNode<CommandSourceStack, EntitySelector>) old;
 
         SourceAware replacement = new SourceAware(typed.getName(), type, typed.getCommand(),
                 typed.getRequirement(), typed.getRedirect(), typed.getRedirectModifier(),
-                typed.isFork(), typed.getCustomSuggestions());
+                typed.isFork(), typed.getCustomSuggestions(), dataTarget);
 
         for (CommandNode<CommandSourceStack> grandchild : old.getChildren()) {
             replacement.addChild(grandchild);
@@ -98,6 +115,8 @@ public final class SourceAwareSelectorNodes {
 
     private static final class SourceAware extends ArgumentCommandNode<CommandSourceStack, EntitySelector> {
 
+        private final boolean dataTarget;
+
         private SourceAware(String name,
                             EntityArgument type,
                             Command<CommandSourceStack> command,
@@ -105,8 +124,10 @@ public final class SourceAwareSelectorNodes {
                             CommandNode<CommandSourceStack> redirect,
                             RedirectModifier<CommandSourceStack> modifier,
                             boolean forks,
-                            SuggestionProvider<CommandSourceStack> customSuggestions) {
+                            SuggestionProvider<CommandSourceStack> customSuggestions,
+                            boolean dataTarget) {
             super(name, type, command, requirement, redirect, modifier, forks, customSuggestions);
+            this.dataTarget = dataTarget;
         }
 
         @Override
@@ -118,6 +139,7 @@ public final class SourceAwareSelectorNodes {
             try (SourceAwareSelectorOptions.Capture capture = SourceAwareSelectorOptions.begin()) {
                 selector = capture.wrap(getType().parse(reader, contextBuilder.getSource()));
             }
+            if (dataTarget) selector = PlayerDataSelector.wrap(selector);
 
             ParsedArgument<CommandSourceStack, EntitySelector> parsed =
                     new ParsedArgument<>(start, reader.getCursor(), selector);

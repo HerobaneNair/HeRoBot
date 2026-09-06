@@ -8,8 +8,6 @@ plugins {
 
 description = "Robots scripted to be Heroes"
 
-// One instant for the whole build, so the jars and the generation folder holding them can never
-// disagree about the date. Subprojects read `artifactVersion` back through `herobot.java`.
 val buildTime: LocalDateTime = LocalDateTime.now()
 val minecraftVersion = libs.versions.minecraft.get()
 
@@ -22,7 +20,6 @@ tasks.register<Delete>("clean") {
     delete(layout.buildDirectory)
 }
 
-// ./gradlew buildAll -> both platform jars, in build/libs/<generation>/.
 tasks.register<Sync>("buildAll") {
     group = "herobot"
     description = "Builds the Fabric mod and the Paper plugin into a build/libs generation folder."

@@ -10,9 +10,16 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hero.bane.herobot.common.rule.HeroBotSettings;
+import hero.bane.herobot.common.ai.AiScript;
 import hero.bane.herobot.common.ai.block.BlockDefRegistry;
+import hero.bane.herobot.common.bot.Shadows;
+import hero.bane.herobot.common.ping.PingBurstSpec;
 import hero.bane.herobot.common.ping.PingDelayOptions;
+import hero.bane.herobot.common.ping.PingDelaySpec;
+import hero.bane.herobot.common.ping.PingMode;
+import hero.bane.herobot.common.ping.PingRange;
 import hero.bane.herobot.common.ping.PingDelays;
+import hero.bane.herobot.mod.common.ai.AiScriptRegistry;
 import hero.bane.herobot.mod.common.bot.BotChat;
 import hero.bane.herobot.mod.common.bot.BotPlayer;
 import hero.bane.herobot.mod.common.bot.BotPlayerActionPack.Action;
@@ -38,6 +45,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.phys.Vec3;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -128,8 +136,17 @@ public class PlayerCommand {
 
                                 .then(SoundSubtree.build())
 
+                                .then(Commands.literal("shadow")
+                                        .executes(c -> shadowSet(c, null))
+                                        .then(Commands.literal("reset")
+                                                .executes(PlayerCommand::shadowReset))
+                                        .then(Commands.argument("ai", StringArgumentType.string())
+                                                .suggests((c, b) -> SharedSuggestionProvider.suggest(
+                                                        AiScriptRegistry.list(c.getSource().getServer()), b))
+                                                .executes(c -> shadowSet(c, StringArgumentType.getString(c, "ai")))))
+
                                 .then(Commands.literal("ping")
-                                        .executes(PlayerCommand::pingGet)
+                                        .executes(PlayerCommand::pingReport)
                                         .then(Commands.literal("settings")
                                                 .executes(PlayerCommand::pingSettingsGet)
                                                 .then(Commands.argument("category", StringArgumentType.word())
@@ -141,17 +158,46 @@ public class PlayerCommand {
                                                         })
                                                         .then(Commands.argument("enabled", BoolArgumentType.bool())
                                                                 .executes(PlayerCommand::pingSettingsSet))))
-                                        .then(Commands.argument("value", IntegerArgumentType.integer(0))
-                                                .suggests((c, b) -> {
-                                                    b.suggest(0);
-                                                    b.suggest(25);
-                                                    b.suggest(50);
-                                                    b.suggest(100);
-                                                    b.suggest(150);
-                                                    b.suggest(200);
-                                                    return b.buildFuture();
-                                                })
-                                                .executes(PlayerCommand::pingSet)))
+                                        .then(Commands.literal("reset")
+                                                .executes(PlayerCommand::pingReset))
+                                        .then(Commands.literal("delay")
+                                                .executes(PlayerCommand::pingDelayReport)
+                                                .then(Commands.argument("amount", StringArgumentType.word())
+                                                        .suggests((c, b) -> {
+                                                            b.suggest("reset");
+                                                            b.suggest("0");
+                                                            b.suggest("50");
+                                                            b.suggest("100");
+                                                            b.suggest("150");
+                                                            b.suggest("200");
+                                                            b.suggest("100-150");
+                                                            return b.buildFuture();
+                                                        })
+                                                        .executes(c -> pingDelaySet(c, PingMode.BALANCE))
+                                                        .then(Commands.literal("balance")
+                                                                .executes(c -> pingDelaySet(c, PingMode.BALANCE)))
+                                                        .then(Commands.literal("add")
+                                                                .executes(c -> pingDelaySet(c, PingMode.ADD)))))
+                                        .then(Commands.literal("burst")
+                                                .executes(PlayerCommand::pingBurstReport)
+                                                .then(Commands.argument("length", StringArgumentType.word())
+                                                        .suggests((c, b) -> {
+                                                            b.suggest("reset");
+                                                            b.suggest("0");
+                                                            b.suggest("10");
+                                                            b.suggest("30");
+                                                            b.suggest("10-20");
+                                                            return b.buildFuture();
+                                                        })
+                                                        .executes(c -> pingBurstSet(c, false))
+                                                        .then(Commands.argument("interval", StringArgumentType.word())
+                                                                .suggests((c, b) -> {
+                                                                    b.suggest("20");
+                                                                    b.suggest("40");
+                                                                    b.suggest("25-30");
+                                                                    return b.buildFuture();
+                                                                })
+                                                                .executes(c -> pingBurstSet(c, true))))))
 
                                 .then(Commands.literal("copycat")
                                         .then(Commands.argument("source", EntityArgument.player())
@@ -288,31 +334,171 @@ public class PlayerCommand {
         return 1;
     }
 
-    private static int pingSet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-        int value = IntegerArgumentType.getInteger(context, "value");
+    private static PingRange readRange(CommandContext<CommandSourceStack> context, String argument) {
+        String raw = StringArgumentType.getString(context, argument);
+        if (raw.equalsIgnoreCase("reset") || raw.equalsIgnoreCase("off") || raw.equalsIgnoreCase("none")) {
+            return PingRange.ZERO;
+        }
+        return PingRange.parse(raw);
+    }
+
+    private static int pingDelaySet(CommandContext<CommandSourceStack> context, PingMode mode)
+            throws CommandSyntaxException {
+        String raw = StringArgumentType.getString(context, "amount");
+        PingRange range = readRange(context, "amount");
+        if (range == null) {
+            context.getSource().sendFailure(Component.literal(
+                    "Could not read a ping delay from '" + raw + "'; expected 100, 100-150 or reset"));
+            return 0;
+        }
+
+        PingDelaySpec spec = new PingDelaySpec(range, mode);
+        int first = 0;
         for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
             String name = player.getGameProfile().name();
 
             if (player instanceof BotPlayer bot) {
-                bot.setPing(value);
-                context.getSource().sendSuccess(() -> Component.literal("Set " + name + "'s ping to " + value + "ms"), false);
+                bot.setPingSpec(spec);
+                context.getSource().sendSuccess(() -> Component.literal(spec.isActive()
+                        ? "Set " + name + "'s ping delay to " + spec.describe()
+                        : "Cleared " + name + "'s ping delay"), false);
+                if (first == 0) first = spec.averageMs();
                 continue;
             }
 
-            if (value <= 0) {
-                PingBoosters.clear(player);
-                context.getSource().sendSuccess(() -> Component.literal("Cleared " + name + "'s ping boost"), false);
+            if (!spec.isActive()) {
+                PingBoosters.setDelay(player, PingDelaySpec.NONE);
+                context.getSource().sendSuccess(() -> Component.literal("Cleared " + name + "'s ping delay"), false);
                 continue;
             }
 
             int real = player.connection.latency();
-            if (!PingBoosters.set(player, value)) {
-                context.getSource().sendFailure(Component.literal("Could not boost " + name + "'s ping"));
+            if (!PingBoosters.setDelay(player, spec)) {
+                context.getSource().sendFailure(Component.literal("Could not set " + name + "'s ping delay"));
                 continue;
             }
-            int added = Math.clamp(value - real, 0, PingBoostHandler.MAX_ADDED_DELAY_MS);
+
+            PingBoostHandler handler = PingBoosters.handlerOf(player);
+            int added = handler == null ? 0 : handler.averageAddedMs();
             context.getSource().sendSuccess(() -> Component.literal(
-                    "Boosting " + name + "'s ping to " + value + "ms (real " + real + "ms, +" + added + "ms of delay)"), false);
+                    "Set " + name + "'s ping delay to " + spec.describe()
+                            + " (real " + real + "ms, +" + added + "ms on average)"), false);
+            if (first == 0) first = spec.averageMs();
+        }
+        return first;
+    }
+
+    private static int pingBurstSet(CommandContext<CommandSourceStack> context, boolean hasInterval)
+            throws CommandSyntaxException {
+        String rawLength = StringArgumentType.getString(context, "length");
+        PingRange length = readRange(context, "length");
+        if (length == null) {
+            context.getSource().sendFailure(Component.literal(
+                    "Could not read a burst length from '" + rawLength + "'; expected 30, 10-20 or reset"));
+            return 0;
+        }
+
+        PingRange interval = null;
+        if (hasInterval && !length.isZero()) {
+            String rawInterval = StringArgumentType.getString(context, "interval");
+            interval = readRange(context, "interval");
+            if (interval == null) {
+                context.getSource().sendFailure(Component.literal(
+                        "Could not read a burst interval from '" + rawInterval + "'; expected 40 or 25-30"));
+                return 0;
+            }
+        }
+
+        PingBurstSpec spec = new PingBurstSpec(length, interval);
+        int first = 0;
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+
+            if (player instanceof BotPlayer bot) {
+                bot.setBurstSpec(spec);
+                context.getSource().sendSuccess(() -> Component.literal(spec.isActive()
+                        ? "Set " + name + "'s ping burst to " + spec.describe()
+                                + "\n Bots hold their attack, use and knockback actions rather than packets"
+                        : "Cleared " + name + "'s ping burst"), false);
+                if (first == 0) first = spec.averageAddedMs();
+                continue;
+            }
+
+            if (!spec.isActive()) {
+                PingBoosters.setBurst(player, PingBurstSpec.NONE);
+                context.getSource().sendSuccess(() -> Component.literal("Cleared " + name + "'s ping burst"), false);
+                continue;
+            }
+
+            if (!PingBoosters.setBurst(player, spec)) {
+                context.getSource().sendFailure(Component.literal("Could not set " + name + "'s ping burst"));
+                continue;
+            }
+            context.getSource().sendSuccess(() -> Component.literal(
+                    "Set " + name + "'s ping burst to " + spec.describe()), false);
+            if (first == 0) first = spec.averageAddedMs();
+        }
+        return first;
+    }
+
+    private static int shadowSet(CommandContext<CommandSourceStack> context, String scriptName)
+            throws CommandSyntaxException {
+        if (scriptName != null) {
+            AiScript script;
+            try {
+                script = AiScriptRegistry.load(context.getSource().getServer(), scriptName);
+            } catch (IOException e) {
+                context.getSource().sendFailure(Component.literal("Failed to load script: " + e.getMessage()));
+                return 0;
+            }
+            if (script == null) {
+                context.getSource().sendFailure(Component.literal("Script not found: " + scriptName));
+                return 0;
+            }
+        }
+
+        int count = 0;
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+            if (player instanceof BotPlayer) {
+                context.getSource().sendFailure(Component.literal(
+                        name + " is a bot, so it has nothing to shadow"));
+                continue;
+            }
+            Shadows.arm(player.getUUID(), name, scriptName);
+            context.getSource().sendSuccess(() -> Component.literal(scriptName == null
+                    ? "Shadowing " + name + " with no AI when they disconnect"
+                    : "Shadowing " + name + " with '" + scriptName + "' when they disconnect"), false);
+            count++;
+        }
+        return count;
+    }
+
+    private static int shadowReset(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        int count = 0;
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+            if (Shadows.disarm(player.getUUID()) == null) {
+                context.getSource().sendSuccess(() -> Component.literal(name + " was not being shadowed"), false);
+                continue;
+            }
+            context.getSource().sendSuccess(() -> Component.literal("Stopped shadowing " + name), false);
+            count++;
+        }
+        return count;
+    }
+
+    private static int pingReset(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
+            String name = player.getGameProfile().name();
+            if (player instanceof BotPlayer bot) {
+                bot.setPingSpec(PingDelaySpec.NONE);
+                bot.setBurstSpec(PingBurstSpec.NONE);
+            } else {
+                PingBoosters.reset(player);
+            }
+            context.getSource().sendSuccess(() -> Component.literal(
+                    "Cleared " + name + "'s ping delay and burst"), false);
         }
         return 1;
     }
@@ -355,43 +541,81 @@ public class PlayerCommand {
         return 1;
     }
 
-    private static int pingGet(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    private static int pingReport(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        return pingReport(context, true, true);
+    }
+
+    private static int pingDelayReport(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        return pingReport(context, true, false);
+    }
+
+    private static int pingBurstReport(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        return pingReport(context, false, true);
+    }
+
+    private static int pingReport(CommandContext<CommandSourceStack> context, boolean showDelay, boolean showBurst)
+            throws CommandSyntaxException {
         int first = 0;
         for (ServerPlayer player : CommandHelper.requireControllableTargets(context)) {
             String name = player.getGameProfile().name();
+            StringBuilder text = new StringBuilder(name + " Ping");
+            boolean isBot = player instanceof BotPlayer;
+
+            PingDelaySpec delay;
+            PingBurstSpec burst;
+            boolean bursting;
+            int regular;
+            int added;
 
             if (player instanceof BotPlayer bot) {
-                int botPing = bot.ping;
+                delay = bot.pingSpec();
+                burst = bot.burstSpec();
+                bursting = bot.isBursting();
+                regular = -1;
+                added = delay.averageMs();
+            } else {
+                delay = PingBoosters.delayOf(player);
+                burst = PingBoosters.burstOf(player);
+                PingBoostHandler handler = PingBoosters.handlerOf(player);
+                bursting = handler != null && handler.isBursting();
+                int base = handler == null ? -1 : handler.baseMs();
+                regular = base > 0 ? base : player.connection.latency();
+                added = handler == null ? delay.averageMs() : handler.averageAddedMs();
+            }
+
+            if (showDelay) {
+                text.append("\n Delay: ").append(delay.describe());
                 int pingToTicks = HeroBotSettings.botPingToTicks;
-                context.getSource().sendSuccess(() -> Component.literal(name + " Bot Ping: " + botPing +
-                        "ms\nDelay in Ticks: " + botPing / pingToTicks +
-                        (botPing % pingToTicks > 0 ? "\n with a " + botPing % pingToTicks + "/" + pingToTicks + " chance to add a tick" : "")
-                ), false);
-                if (first == 0) first = botPing;
-                continue;
+                if (isBot && delay.isActive() && pingToTicks > 0) {
+                    int avg = delay.averageMs();
+                    text.append("\n Delay in Ticks: ").append(avg / pingToTicks);
+                    int remainder = avg % pingToTicks;
+                    if (remainder > 0) {
+                        text.append("\n with a ").append(remainder).append("/").append(pingToTicks)
+                                .append(" chance to add a tick");
+                    }
+                }
             }
-
-            int measured = player.connection.latency();
-            int target = PingBoosters.target(player);
-            PingBoostHandler handler = PingBoosters.handlerOf(player);
-
-            if (target <= 0 || handler == null) {
-                context.getSource().sendSuccess(() -> Component.literal(name + " Ping: " + measured + "ms (not boosted)"), false);
-                if (first == 0) first = measured;
-                continue;
+            if (showBurst) {
+                text.append("\n Burst: ").append(burst.describe());
+                if (bursting) {
+                    text.append(isBot
+                            ? "\n Currently holding actions for a burst"
+                            : "\n Currently holding packets for a burst");
+                }
             }
+            if (regular >= 0) text.append("\n Regular: ").append(regular).append("ms");
 
-            int added = handler.addedDelayMs();
-            int outbound = added / 2;
-            int inbound = added - outbound;
-            int base = handler.baseMs();
-            String baseNote = handler.hasMeasuredBase() ? "" : " (estimated, awaiting keep alive)";
-            context.getSource().sendSuccess(() -> Component.literal(name + " Ping: target " + target + "ms" +
-                    "\nReal: " + base + "ms" + baseNote +
-                    "\nAdded: " + added + "ms (" + outbound + "ms to client, " + inbound + "ms from client)" +
-                    "\nServer-measured: " + measured + "ms"
-            ), false);
-            if (first == 0) first = target;
+            int average = Math.max(regular, 0)
+                    + (showDelay ? added : 0)
+                    + (showBurst ? burst.averageAddedMs() : 0);
+            text.append("\n Average: ").append(average).append("ms");
+
+            String line = text.toString();
+            context.getSource().sendSuccess(() -> Component.literal(line), false);
+            context.getSource().sendSuccess(
+                    () -> Component.literal("Returns: " + average).withColor(0xAAAAAA), false);
+            if (first == 0) first = average;
         }
         return first;
     }

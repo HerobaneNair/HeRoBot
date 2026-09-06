@@ -27,6 +27,10 @@ public final class HeroBotSettings {
     @Bounds(min = 1)
     public static int botPingToTicks = 25;
 
+    @Rule(desc = "Ticks between tab list ping updates (default 600, so 20 refreshes the tab list every second)")
+    @Bounds(min = 20)
+    public static int tabListPing = 600;
+
     @Rule(desc = "Bots disconnect on death rather than respawning")
     public static boolean botLeaveOnDeath = false;
 

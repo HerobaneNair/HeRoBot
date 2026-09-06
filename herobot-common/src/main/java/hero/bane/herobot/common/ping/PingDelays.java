@@ -6,22 +6,26 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PingDelays {
 
-    private static final PingDelayOptions DEFAULTS = new PingDelayOptions();
+    private static final PingProfile DEFAULTS = new PingProfile();
 
-    private static final Map<UUID, PingDelayOptions> options = new ConcurrentHashMap<>();
+    private static final Map<UUID, PingProfile> profiles = new ConcurrentHashMap<>();
 
     private PingDelays() {}
 
+    public static PingProfile profile(UUID id) {
+        return profiles.computeIfAbsent(id, key -> new PingProfile());
+    }
+
     public static PingDelayOptions of(UUID id) {
-        return options.computeIfAbsent(id, key -> new PingDelayOptions());
+        return profile(id).options();
     }
 
     public static boolean enabled(UUID id, PingDelayOptions.Category category) {
-        PingDelayOptions existing = options.get(id);
-        return (existing == null ? DEFAULTS : existing).isEnabled(category);
+        PingProfile existing = profiles.get(id);
+        return (existing == null ? DEFAULTS : existing).options().isEnabled(category);
     }
 
     public static void forget(UUID id) {
-        options.remove(id);
+        profiles.remove(id);
     }
 }
