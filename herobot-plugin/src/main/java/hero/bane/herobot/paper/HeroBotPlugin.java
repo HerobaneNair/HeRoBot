@@ -3,6 +3,7 @@ package hero.bane.herobot.paper;
 import hero.bane.herobot.paper.ai.AiScriptRegistry;
 import hero.bane.herobot.paper.bot.BotPlayer;
 import hero.bane.herobot.paper.bot.BotRegistry;
+import hero.bane.herobot.common.bot.Shadows;
 import hero.bane.herobot.paper.bot.ShadowSpawner;
 import hero.bane.herobot.paper.bot.BotVision;
 import hero.bane.herobot.paper.command.HeroBotCommand;
@@ -121,6 +122,8 @@ public final class HeroBotPlugin extends JavaPlugin implements Listener {
         ServerPlayer joining = ((CraftPlayer) event.getPlayer()).getHandle();
         if (joining instanceof BotPlayer) return;
         BotRegistry.despawnMatching(joining.getUUID(), joining.getGameProfile().name());
+        Shadows.disarm(joining.getUUID());
+        ShadowSpawner.forget(joining.getGameProfile().name());
     }
 
     @EventHandler

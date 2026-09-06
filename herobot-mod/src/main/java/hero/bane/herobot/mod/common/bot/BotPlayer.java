@@ -23,6 +23,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
@@ -369,6 +370,12 @@ public class BotPlayer extends ServerPlayer {
     }
 
     private static void loadPlayerData(BotPlayer player) {
+        CompoundTag snapshot = ShadowSpawner.takeSnapshot(player.getGameProfile().name());
+        if (snapshot != null) {
+            player.load(TagValueInput.create(ProblemReporter.DISCARDING, player.registryAccess(), snapshot));
+            return;
+        }
+
         player.level().getServer().getPlayerList()
                 .loadPlayerData(player.nameAndId())
                 .map(tag -> TagValueInput.create(

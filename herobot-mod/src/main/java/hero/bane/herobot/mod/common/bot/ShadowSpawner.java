@@ -5,15 +5,42 @@ import hero.bane.herobot.common.bot.Shadows;
 import hero.bane.herobot.mod.common.HeroBot;
 import hero.bane.herobot.mod.common.ai.AiScriptRegistry;
 import hero.bane.herobot.mod.common.api.HeroBotApi;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.storage.TagValueOutput;
 
 import java.io.IOException;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ShadowSpawner {
 
+    private static final Map<String, CompoundTag> SNAPSHOTS = new ConcurrentHashMap<>();
+
     private ShadowSpawner() {
+    }
+
+    public static CompoundTag takeSnapshot(String name) {
+        return name == null ? null : SNAPSHOTS.remove(key(name));
+    }
+
+    public static void forget(String name) {
+        takeSnapshot(name);
+    }
+
+    private static CompoundTag snapshot(ServerPlayer player) {
+        TagValueOutput output = TagValueOutput.createWithContext(
+                ProblemReporter.DISCARDING, player.registryAccess());
+        player.saveWithoutId(output);
+        return output.buildResult();
+    }
+
+    private static String key(String name) {
+        return name.toLowerCase(Locale.ROOT);
     }
 
     public static void onLogout(MinecraftServer server, ServerPlayer leaving) {
@@ -25,6 +52,7 @@ public final class ShadowSpawner {
         String name = leaving.getGameProfile().name();
         GameType gamemode = leaving.gameMode.getGameModeForPlayer();
         boolean flying = leaving.getAbilities().flying;
+        SNAPSHOTS.put(key(name), snapshot(leaving));
 
         server.execute(() -> spawn(server, name, shadow.scriptName(), gamemode, flying));
     }
