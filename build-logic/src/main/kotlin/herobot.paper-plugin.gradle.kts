@@ -44,6 +44,8 @@ fun RunServer.configureHeroBotRun(flavour: String, directory: String) {
 
     downloadPlugins {
         modrinth("simple-voice-chat", "bukkit-${libs.versions.voicechat.get()}")
+        modrinth("packetevents", libs.versions.packetevents.get())
+        github("dmulloy2", "ProtocolLib", libs.versions.protocollib.get(), "ProtocolLib.jar")
     }
 }
 

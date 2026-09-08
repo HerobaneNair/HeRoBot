@@ -3,8 +3,11 @@ package hero.bane.herobot.paper.bot.connection;
 import hero.bane.herobot.paper.bot.BotEvents;
 import hero.bane.herobot.paper.bot.BotPlayer;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import net.minecraft.network.Connection;
+import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.ProtocolInfo;
 import net.minecraft.network.protocol.Packet;
@@ -24,7 +27,9 @@ public class BotClientConnection extends Connection {
 
     public BotClientConnection(PacketFlow flow) {
         super(flow);
-        this.channel = new EmbeddedChannel();
+        EmbeddedChannel embedded = BotChannel.create();
+        embedded.pipeline().addLast(BotChannel.PACKET_HANDLER, this);
+        this.channel = embedded;
         this.address = LOOPBACK;
     }
 
@@ -50,6 +55,22 @@ public class BotClientConnection extends Connection {
 
     @Override
     public void handleDisconnection() {
+    }
+
+    @Override
+    public void channelInactive(@NonNull ChannelHandlerContext ctx) {
+    }
+
+    @Override
+    public void exceptionCaught(@NonNull ChannelHandlerContext ctx, @NonNull Throwable exception) {
+    }
+
+    @Override
+    public void disconnect(@NonNull Component reason) {
+    }
+
+    @Override
+    public void disconnect(@NonNull DisconnectionDetails details) {
     }
 
     @Override

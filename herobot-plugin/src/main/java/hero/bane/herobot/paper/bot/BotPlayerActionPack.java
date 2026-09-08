@@ -65,7 +65,7 @@ public class BotPlayerActionPack implements PlayerController {
     private final List<DelayedAction> pendingActions = new ArrayList<>();
 
     public void scheduleDelayed(long ticks, Runnable action) {
-        pendingActions.add(new DelayedAction(Ticks.current() + ticks, action));
+        pendingActions.add(new DelayedAction(Ticks.of(player) + ticks, action));
     }
 
     private LookInterpolation lookInterpolation;
@@ -365,7 +365,7 @@ public class BotPlayerActionPack implements PlayerController {
         }
 
         if (!pendingActions.isEmpty()) {
-            long currentTick = Ticks.current();
+            long currentTick = Ticks.of(player);
             var it = pendingActions.iterator();
             while (it.hasNext()) {
                 DelayedAction da = it.next();
@@ -637,7 +637,7 @@ public class BotPlayerActionPack implements PlayerController {
                 if (player instanceof BotPlayer bot && PingDelays.enabled(bot.getUUID(), PingDelayOptions.Category.USE)) {
                     int delay = bot.delayTicks();
                     if (delay > 0) {
-                        long executeAt = Ticks.current() + delay;
+                        long executeAt = Ticks.of(player) + delay;
                         ap.pendingActions.add(new DelayedAction(executeAt, () -> repeatUse(player, hit, uses)));
                         ap.itemUseCooldown = delay;
                         return true;
@@ -667,7 +667,7 @@ public class BotPlayerActionPack implements PlayerController {
                         int delay = bot.delayTicks();
                         if (delay > 0) {
                             BotPlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();
-                            long executeAt = Ticks.current() + delay;
+                            long executeAt = Ticks.of(player) + delay;
                             ap.pendingActions.add(new DelayedAction(executeAt, () -> handleSpearStab(player)));
                             return true;
                         }
@@ -690,7 +690,7 @@ public class BotPlayerActionPack implements PlayerController {
                                 boolean wasOnGround = player.onGround();
 
                                 BotPlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();
-                                long executeAt = Ticks.current() + delay;
+                                long executeAt = Ticks.of(player) + delay;
                                 ap.pendingActions.add(new DelayedAction(executeAt, () -> {
                                     boolean currentSprinting = player.isSprinting();
                                     double currentFallDistance = player.fallDistance;
@@ -801,7 +801,7 @@ public class BotPlayerActionPack implements PlayerController {
             @Override
             boolean execute(ServerPlayer player, Action action) {
                 BotPlayerActionPack ap = ((ServerPlayerInterface) player).getActionPack();
-                long currentTick = Ticks.current();
+                long currentTick = Ticks.of(player);
 
                 if (action.limit == 1) {
                     if (player.isPassenger()) {

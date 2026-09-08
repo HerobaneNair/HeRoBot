@@ -44,7 +44,7 @@ public final class CombatRules implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onShieldDisable(PlayerShieldDisableEvent event) {
-        SHIELD_DISABLED_TICK.put(event.getPlayer().getUniqueId(), Ticks.current());
+        SHIELD_DISABLED_TICK.put(event.getPlayer().getUniqueId(), Ticks.of(event.getPlayer()));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -87,7 +87,7 @@ public final class CombatRules implements Listener {
         Long disabledTick = SHIELD_DISABLED_TICK.get(player.getUniqueId());
         if (disabledTick == null) return 1.0;
 
-        long elapsed = Ticks.current() - disabledTick;
+        long elapsed = Ticks.of(player) - disabledTick;
         if (elapsed < 0 || elapsed > HeroBotSettings.shieldStunningWindow) return 1.0;
         return STUNNED_KNOCKBACK_SCALE;
     }

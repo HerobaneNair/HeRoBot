@@ -19,12 +19,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class ShadowSpawner {
 
-    private static final Map<String, CompoundTag> SNAPSHOTS = new ConcurrentHashMap<>();
+    public record Snapshot(CompoundTag data, int pingMs) {
+    }
+
+    private static final Map<String, Snapshot> SNAPSHOTS = new ConcurrentHashMap<>();
 
     private ShadowSpawner() {
     }
 
-    public static CompoundTag takeSnapshot(String name) {
+    public static Snapshot takeSnapshot(String name) {
         return name == null ? null : SNAPSHOTS.remove(key(name));
     }
 
@@ -37,6 +40,10 @@ public final class ShadowSpawner {
                 ProblemReporter.DISCARDING, player.registryAccess());
         player.saveWithoutId(output);
         return output.buildResult();
+    }
+
+    private static int lastPing(ServerPlayer player) {
+        return player.connection == null ? 0 : Math.max(0, player.connection.latency());
     }
 
     private static String key(String name) {
@@ -52,7 +59,7 @@ public final class ShadowSpawner {
         String name = leaving.getGameProfile().name();
         GameType gamemode = leaving.gameMode.getGameModeForPlayer();
         boolean flying = leaving.getAbilities().flying;
-        SNAPSHOTS.put(key(name), snapshot(leaving));
+        SNAPSHOTS.put(key(name), new Snapshot(snapshot(leaving), lastPing(leaving)));
 
         server.execute(() -> spawn(server, name, shadow.scriptName(), gamemode, flying));
     }

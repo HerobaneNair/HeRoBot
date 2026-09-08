@@ -22,6 +22,10 @@ dependencies {
     implementation(projects.herobotCommon)
 
     compileOnly(libs.voicechat.api)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.netty.transport)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 paper {
