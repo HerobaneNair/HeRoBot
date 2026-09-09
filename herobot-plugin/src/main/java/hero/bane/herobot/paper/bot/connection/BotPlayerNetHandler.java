@@ -16,6 +16,8 @@ import java.util.Set;
 
 public class BotPlayerNetHandler extends ServerGamePacketListenerImpl {
 
+    private static final int SPAWN_GRACE_TICKS = 40;
+
     public BotPlayerNetHandler(MinecraftServer server, Connection connection, ServerPlayer player, CommonListenerCookie cookie) {
         super(server, connection, player, cookie);
     }
@@ -23,6 +25,7 @@ public class BotPlayerNetHandler extends ServerGamePacketListenerImpl {
     @Override
     public void disconnect(@NonNull DisconnectionDetails details) {
         if (player instanceof BotPlayer bot) {
+            if (bot.tickCount < SPAWN_GRACE_TICKS) return;
             BotRegistry.despawn(bot);
             return;
         }

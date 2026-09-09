@@ -38,7 +38,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
-import net.minecraft.commands.arguments.coordinates.Vec3Argument;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -80,7 +80,7 @@ public class PlayerCommand {
                                 .then(makeActionCommand("dropStack", ActionType.DROP_STACK))
                                 .then(makeActionCommand("swapHands", ActionType.SWAP_HANDS))
                                 .then(makePlaceCommand())
-                                .then(makeBreakCommand())
+                                .then(makeMineCommand())
 
                                 .then(Commands.literal("itemCd")
                                         .executes(ItemCooldown::itemCdClearAll)
@@ -249,7 +249,7 @@ public class PlayerCommand {
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> makePlaceCommand() {
-        var pos = Commands.argument("position", Vec3Argument.vec3())
+        var pos = Commands.argument("position", BlockPosArgument.blockPos())
                 .executes(c -> doPlace(c, "any", false))
                 .then(Commands.literal("force").executes(c -> doPlace(c, "any", true)));
         for (String face : BlockDefRegistry.FACES) {
@@ -261,7 +261,7 @@ public class PlayerCommand {
     }
 
     private static int doPlace(CommandContext<CommandSourceStack> c, String face, boolean force) throws CommandSyntaxException {
-        Vec3 pos = Vec3Argument.getVec3(c, "position");
+        Vec3 pos = Vec3.atLowerCornerOf(BlockPosArgument.getBlockPos(c, "position"));
         int placed = 0;
         for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
             if (BlockPlacer.place(p, pos, face, force)) placed++;
@@ -269,15 +269,15 @@ public class PlayerCommand {
         return placed;
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> makeBreakCommand() {
-        var pos = Commands.argument("position", Vec3Argument.vec3())
-                .executes(c -> doBreak(c, false))
-                .then(Commands.literal("force").executes(c -> doBreak(c, true)));
-        return Commands.literal("break").then(pos);
+    private static LiteralArgumentBuilder<CommandSourceStack> makeMineCommand() {
+        var pos = Commands.argument("position", BlockPosArgument.blockPos())
+                .executes(c -> doMine(c, false))
+                .then(Commands.literal("force").executes(c -> doMine(c, true)));
+        return Commands.literal("mine").then(pos);
     }
 
-    private static int doBreak(CommandContext<CommandSourceStack> c, boolean force) throws CommandSyntaxException {
-        Vec3 pos = Vec3Argument.getVec3(c, "position");
+    private static int doMine(CommandContext<CommandSourceStack> c, boolean force) throws CommandSyntaxException {
+        Vec3 pos = Vec3.atLowerCornerOf(BlockPosArgument.getBlockPos(c, "position"));
         int started = 0;
         for (ServerPlayer p : CommandHelper.requireControllableTargets(c)) {
             if (BlockBreaker.start(p, pos, force)) started++;

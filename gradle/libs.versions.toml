@@ -20,6 +20,14 @@ pathetic = "5.5.2"
 voicechat-mod = "2.6.21"
 voicechat-api = "2.6.20"
 
+# Packet interceptors the dev servers run HeroBot alongside
+protocollib = "dev-build"
+packetevents = "2.13.0+spigot"
+
+junit = "5.12.2"
+junit-platform = "1.12.2"
+netty = "4.2.7.Final"
+
 jetbrains-annotations = "26.0.2-1"
 slf4j = "2.0.16"
 gson = "2.13.2"
@@ -42,6 +50,9 @@ pathetic-engine = { group = "de.bsommerfeld.pathetic", name = "engine", version.
 voicechat-api = { group = "de.maxhenkel.voicechat", name = "voicechat-api", version.ref = "voicechat-api" }
 
 jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrains-annotations" }
+junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junit-platform" }
+netty-transport = { group = "io.netty", name = "netty-transport", version.ref = "netty" }
 slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 

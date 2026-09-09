@@ -15,7 +15,6 @@ import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.UUIDUtil;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.DisconnectionDetails;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.PacketFlow;
@@ -53,10 +52,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.NonNull;
 
 import java.lang.reflect.Field;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -71,6 +67,22 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     private PingDelaySpec pingSpec = PingDelaySpec.NONE;
 
     private final BurstClock burstClock = new BurstClock();
+
+    private final PingLatency latency = new PingLatency();
+
+    public boolean isAShadow;
+
+    private record DelayedKnockback(long tick, double strength, double x, double z,
+                                    DamageSource source, float damage, boolean extra,
+                                    Entity attacker, EntityKnockbackEvent.Cause cause) {
+    }
+
+    private final List<DelayedKnockback> pendingKnockbacks = new ArrayList<>();
+
+    private record DelayedPush(long tick, double x, double y, double z, Entity pusher) {
+    }
+
+    private final List<DelayedPush> pendingPushes = new ArrayList<>();
 
     private Vec3 heldMovement;
 
@@ -259,7 +271,14 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     public void setPingSpec(PingDelaySpec spec) {
         this.pingSpec = spec == null ? PingDelaySpec.NONE : spec;
         this.ping = this.pingSpec.averageMs();
+        latency.reset();
         applyPing();
+    }
+
+    public void resetPing() {
+        PingDelays.forget(this.getUUID());
+        setBurstSpec(PingBurstSpec.NONE);
+        setPingSpec(PingDelaySpec.NONE);
     }
 
     public PingDelaySpec pingSpec() {
@@ -296,7 +315,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     public long releaseTick(int delayTicks) {
-        long now = Ticks.current();
+        long now = Ticks.of(this);
         long scheduled = now + Math.max(0, delayTicks);
         if (!burstClock.isBursting()) return scheduled;
         return Math.max(scheduled, now + burstClock.ticksUntilRelease());
@@ -308,7 +327,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
 
         int delay = held ? 0 : delayTicks();
         long tick = releaseTick(delay);
-        long now = Ticks.current();
+        long now = Ticks.of(this);
         if (tick <= now) return false;
 
         ((ServerPlayerInterface) this).getActionPack().scheduleDelayed(tick - now, action);
@@ -316,13 +335,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     }
 
     public int delayTicks() {
-        int pingToTicks = HeroBotSettings.botPingToTicks;
-        if (pingToTicks <= 0) return 0;
-        int rolled = pingSpec.isActive() ? pingSpec.roll() : ping;
-        int whole = rolled / pingToTicks;
-        int remainder = rolled % pingToTicks;
-        if (remainder == 0) return whole;
-        return ThreadLocalRandom.current().nextInt(pingToTicks) < remainder ? whole + 1 : whole;
+        return latency.ticks(Ticks.of(this), pingSpec, ping, HeroBotSettings.botPingToTicks);
     }
 
     public static boolean spawn(MinecraftServer server, ServerLevel level, String username,
@@ -395,9 +408,13 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
         server.getPlayerList().placeNewPlayer(connection, bot, cookie);
         bot.connection = new BotPlayerNetHandler(server, connection, bot, cookie);
 
-        CompoundTag snapshot = ShadowSpawner.takeSnapshot(profile.name());
+        ShadowSpawner.Snapshot snapshot = ShadowSpawner.takeSnapshot(profile.name());
         if (snapshot != null) {
-            bot.load(TagValueInput.create(ProblemReporter.DISCARDING, bot.registryAccess(), snapshot));
+            bot.load(TagValueInput.create(ProblemReporter.DISCARDING, bot.registryAccess(), snapshot.data()));
+            bot.isAShadow = true;
+            bot.setPing(snapshot.pingMs());
+        } else {
+            bot.resetPing();
         }
 
         bot.snapTo(pos.x, pos.y, pos.z, yaw, pitch);
@@ -564,7 +581,7 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             this.setDeltaMovement(heldMovement);
             heldMovement = null;
         }
-        if (Ticks.current() % 10 == 0) {
+        if (Ticks.of(this) % 10 == 0) {
             this.connection.resetPosition();
             this.level().getChunkSource().move(this);
             if (this.connection.latency() != this.ping) applyPing();
@@ -586,6 +603,8 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
             }
 
             this.doTick();
+
+            processPendingKnockbacks();
 
             if (pathFollower != null) {
                 pathFollower.tick();
@@ -655,7 +674,52 @@ public class BotPlayer extends ServerPlayer implements ServerPlayerInterface {
     public void knockback(double strength, double x, double z, DamageSource source, float damage, boolean extra,
                           Entity attacker, EntityKnockbackEvent.Cause cause) {
         if (this.getAbilities().invulnerable) return;
-        super.knockback(strength, x, z, source, damage, extra, attacker, cause);
+        long executeAt = releaseTick(knockbackDelayTicks());
+        if (executeAt <= Ticks.of(this)) {
+            super.knockback(strength, x, z, source, damage, extra, attacker, cause);
+        } else {
+            pendingKnockbacks.add(
+                    new DelayedKnockback(executeAt, strength, x, z, source, damage, extra, attacker, cause));
+        }
+        if (pathFollower != null && !pathFollower.isDone()) {
+            pathFollower.recalcPath();
+        }
+    }
+
+    private int knockbackDelayTicks() {
+        return PingDelays.enabled(this.getUUID(), PingDelayOptions.Category.KNOCKBACK) ? delayTicks() : 0;
+    }
+
+    @Override
+    public void push(double x, double y, double z, Entity pusher) {
+        long executeAt = releaseTick(knockbackDelayTicks());
+        if (executeAt <= Ticks.of(this)) {
+            super.push(x, y, z, pusher);
+        } else {
+            pendingPushes.add(new DelayedPush(executeAt, x, y, z, pusher));
+        }
+    }
+
+    private void processPendingKnockbacks() {
+        if (pendingKnockbacks.isEmpty() && pendingPushes.isEmpty()) return;
+        long currentTick = Ticks.of(this);
+
+        Iterator<DelayedKnockback> knockbacks = pendingKnockbacks.iterator();
+        while (knockbacks.hasNext()) {
+            DelayedKnockback kb = knockbacks.next();
+            if (currentTick < kb.tick()) continue;
+            knockbacks.remove();
+            super.knockback(kb.strength(), kb.x(), kb.z(), kb.source(), kb.damage(), kb.extra(),
+                    kb.attacker(), kb.cause());
+        }
+
+        Iterator<DelayedPush> pushes = pendingPushes.iterator();
+        while (pushes.hasNext()) {
+            DelayedPush push = pushes.next();
+            if (currentTick < push.tick()) continue;
+            pushes.remove();
+            super.push(push.x(), push.y(), push.z(), push.pusher());
+        }
     }
 
     @Override

@@ -58,7 +58,7 @@ public class ServerExplosionMixin {
     @Redirect(method = "hurtEntities", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;push(Lnet/minecraft/world/phys/Vec3;)V"))
     private void explosionKBPing(Entity entity, Vec3 vec3) {
         if (entity instanceof BotPlayer botPlayer) {
-            botPlayer.delayedExplosionKB(vec3);
+            botPlayer.delayedPush(vec3);
         } else {
             entity.push(vec3);
         }

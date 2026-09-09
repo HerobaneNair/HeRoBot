@@ -79,6 +79,8 @@ public abstract class PlayerListMixin {
         if (oldPlayer instanceof BotPlayer oldBot) {
             BotPlayer newBot = BotPlayer.respawnFake(this.server, level, profile, cli);
             newBot.getPathSettings().copyFrom(oldBot.getPathSettings());
+            newBot.isAShadow = oldBot.isAShadow;
+            newBot.setPingSpec(oldBot.pingSpec());
             newBot.ping = oldBot.ping;
             newBot.setDeltaMovement(Vec3.ZERO);
             return newBot;

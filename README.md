@@ -3,7 +3,7 @@ This mod is made for datapack makers to make bots that can fight back
 The bots have a much higher parity with a vanilla client compared to carpet, with things like Auto-Jump and the spear working.
 
 --- 
-## Incompatible With Carpet Mod and Carpet PVP
+## Now compatible with carpet mod
 
 ---
 

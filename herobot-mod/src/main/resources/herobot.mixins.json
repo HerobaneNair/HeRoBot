@@ -5,6 +5,7 @@
   "package": "hero.bane.herobot.mod.common.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "AbstractArrowMixin",
     "AbstractBoatMixin",
     "AbstractMinecartMixin",
     "BlockItemMixin",

@@ -7,6 +7,7 @@ import hero.bane.herobot.common.ping.PingDelaySpec;
 import hero.bane.herobot.common.ping.PingMode;
 import hero.bane.herobot.common.ping.PingRange;
 import hero.bane.herobot.common.ping.PingDelays;
+import hero.bane.herobot.common.ping.PingLatency;
 import com.mojang.authlib.GameProfile;
 import hero.bane.herobot.mod.common.HeroBot;
 import hero.bane.herobot.common.rule.HeroBotSettings;
@@ -92,6 +93,8 @@ public class BotPlayer extends ServerPlayer {
 
     private final BurstClock burstClock = new BurstClock();
 
+    private final PingLatency latency = new PingLatency();
+
     private Vec3 heldMovement;
 
     private static final Set<PingDelayOptions.Category> BURST_CATEGORIES = EnumSet.of(
@@ -115,7 +118,14 @@ public class BotPlayer extends ServerPlayer {
     public void setPingSpec(PingDelaySpec spec) {
         this.pingSpec = spec == null ? PingDelaySpec.NONE : spec;
         this.ping = this.pingSpec.averageMs();
+        latency.reset();
         applyPing();
+    }
+
+    public void resetPing() {
+        PingDelays.forget(this.getUUID());
+        setBurstSpec(PingBurstSpec.NONE);
+        setPingSpec(PingDelaySpec.NONE);
     }
 
     public PingDelaySpec pingSpec() {
@@ -164,10 +174,10 @@ public class BotPlayer extends ServerPlayer {
 
     private final List<DelayedKnockback> pendingKnockbacks = new ArrayList<>();
 
-    private record DelayedExplosionKB(long tick, Vec3 explosionKB) {
+    private record DelayedPush(long tick, Vec3 push) {
     }
 
-    private final List<DelayedExplosionKB> pendingExplosionKB = new ArrayList<>();
+    private final List<DelayedPush> pendingPushes = new ArrayList<>();
 
     private long shieldDisabledTick = -1;
 
@@ -371,11 +381,15 @@ public class BotPlayer extends ServerPlayer {
     }
 
     private static void loadPlayerData(BotPlayer player) {
-        CompoundTag snapshot = ShadowSpawner.takeSnapshot(player.getGameProfile().name());
+        ShadowSpawner.Snapshot snapshot = ShadowSpawner.takeSnapshot(player.getGameProfile().name());
         if (snapshot != null) {
-            player.load(TagValueInput.create(ProblemReporter.DISCARDING, player.registryAccess(), snapshot));
+            player.load(TagValueInput.create(ProblemReporter.DISCARDING, player.registryAccess(), snapshot.data()));
+            player.isAShadow = true;
+            player.setPing(snapshot.pingMs());
             return;
         }
+
+        player.resetPing();
 
         player.level().getServer().getPlayerList()
                 .loadPlayerData(player.nameAndId())
@@ -627,10 +641,10 @@ public class BotPlayer extends ServerPlayer {
                 return false;
             });
         }
-        if (!pendingExplosionKB.isEmpty()) {
-            pendingExplosionKB.removeIf(dp -> {
+        if (!pendingPushes.isEmpty()) {
+            pendingPushes.removeIf(dp -> {
                 if (currentTick >= dp.tick()) {
-                    super.push(dp.explosionKB());
+                    super.push(dp.push());
                     return true;
                 }
                 return false;
@@ -638,12 +652,12 @@ public class BotPlayer extends ServerPlayer {
         }
     }
 
-    public void delayedExplosionKB(Vec3 vec3) {
+    public void delayedPush(Vec3 vec3) {
         long executeAt = releaseTick(knockbackDelayTicks());
         if (executeAt <= this.level().getServer().getTickCount()) {
             super.push(vec3);
         } else {
-            pendingExplosionKB.add(new DelayedExplosionKB(executeAt, vec3));
+            pendingPushes.add(new DelayedPush(executeAt, vec3));
         }
     }
 
@@ -704,13 +718,8 @@ public class BotPlayer extends ServerPlayer {
     }
 
     public int delayTicks() {
-        int pingToTicks = HeroBotSettings.botPingToTicks;
-        if (pingToTicks <= 0) return 0;
-        int rolled = pingSpec.isActive() ? pingSpec.roll() : ping;
-        int whole = rolled / pingToTicks;
-        int remainder = rolled % pingToTicks;
-        if (remainder == 0) return whole;
-        return ThreadLocalRandom.current().nextInt(pingToTicks) < remainder ? whole + 1 : whole;
+        long now = this.level().getServer().getTickCount();
+        return latency.ticks(now, pingSpec, ping, HeroBotSettings.botPingToTicks);
     }
 
     @Override
